@@ -1,0 +1,82 @@
+# Python environments and packaging
+.venv/
+.venv-*/
+venv/
+/dist/
+/build/
+*.egg-info/
+.python-version.local
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Research downloads and extracted third-party material
+research/raw/
+research/extracted/
+research/cache/
+
+# Data products, checkpoints, and experiment state
+data/raw/
+data/normalized/
+data/filtered/
+data/rejected/
+data/tokenized/
+/datasets/
+/checkpoints/
+/runs/
+/artifacts/
+/models/
+/weights/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf
+*.bin
+*.onnx
+
+# Runtime state and telemetry
+/runtime/
+.epor/
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+*.log
+/logs/
+/tensorboard/
+/wandb/
+
+# Frontend output and dependencies
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/coverage/
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/secrets/
