@@ -279,6 +279,7 @@ def api_command(
 ) -> None:
     """Run the loopback-only control API."""
 
+    authorize("control_api_start")
     import uvicorn
 
     from epor.control.api import create_app
@@ -302,6 +303,7 @@ def worker_command(
 ) -> None:
     """Run the separate allowlisted local worker."""
 
+    authorize("job_worker_start")
     from epor.control.worker import JobWorker
 
     with JobWorker() as worker:
@@ -316,6 +318,7 @@ def worker_command(
 def ui_command() -> None:
     """Start the React development console on its fixed loopback origin."""
 
+    authorize("local_ui_start")
     npm = shutil.which("npm")
     ui_root = Path(__file__).resolve().parents[2] / "ui"
     if npm is None:

@@ -5,10 +5,12 @@ admission and the CLI.  Neither has its own table, so an action cannot be
 governed on one path and ungoverned on the other.
 
 Assessments are declared and reviewed here rather than inferred, which is only
-defensible because the v0.0.2 action space is a closed list of offline,
-resource-bounded work.  An action with no declaration resolves to escalation:
-adding executable work to EPOR requires stating its covenant standing first,
-and forgetting to fails closed rather than open.
+defensible because the v0.0.2 action space is a closed list of local,
+operator-directed work.  Its network listeners are fixed to numeric loopback
+addresses, and its job work remains offline and resource-bounded.  An action
+with no declaration resolves to escalation: adding executable work to EPOR
+requires stating its covenant standing first, and forgetting to fails closed
+rather than open.
 
 The declarations are reviewed judgements, not measurements.  None of them make
 the executed work safe on their own.
@@ -58,7 +60,8 @@ _LOCAL_AND_OFFLINE = (
     "that operator, and emits no personal data"
 )
 _OPERATOR_REQUEST = (
-    "invoked directly by the operator who owns the machine, within the closed v0.0.2 action list"
+    "invoked directly by the operator who owns the machine, within the reviewed v0.0.2 action "
+    "registry"
 )
 
 DECLARED_ACTIONS: dict[str, ProposedAction] = {
@@ -108,6 +111,46 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
         ),
         direction=f"{_OPERATOR_REQUEST}; the prompt comes from the operator's own command line",
         system="bounded token count and read-only over the checkpoint",
+    ),
+    "control_api_start": _declared(
+        "start the typed control API on numeric loopback",
+        people=(
+            "binds only to numeric loopback on the documented trusted single-user machine and "
+            "admits only separately declared job types; it accepts neither shell commands nor "
+            "arbitrary URLs"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every submitted job is independently authorized before its "
+            "specification is parsed"
+        ),
+        system=(
+            "fixed loopback binding, exact local UI origin, durable SQLite state, and unrestricted "
+            "shutdown"
+        ),
+    ),
+    "job_worker_start": _declared(
+        "start the local allowlisted job worker",
+        people=(
+            "dispatches only typed jobs whose own declarations are re-resolved immediately before "
+            "execution and exposes no network listener"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; queued work carries its admission audit and is independently "
+            "authorized again at dispatch"
+        ),
+        system=(
+            "closed handler map, bounded polling, cooperative cancellation, and unrestricted "
+            "shutdown"
+        ),
+    ),
+    "local_ui_start": _declared(
+        "start the browser console on its fixed loopback origin",
+        people=(
+            "uses a fixed loopback origin on the trusted single-user machine and can submit typed "
+            "control jobs but no shell command or arbitrary URL"
+        ),
+        direction=f"{_OPERATOR_REQUEST}; browser actions remain subject to API job admission",
+        system="fixed loopback origin, pinned UI dependencies, and unrestricted shutdown",
     ),
 }
 

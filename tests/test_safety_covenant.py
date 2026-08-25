@@ -254,7 +254,12 @@ def test_every_executable_action_has_a_reviewed_declaration(covenant: Covenant) 
     # Adding executable work without declaring its covenant standing must fail
     # here, not silently inherit permission from the allowlist.
     assert {job_type.value for job_type in JobType} <= set(DECLARED_ACTIONS)
-    assert "generate" in DECLARED_ACTIONS  # the CLI executes it outside the control plane
+    assert {
+        "generate",
+        "control_api_start",
+        "job_worker_start",
+        "local_ui_start",
+    } <= set(DECLARED_ACTIONS)
     for action_id in DECLARED_ACTIONS:
         assert resolve_action(action_id, covenant).outcome == "allow", action_id
 

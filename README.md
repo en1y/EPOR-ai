@@ -65,34 +65,65 @@ versions.
 
 ## Quick start
 
-Python 3.11 and [uv](https://docs.astral.sh/uv/) are required.
+Python 3.11, [uv](https://docs.astral.sh/uv/), Node 22.22.x, npm 10.x, and Linux
+`setsid` (normally provided by `util-linux`) are required. Run the local console
+from the repository root.
+
+Install the frozen Python and UI dependencies once after cloning or whenever a
+lockfile changes:
 
 ```bash
 uv sync --frozen --extra dev --extra research --extra train-cpu
-uv run epor doctor
-uv run epor config validate configs/models/epor-tiny.yaml
-uv run epor train pretrain configs/models/epor-tiny.yaml --output runs/smoke
-uv run pytest
+cd ui
+npm ci
+cd ..
 ```
 
-The React console uses Node 22.22.2 from `.nvmrc` and npm 10.9.7 from the
-package manifest. Its committed lockfile is installed without re-resolution:
+Start the API, worker, and browser console together:
+
+```bash
+./start-epor.sh
+```
+
+Open the console at [http://127.0.0.1:5173](http://127.0.0.1:5173). The live
+control-API reference is available at
+[http://127.0.0.1:8742/api/v1/docs](http://127.0.0.1:8742/api/v1/docs).
+
+Press `Ctrl+C` in the launcher terminal to stop the API, worker, and UI
+together.
+
+To verify the UI bundle independently:
 
 ```bash
 cd ui
-npm ci
 npm run build
+cd ..
 ```
 
-Return to the repository root before starting the processes below. `epor ui`
-runs the Vite development server and therefore requires the preceding `npm ci`.
-
-The control plane is local-only:
+To run the services manually instead, start each process from the repository
+root in a separate terminal:
 
 ```bash
-uv run epor api --host 127.0.0.1 --port 8742
-uv run epor worker
-uv run epor ui
+uv run --frozen --no-sync epor api --host 127.0.0.1 --port 8742
+```
+
+```bash
+uv run --frozen --no-sync epor worker
+```
+
+```bash
+uv run --frozen --no-sync epor ui
+```
+
+Stop each manually started process with `Ctrl+C` in its terminal.
+
+The tiny reference path can be checked independently:
+
+```bash
+uv run --frozen --no-sync epor doctor
+uv run --frozen --no-sync epor config validate configs/models/epor-tiny.yaml
+uv run --frozen --no-sync epor train pretrain configs/models/epor-tiny.yaml --output runs/smoke
+uv run --frozen --no-sync pytest
 ```
 
 The browser console is built separately from `ui/`; it calls only the
