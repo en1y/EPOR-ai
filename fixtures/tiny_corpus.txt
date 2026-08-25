@@ -1,0 +1,32 @@
+EPOR is a reproducible language-model research project. Every released weight
+begins from an independent random initialization. Evidence is kept separate from
+hypotheses, and configured context is kept separate from validated context.
+
+Small deterministic experiments are valuable. A tiny model can expose masking,
+checkpoint, tokenizer, optimizer, and data-cursor defects before compute grows.
+The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor
+jugs. Clear tests make failures useful.
+
+Python preserves indentation:
+
+def triangular(n: int) -> int:
+    """Return 1 + 2 + ... + n."""
+    if n < 0:
+        raise ValueError("n must be non-negative")
+    return n * (n + 1) // 2
+
+assert triangular(4) == 10
+
+Mathematics: for every integer n >= 0, the sum from k=0 to n of k is
+n(n+1)/2. The identity follows by pairing the first and last terms.
+
+JSON and shell-like text remain ordinary training bytes:
+{"model":"epor-reference-10m","trained":false,"context":512}
+uv run epor doctor --offline
+
+Multilingual robustness samples: Dobar dan. Café. Zażółć gęślą jaźń.
+Γειά σου κόσμε. こんにちは世界。 مرحبا بالعالم。
+
+Safety and governance are system properties. Local jobs are typed and allowlisted;
+training code does not execute a client-supplied command. Artifacts carry hashes,
+parents, configuration, tokenizer, data, environment, and hardware metadata.

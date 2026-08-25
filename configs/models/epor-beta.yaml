@@ -1,0 +1,42 @@
+schema_version: "1"
+display_name: EPOR-β
+slug: epor-beta
+family: beta
+architecture: moe-decoder
+vocab_size: 65536
+d_model: 4096
+n_layers: 40
+n_heads: 32
+n_kv_heads: 8
+d_ff: 6144
+rope_theta: 1000000.0
+rms_norm_eps: 1.0e-5
+initializer_range: 0.02
+dropout: 0.0
+tie_embeddings: true
+pad_token_id: 0
+bos_token_id: 1
+eos_token_id: 2
+configured_max_context: 262144
+trained_max_context: 0
+validated_max_context: 0
+operational_default_context: 0
+n_routed_experts: 8
+n_shared_experts: 1
+experts_per_token: 1
+total_parameters: 29126889472
+active_parameters: 7987597312
+core_parameters: 7987597312
+research_features:
+  - shared-and-routed-experts
+  - fine-grained-routing
+  - reasoning-specialization
+certified_profiles:
+  - profile_id: reference-pc-8k
+    hardware: Ryzen 5-class CPU, RX 5700 XT 8 GiB, 32 GiB RAM
+    max_context: 8192
+    precision: GGUF Q4 target
+    status: planned
+    ram_gib: 28
+    vram_gib: 7.5
+    notes: v1 certification target; not yet trained or validated

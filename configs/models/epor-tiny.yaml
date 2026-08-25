@@ -1,0 +1,28 @@
+schema_version: "1"
+display_name: EPOR Tiny Debug
+slug: epor-tiny
+family: reference
+architecture: dense-decoder
+vocab_size: 260
+d_model: 64
+n_layers: 2
+n_heads: 4
+n_kv_heads: 2
+d_ff: 192
+rope_theta: 10000.0
+rms_norm_eps: 1.0e-5
+initializer_range: 0.02
+dropout: 0.0
+tie_embeddings: true
+pad_token_id: 0
+bos_token_id: 1
+eos_token_id: 2
+configured_max_context: 128
+trained_max_context: 0
+validated_max_context: 0
+operational_default_context: 0
+total_parameters: 115264
+active_parameters: 115264
+core_parameters: 115264
+research_features:
+  - ci-only-debug-fixture
