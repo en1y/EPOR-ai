@@ -9,11 +9,11 @@ must never seed or be merged into an EPOR checkpoint.
 Public names are always **EPOR-γ**, **EPOR-α**, and **EPOR-β**. Machine-safe IDs
 are `epor-gamma`, `epor-alpha`, and `epor-beta`.
 
-| Model | Purpose | Architecture destination | Configured context target | Local v1 certification goal |
-|---|---|---|---:|---:|
-| **EPOR-γ** | Compact, knowledge-efficient local model | About 8B total parameters; nested ≈4B accelerator-resident core; optional ≈2B slice; MatFormer-style elasticity, multi-teacher distillation, and gated PLE/conditional-memory research | 128K | 32K |
-| **EPOR-α** | Balanced general, code, and reasoning model | 10–12B dense decoder with RMSNorm, SwiGLU, GQA, RoPE, QK-norm, and interleaved bounded-window local/global attention | 256K | 16K |
-| **EPOR-β** | Highest-capability reasoning, code, and math model | About 30B total MoE parameters, 6–8B measured active per token, shared plus fine-grained routed experts, bias-based load balancing, and bounded routing fan-out | 256K | 8K |
+| Model      | Purpose                                            | Architecture destination                                                                                                                                                               | Configured context target | Local v1 certification goal |
+|------------|----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------:|----------------------------:|
+| **EPOR-γ** | Compact, knowledge-efficient local model           | About 8B total parameters; nested ≈4B accelerator-resident core; optional ≈2B slice; MatFormer-style elasticity, multi-teacher distillation, and gated PLE/conditional-memory research |                      128K |                         32K |
+| **EPOR-α** | Balanced general, code, and reasoning model        | 10–12B dense decoder with RMSNorm, SwiGLU, GQA, RoPE, QK-norm, and interleaved bounded-window local/global attention                                                                   |                      256K |                         16K |
+| **EPOR-β** | Highest-capability reasoning, code, and math model | About 30B total MoE parameters, 6–8B measured active per token, shared plus fine-grained routed experts, bias-based load balancing, and bounded routing fan-out                        |                      256K |                          8K |
 
 Every architectural mechanism named in this roadmap is a candidate with a
 deciding gate, not a settled choice. The [technique adoption
@@ -395,31 +395,31 @@ checkpoints. Sources are catalog IDs in
 [`research/catalog.yaml`](../research/catalog.yaml); dossiers are under
 [`docs/research/`](research/).
 
-| Technique | Source | Evidence | Decided at | Must beat |
-|---|---|---|---|---|
-| RMSNorm, SwiGLU, GQA, RoPE, tied embeddings | common practice | `disclosed` | shipped in v0.0.1 reference model | — |
-| QK-norm | `gemma-3-technical-report` | `disclosed` | v0.0.5 | pre-norm block without QK-norm |
-| Interleaved local/global attention, bounded window | `gemma-3-technical-report` | `disclosed`, ratio study `reported-result` | v0.0.8, G6 | full attention, on KV bytes/token *and* position-wise retrieval |
-| Split RoPE base (local vs global layers) | `gemma-3-technical-report` | `disclosed` | v0.0.8, G6 | single base with YaRN extension |
-| Multi-token prediction as a training objective | `deepseek-v3` | `disclosed` | v0.0.5, G3/G5 | single-token training at matched tokens |
-| FP8 mixed precision | `deepseek-v3` | `disclosed` | v0.0.5, cloud only | BF16 loss-curve agreement; never the reference-machine path |
-| Bias-based (auxiliary-loss-free) load balancing | `deepseek-v3` | `disclosed`; published constants `unknown` at EPOR scale | v0.4.0, G7 | auxiliary-loss balancing on utilization, dead experts, quality |
-| Node-limited routing | `deepseek-v3` | `disclosed` | v0.4.0, G7 | unrestricted routing on communication cost vs quality |
-| Shared plus fine-grained routed experts | `deepseek-moe` | `disclosed`, trade-offs `reported-result` | v0.4.0, G7 | compute-matched dense control |
-| Multi-head Latent Attention | `deepseek-v2`, `deepseek-v3` | `disclosed`; benefit at EPOR scale `hypothesis` | v0.0.8, v0.8.0 | GQA plus cache quantization, including GGUF parity |
-| DeepSeek Sparse Attention | `deepseek-v3-2` | `disclosed` | v0.0.8 retrofit, v0.8.0 | an already-certified dense or local/global checkpoint |
-| MatFormer nested slices | `matformer`, `gemma-3n-overview` | `disclosed`; slice quality `hypothesis` | G4, v0.2.0 | independently trained compute-matched dense per slice |
-| PLE / Engram-style conditional memory | `gemma-3n-overview`, `deepseek-engram` | `disclosed`; usefulness `hypothesis` | G4, v0.2.0 | dense and MatFormer controls on knowledge per active FLOP, GB, latency |
-| Quantization-aware training | `gemma-3-technical-report` | `disclosed` | v0.2.0, G9 | post-training quantization, on measured quality drift |
-| Speculative decoding from nested slices | `matformer` | `reported-result` | v0.8.0 | MTP heads as the competing draft source |
-| Multi-teacher distillation | `gemma-3-technical-report`, `matformer` | `disclosed` | v0.0.7, v0.2.0 | from-scratch student at matched compute; licensed teacher outputs only |
-| Constitutional critique and revision | `anthropic-constitutional-ai` | `disclosed`; benefit `hypothesis` | v0.0.7, G10 | SFT and human-preference controls |
-| DPO baseline, then scope-limited GRPO | `deepseek-llm`, `deepseek-math` | `disclosed` | v0.0.7, v0.5.0 | SFT baseline; verifiable rewards only, never free-form as primary |
-| Cold-start data before RL, readability gates | `deepseek-r1` | `reported-result` failure mode | v0.5.0 | RL-first variant, on readability and language consistency |
-| Model-written evaluations | `anthropic-model-written-evals` | `disclosed`; bias `reported-result` | v0.0.7 | human-authored held-out set; humans keep evaluation ownership |
-| Near-duplicate control and repetition budgeting | `anthropic-repeated-data` | `reported-result`; mechanism `hypothesis` | v0.0.3, G2 | nominal token counts, on effective unique tokens and memorization |
-| Sparse autoencoders, circuit tracing | `anthropic-scaling-monosemanticity`, `anthropic-circuit-tracing` | `disclosed`; completeness `unknown` | v0.6.0 | nothing — evidence only, never a correctness certificate |
-| Contextual retrieval | `anthropic-contextual-retrieval` | `reported-result` | external system, any version | never raises a model's trained or validated context length |
+| Technique                                          | Source                                                           | Evidence                                                 | Decided at                        | Must beat                                                              |
+|----------------------------------------------------|------------------------------------------------------------------|----------------------------------------------------------|-----------------------------------|------------------------------------------------------------------------|
+| RMSNorm, SwiGLU, GQA, RoPE, tied embeddings        | common practice                                                  | `disclosed`                                              | shipped in v0.0.1 reference model | —                                                                      |
+| QK-norm                                            | `gemma-3-technical-report`                                       | `disclosed`                                              | v0.0.5                            | pre-norm block without QK-norm                                         |
+| Interleaved local/global attention, bounded window | `gemma-3-technical-report`                                       | `disclosed`, ratio study `reported-result`               | v0.0.8, G6                        | full attention, on KV bytes/token *and* position-wise retrieval        |
+| Split RoPE base (local vs global layers)           | `gemma-3-technical-report`                                       | `disclosed`                                              | v0.0.8, G6                        | single base with YaRN extension                                        |
+| Multi-token prediction as a training objective     | `deepseek-v3`                                                    | `disclosed`                                              | v0.0.5, G3/G5                     | single-token training at matched tokens                                |
+| FP8 mixed precision                                | `deepseek-v3`                                                    | `disclosed`                                              | v0.0.5, cloud only                | BF16 loss-curve agreement; never the reference-machine path            |
+| Bias-based (auxiliary-loss-free) load balancing    | `deepseek-v3`                                                    | `disclosed`; published constants `unknown` at EPOR scale | v0.4.0, G7                        | auxiliary-loss balancing on utilization, dead experts, quality         |
+| Node-limited routing                               | `deepseek-v3`                                                    | `disclosed`                                              | v0.4.0, G7                        | unrestricted routing on communication cost vs quality                  |
+| Shared plus fine-grained routed experts            | `deepseek-moe`                                                   | `disclosed`, trade-offs `reported-result`                | v0.4.0, G7                        | compute-matched dense control                                          |
+| Multi-head Latent Attention                        | `deepseek-v2`, `deepseek-v3`                                     | `disclosed`; benefit at EPOR scale `hypothesis`          | v0.0.8, v0.8.0                    | GQA plus cache quantization, including GGUF parity                     |
+| DeepSeek Sparse Attention                          | `deepseek-v3-2`                                                  | `disclosed`                                              | v0.0.8 retrofit, v0.8.0           | an already-certified dense or local/global checkpoint                  |
+| MatFormer nested slices                            | `matformer`, `gemma-3n-overview`                                 | `disclosed`; slice quality `hypothesis`                  | G4, v0.2.0                        | independently trained compute-matched dense per slice                  |
+| PLE / Engram-style conditional memory              | `gemma-3n-overview`, `deepseek-engram`                           | `disclosed`; usefulness `hypothesis`                     | G4, v0.2.0                        | dense and MatFormer controls on knowledge per active FLOP, GB, latency |
+| Quantization-aware training                        | `gemma-3-technical-report`                                       | `disclosed`                                              | v0.2.0, G9                        | post-training quantization, on measured quality drift                  |
+| Speculative decoding from nested slices            | `matformer`                                                      | `reported-result`                                        | v0.8.0                            | MTP heads as the competing draft source                                |
+| Multi-teacher distillation                         | `gemma-3-technical-report`, `matformer`                          | `disclosed`                                              | v0.0.7, v0.2.0                    | from-scratch student at matched compute; licensed teacher outputs only |
+| Constitutional critique and revision               | `anthropic-constitutional-ai`                                    | `disclosed`; benefit `hypothesis`                        | v0.0.7, G10                       | SFT and human-preference controls                                      |
+| DPO baseline, then scope-limited GRPO              | `deepseek-llm`, `deepseek-math`                                  | `disclosed`                                              | v0.0.7, v0.5.0                    | SFT baseline; verifiable rewards only, never free-form as primary      |
+| Cold-start data before RL, readability gates       | `deepseek-r1`                                                    | `reported-result` failure mode                           | v0.5.0                            | RL-first variant, on readability and language consistency              |
+| Model-written evaluations                          | `anthropic-model-written-evals`                                  | `disclosed`; bias `reported-result`                      | v0.0.7                            | human-authored held-out set; humans keep evaluation ownership          |
+| Near-duplicate control and repetition budgeting    | `anthropic-repeated-data`                                        | `reported-result`; mechanism `hypothesis`                | v0.0.3, G2                        | nominal token counts, on effective unique tokens and memorization      |
+| Sparse autoencoders, circuit tracing               | `anthropic-scaling-monosemanticity`, `anthropic-circuit-tracing` | `disclosed`; completeness `unknown`                      | v0.6.0                            | nothing — evidence only, never a correctness certificate               |
+| Contextual retrieval                               | `anthropic-contextual-retrieval`                                 | `reported-result`                                        | external system, any version      | never raises a model's trained or validated context length             |
 
 Three rules govern the ledger. A `reported-result` is the other lab's
 measurement under their data, scale, and hardware, and never substitutes for an
