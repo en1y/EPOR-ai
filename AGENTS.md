@@ -48,6 +48,37 @@ and misuse evaluations, authorization boundaries, human escalation, audit
 trails, and safe failure modes. Never claim compliance from prompt wording
 alone.
 
+## Branch and worktree workflow
+
+- Treat `master` as a protected, releasable branch. Do not make working-tree
+  edits or direct development commits while `master` is checked out. Only an
+  integration merge or pull request reviewed and authorized by the project owner
+  may update `master` after the applicable release gates pass.
+- At the start of a roadmap version, create or reuse one integration branch from
+  `master`, named `codex/version-vX.Y.Z` (for example,
+  `codex/version-v0.0.2`), and check it out in one dedicated integration
+  worktree. Do not create duplicate integration branches for the same version.
+- Create a distinct task branch from the version branch for every independent or
+  parallel unit of work, named `codex/work-vX.Y.Z-<task>`, and check each task
+  branch out in its own linked worktree. Do not check out the same branch in
+  multiple worktrees or bypass this rule with `--force`; multiple worktrees for a
+  version use separate task branches, not repeated checkouts of the version
+  branch.
+- Keep each task worktree scoped to one task and one agent at a time. Test and
+  review the task branch before merging it into the version branch. Periodically
+  integrate the version branch into active task branches when they need current
+  shared changes.
+- For maintenance that is not part of the active roadmap version, create a
+  short-lived maintenance branch and worktree from `master`; never use the
+  protected checkout as the working directory.
+- Before creating a branch or worktree, inspect `git status`, existing branches,
+  and `git worktree list`. Leave unrelated or uncommitted user changes in their
+  original worktree, and create the new worktree from the intended clean branch
+  or commit instead of moving, stashing, or committing those changes.
+- Remove a task worktree and branch only after its changes are integrated and
+  its working tree is clean. Never delete a worktree that contains uncommitted
+  changes.
+
 ## Repository requirements
 
 - Commit every intended source, test, documentation, configuration, and
