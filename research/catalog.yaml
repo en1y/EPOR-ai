@@ -1,0 +1,523 @@
+schema_version: 1
+sources:
+  - id: anthropic-general-assistant
+    canonical_url: https://arxiv.org/pdf/2112.00861
+    title: A General Language Assistant as a Laboratory for Alignment
+    authors: [Anthropic Research]
+    organization: Anthropic
+    publication_date: '2021-12-02'
+    retrieved_at: '2026-08-25T10:41:05.983301Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 8028204e5ddb7b028b07729257fb2588eaf9bb9cbcc27e77da19f0287103d069
+    license_access: Public arXiv access; consult the article's current arXiv license before redistribution.
+    tags: [anthropic, alignment, historical-disclosure, pretraining]
+    evidence_classes: [disclosed, reported-result, unknown]
+    local_paths:
+      raw: research/raw/anthropic-general-assistant.pdf
+      extracted: research/extracted/anthropic-general-assistant.txt
+      metadata: research/cache/anthropic-general-assistant.json
+
+  - id: anthropic-hh-rlhf
+    canonical_url: https://arxiv.org/pdf/2204.05862
+    title: Training a Helpful and Harmless Assistant with Reinforcement Learning from Human Feedback
+    authors: [Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, Nicholas Joseph, Saurav Kadavath, Jackson Kernion, Tom Conerly, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Danny Hernandez, Tristan Hume, Scott Johnston, Shauna Kravec, Liane Lovitt, Neel Nanda, Catherine Olsson, Dario Amodei, Tom Brown, Jack Clark, Sam McCandlish, Chris Olah, Ben Mann, Jared Kaplan]
+    organization: Anthropic
+    publication_date: '2022-04-12'
+    retrieved_at: '2026-08-25T10:41:07.528228Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 26e390d4f76938d2e2591225603637c643cc108e94afb756c65f5d2e0fc9037b
+    license_access: Public arXiv access; dataset and paper rights are separate and must be reviewed independently.
+    tags: [anthropic, alignment, hh-rlhf, rlhf, preferences]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/anthropic-hh-rlhf.pdf
+      extracted: research/extracted/anthropic-hh-rlhf.txt
+      metadata: research/cache/anthropic-hh-rlhf.json
+
+  - id: anthropic-constitutional-ai
+    canonical_url: https://arxiv.org/pdf/2212.08073
+    title: 'Constitutional AI: Harmlessness from AI Feedback'
+    authors: [Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, Carol Chen, Catherine Olsson, Christopher Olah, Danny Hernandez, Dawn Drain, Deep Ganguli, Dustin Li, Eli Tran-Johnson, Ethan Perez, Jamie Kerr, Jared Mueller, Jeffrey Ladish, Joshua Landau, Kamal Ndousse, Kamile Lukosuite, Liane Lovitt, Michael Sellitto, Nelson Elhage, Nicholas Schiefer, Noemi Mercado, Nova DasSarma, Robert Lasenby, Robin Larson, Sam Ringer, Scott Johnston, Shauna Kravec, Sheer El Showk, Stanislav Fort, Tamera Lanham, Timothy Telleen-Lawton, Tom Conerly, Tom Henighan, Tristan Hume, Samuel Bowman, Zac Hatfield-Dodds, Ben Mann, Dario Amodei, Nicholas Joseph, Sam McCandlish, Tom Brown, Jack Clark, Deep Ganguli]
+    organization: Anthropic
+    publication_date: '2022-12-15'
+    retrieved_at: '2026-08-25T10:41:07.849213Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 9a456a07ad346e3372f9867d346f69f5b0f68b4c65f060aca0b8a13fa9d98e83
+    license_access: Public arXiv access; consult the article's current arXiv license before redistribution.
+    tags: [anthropic, alignment, constitutional-ai, rlaif, critique-revision]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/anthropic-constitutional-ai.pdf
+      extracted: research/extracted/anthropic-constitutional-ai.txt
+      metadata: research/cache/anthropic-constitutional-ai.json
+
+  - id: anthropic-repeated-data
+    canonical_url: https://arxiv.org/pdf/2205.10487
+    title: Scaling Laws and Interpretability of Learning from Repeated Data
+    authors: [Danny Hernandez, Tom Brown, Tom Conerly, Nova DasSarma, Dawn Drain, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Tom Henighan, Tristan Hume, Scott Johnston, Ben Mann, Chris Olah, Catherine Olsson, Dario Amodei, Nicholas Joseph, Jared Kaplan, Sam McCandlish]
+    organization: Anthropic
+    publication_date: '2022-05-21'
+    retrieved_at: '2026-08-25T10:41:09.820282Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 43358820e4c4d95f01571b912682a68ff01ea4d77889f9819fb6d21fbbf13ba9
+    license_access: Public arXiv access; consult the article's current arXiv license before redistribution.
+    tags: [anthropic, data, repetition, scaling-laws, memorization]
+    evidence_classes: [reported-result, hypothesis, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/anthropic-repeated-data.pdf
+      extracted: research/extracted/anthropic-repeated-data.txt
+      metadata: research/cache/anthropic-repeated-data.json
+
+  - id: anthropic-long-context-prompting
+    canonical_url: https://www.anthropic.com/research/prompting-long-context
+    title: Prompt engineering for Claude's long context window
+    authors: [Anthropic Prompt Engineering Team]
+    organization: Anthropic
+    publication_date: '2023-09-23'
+    retrieved_at: '2026-08-25T10:41:10.253491Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: 5bc49da36a209aa8bf00d93aef8d3993377c6fbb093b5bd0f9276dcac7d742d4
+    license_access: Public web access under Anthropic site terms; no redistribution right is assumed.
+    tags: [anthropic, long-context, retrieval, prompting]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/anthropic-long-context-prompting.html
+      extracted: research/extracted/anthropic-long-context-prompting.txt
+      metadata: research/cache/anthropic-long-context-prompting.json
+
+  - id: anthropic-contextual-retrieval
+    canonical_url: https://www.anthropic.com/engineering/contextual-retrieval
+    title: Introducing Contextual Retrieval
+    authors: [Anthropic Engineering]
+    organization: Anthropic
+    publication_date: '2024-09-19'
+    retrieved_at: '2026-08-25T10:41:11.097445Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: c117186b71ed871604221f7fdce2c8c11f9387440fb2541471524959f90c613c
+    license_access: Public web access under Anthropic site terms; no redistribution right is assumed.
+    tags: [anthropic, retrieval, rag, bm25, embeddings]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/anthropic-contextual-retrieval.html
+      extracted: research/extracted/anthropic-contextual-retrieval.txt
+      metadata: research/cache/anthropic-contextual-retrieval.json
+
+  - id: anthropic-claude-3-model-card
+    canonical_url: https://www-cdn.anthropic.com/de8ba9b01c9ab7cbabf5c33b80b7bbc618857627/Model-Card-Claude-3.pdf
+    title: The Claude 3 Model Family - Opus, Sonnet, Haiku
+    authors: [Anthropic]
+    organization: Anthropic
+    publication_date: '2024-03-04'
+    retrieved_at: '2026-08-25T10:41:13.762556Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: a96214e5d495dec76f6120891233aa97a73386b35b065a6709840b07588ed118
+    license_access: Public model-card access under Anthropic terms; no redistribution right is assumed.
+    tags: [anthropic, claude-3, model-card, disclosure, safety]
+    evidence_classes: [disclosed, reported-result, unknown]
+    local_paths:
+      raw: research/raw/anthropic-claude-3-model-card.pdf
+      extracted: research/extracted/anthropic-claude-3-model-card.txt
+      metadata: research/cache/anthropic-claude-3-model-card.json
+
+  - id: anthropic-model-written-evals
+    canonical_url: https://arxiv.org/pdf/2212.09251
+    title: Discovering Language Model Behaviors with Model-Written Evaluations
+    authors: [Ethan Perez, Sam Ringer, Kamilė Lukošiūtė, Karina Nguyen, Edwin Chen, Scott Heiner, Craig Pettit, Catherine Olsson, Sandipan Kundu, Saurav Kadavath, Andy Jones, Anna Chen, Benjamin Mann, Brian Israel, Bryan Seethor, Cameron McKinnon, Christopher Olah, Da Yan, Daniela Amodei, Dario Amodei, Dawn Drain, Dustin Li, Eli Tran-Johnson, Geoffery Irving, Jackson Kernion, Jamie Kerr, Jared Mueller, Jeffrey Ladish, Joshua Landau, Kamal Ndousse, Landon Goldberg, Liane Lovitt, Martin Lucas, Michael Sellitto, Miranda Zhang, Nicholas Schiefer, Noemi Mercado, Nova DasSarma, Robin Larson, Rory Grosse, Sam McCandlish, Scott Johnston, Shauna Kravec, Sheer El Showk, Tamera Lanham, Timothy Telleen-Lawton, Tom Brown, Tom Henighan, Tristan Hume, Yuntao Bai, Zac Hatfield-Dodds, Jack Clark, Samuel Bowman, Amanda Askell, Roger Grosse, Danny Hernandez, Deep Ganguli, Evan Hubinger, Nicholas Joseph, Ben Mann, Jared Kaplan]
+    organization: Anthropic
+    publication_date: '2022-12-19'
+    retrieved_at: '2026-08-25T10:41:15.101602Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 7fd476342abaa95cbde50e1c5108765f2c53c3c84a7d55c4f2584fb8aaa01b10
+    license_access: Public arXiv access; evaluation data licenses require separate review.
+    tags: [anthropic, evaluation, model-written-evals, behavior, alignment]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/anthropic-model-written-evals.pdf
+      extracted: research/extracted/anthropic-model-written-evals.txt
+      metadata: research/cache/anthropic-model-written-evals.json
+
+  - id: anthropic-towards-monosemanticity
+    canonical_url: https://transformer-circuits.pub/2023/monosemantic-features/index.html
+    title: 'Towards Monosemanticity: Decomposing Language Models With Dictionary Learning'
+    authors: [Trenton Bricken, Adly Templeton, Joshua Batson, Brian Chen, Adam Jermyn, Tom Conerly, Nicholas L Turner, Cem Anil, Carson Denison, Amanda Askell, Robert Lasenby, Yifan Wu, Shauna Kravec, Nicholas Schiefer, Tim Maxwell, Nicholas Joseph, Alex Tamkin, Karina Nguyen, Brayden McLean, Josiah E Burke, Tristan Hume, Shan Carter, Tom Henighan, Chris Olah]
+    organization: Anthropic
+    publication_date: '2023-10-04'
+    retrieved_at: '2026-08-25T10:41:17.621380Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: d3011059d4b3d55dd7347cb5c295e8d28cc8478c6caeabcceea177ddc6ce68fa
+    license_access: Public Transformer Circuits article; consult the page license before redistribution.
+    tags: [anthropic, interpretability, sparse-autoencoder, dictionary-learning]
+    evidence_classes: [disclosed, reported-result, hypothesis]
+    local_paths:
+      raw: research/raw/anthropic-towards-monosemanticity.html
+      extracted: research/extracted/anthropic-towards-monosemanticity.txt
+      metadata: research/cache/anthropic-towards-monosemanticity.json
+
+  - id: anthropic-scaling-monosemanticity
+    canonical_url: https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html
+    title: 'Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet'
+    authors: [Adly Templeton, Tom Conerly, Jonathan Marcus, Jack Lindsey, Trenton Bricken, Brian Chen, Adam Pearce, Craig Citro, Emmanuel Ameisen, Andy Jones, Hoagy Cunningham, Nicholas L Turner, Callum McDougall, Monte MacDiarmid, C. Daniel Freeman, Theodore R. Sumers, Edward Rees, Joshua Batson, Adam Jermyn, Shan Carter, Chris Olah, Tom Henighan]
+    organization: Anthropic
+    publication_date: '2024-05-21'
+    retrieved_at: '2026-08-25T10:41:19.541432Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: dbef0950973c3767cc2e38edc9499f7e63d4fb0c2768b1d17634ed778b98fef6
+    license_access: Public Transformer Circuits article; consult the page license before redistribution.
+    tags: [anthropic, interpretability, sparse-autoencoder, claude-3]
+    evidence_classes: [disclosed, reported-result, hypothesis, unknown]
+    local_paths:
+      raw: research/raw/anthropic-scaling-monosemanticity.html
+      extracted: research/extracted/anthropic-scaling-monosemanticity.txt
+      metadata: research/cache/anthropic-scaling-monosemanticity.json
+
+  - id: anthropic-circuit-tracing
+    canonical_url: https://transformer-circuits.pub/2025/attribution-graphs/methods.html
+    title: 'Circuit Tracing: Revealing Computational Graphs in Language Models'
+    authors: [Jack Lindsey, Wes Gurnee, Emmanuel Ameisen, Brian Chen, Adam Pearce, Nicholas L Turner, Craig Citro, David Abrahams, Shan Carter, Basil Hosmer, Jonathan Marcus, Michael Sklar, Adly Templeton, Trenton Bricken, Callum McDougall, Hoagy Cunningham, Thomas Henighan, Adam Jermyn, Andy Jones, Chris Olah]
+    organization: Anthropic
+    publication_date: '2025-03-27'
+    retrieved_at: '2026-08-25T10:41:20.095641Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: a70ce88c09533238154875dbb1320fd2d2aebedfd5fc7e782518385b3d597673
+    license_access: Public Transformer Circuits article; consult the page license and tool repository license separately.
+    tags: [anthropic, interpretability, circuit-tracing, attribution-graphs]
+    evidence_classes: [disclosed, reported-result, hypothesis, unknown]
+    local_paths:
+      raw: research/raw/anthropic-circuit-tracing.html
+      extracted: research/extracted/anthropic-circuit-tracing.txt
+      metadata: research/cache/anthropic-circuit-tracing.json
+
+  - id: deepseek-llm
+    canonical_url: https://arxiv.org/pdf/2401.02954
+    title: 'DeepSeek LLM: Scaling Open-Source Language Models with Longtermism'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-01-05'
+    retrieved_at: '2026-08-25T10:41:21.801470Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 9be2b427133468d443ff3a6411287a6f64759ed1e9cdd9a07f07486f11b00591
+    license_access: Public arXiv access; paper, code, data, and weights have separate licenses.
+    tags: [deepseek, dense, pretraining, scaling, dpo]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/deepseek-llm.pdf
+      extracted: research/extracted/deepseek-llm.txt
+      metadata: research/cache/deepseek-llm.json
+
+  - id: deepseek-moe
+    canonical_url: https://arxiv.org/pdf/2401.06066
+    title: 'DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models'
+    authors: [Damai Dai, Chengqi Deng, Chenggang Zhao, R. X. Xu, Huazuo Gao, Deli Chen, Jiashi Li, Wangding Zeng, Xingkai Yu, Y. Wu, Zhenda Xie, Y. K. Li, Panpan Huang, Fuli Luo, Chong Ruan, Zhifang Sui, Wenfeng Liang]
+    organization: DeepSeek-AI
+    publication_date: '2024-01-11'
+    retrieved_at: '2026-08-25T10:41:21.888726Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: a64b509e1410d09cf5b70570788d27790985fb9808ce436b9da8de73f2eed651
+    license_access: Public arXiv access; paper, code, data, and weights have separate licenses.
+    tags: [deepseek, moe, routed-experts, shared-experts, load-balancing]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, hypothesis]
+    local_paths:
+      raw: research/raw/deepseek-moe.pdf
+      extracted: research/extracted/deepseek-moe.txt
+      metadata: research/cache/deepseek-moe.json
+
+  - id: deepseek-coder
+    canonical_url: https://arxiv.org/pdf/2401.14196
+    title: 'DeepSeek-Coder: When the Large Language Model Meets Programming - The Rise of Code Intelligence'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-01-26'
+    retrieved_at: '2026-08-25T10:41:22.081223Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: f29f711cb4fc6f7776dd150e16370604d9a4068227b6545d08a44caad7ae6cbe
+    license_access: Public arXiv access; repository and training-corpus licenses require separate review.
+    tags: [deepseek, code, repository-context, fill-in-the-middle]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/deepseek-coder.pdf
+      extracted: research/extracted/deepseek-coder.txt
+      metadata: research/cache/deepseek-coder.json
+
+  - id: deepseek-math
+    canonical_url: https://arxiv.org/pdf/2402.03300
+    title: 'DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-02-05'
+    retrieved_at: '2026-08-25T10:41:22.265128Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 6cc20b3c5b8d25b8b53868fc4ec1792c144f07d67bdf7395138efd4422197e7b
+    license_access: Public arXiv access; source data and generated traces require independent provenance review.
+    tags: [deepseek, math, reasoning, grpo, data-selection]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/deepseek-math.pdf
+      extracted: research/extracted/deepseek-math.txt
+      metadata: research/cache/deepseek-math.json
+
+  - id: deepseek-v2
+    canonical_url: https://arxiv.org/pdf/2405.04434
+    title: 'DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-05-07'
+    retrieved_at: '2026-08-25T10:41:22.425452Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: f149f9c09aa8b46ce6a740a255a99b7cc2317ac5b065989339919b7e6c329c9b
+    license_access: Public arXiv access; paper, code, data, and weights have separate licenses.
+    tags: [deepseek, moe, mla, training, inference]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, hypothesis]
+    local_paths:
+      raw: research/raw/deepseek-v2.pdf
+      extracted: research/extracted/deepseek-v2.txt
+      metadata: research/cache/deepseek-v2.json
+
+  - id: deepseek-coder-v2
+    canonical_url: https://arxiv.org/pdf/2406.11931
+    title: 'DeepSeek-Coder-V2: Breaking the Barrier of Closed-Source Models in Code Intelligence'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-06-17'
+    retrieved_at: '2026-08-25T10:41:22.484192Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: de4e77c86e6320ff0974aac3825133540fa7ddc31da79e0d8a353dc6264549a3
+    license_access: Public arXiv access; repository and training-corpus licenses require separate review.
+    tags: [deepseek, code, moe, continued-pretraining, long-context]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/deepseek-coder-v2.pdf
+      extracted: research/extracted/deepseek-coder-v2.txt
+      metadata: research/cache/deepseek-coder-v2.json
+
+  - id: deepseek-v3
+    canonical_url: https://arxiv.org/pdf/2412.19437
+    title: DeepSeek-V3 Technical Report
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-12-26'
+    retrieved_at: '2026-08-25T10:41:22.672595Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 812a3fd645c80725354de9d831a6785503007a60681461407f64e97305fa9330
+    license_access: Public arXiv access; paper, code, data, and weights have separate licenses.
+    tags: [deepseek, moe, mla, multi-token-prediction, infrastructure]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, unknown]
+    local_paths:
+      raw: research/raw/deepseek-v3.pdf
+      extracted: research/extracted/deepseek-v3.txt
+      metadata: research/cache/deepseek-v3.json
+
+  - id: deepseek-r1
+    canonical_url: https://arxiv.org/pdf/2501.12948
+    title: 'DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2025-01-22'
+    retrieved_at: '2026-08-25T10:41:23.129550Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: b191b0a365a64b4ab2791d117069ed17a2933d03554a662ced58b37df52018f4
+    license_access: Public arXiv access; model, data, and distilled-weight licenses require separate review.
+    tags: [deepseek, reasoning, reinforcement-learning, grpo, distillation]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, hypothesis]
+    local_paths:
+      raw: research/raw/deepseek-r1.pdf
+      extracted: research/extracted/deepseek-r1.txt
+      metadata: research/cache/deepseek-r1.json
+
+  - id: deepseek-v3-2
+    canonical_url: https://arxiv.org/pdf/2512.02556
+    title: 'DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2025-12-02'
+    retrieved_at: '2026-08-25T10:41:23.243747Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 2bec0671778769c159ec389412727d1f3d4889fe1c71564b61edaa24705bd17b
+    license_access: Public arXiv access; paper, code, data, and weights have separate licenses.
+    tags: [deepseek, sparse-attention, reasoning, agents, reinforcement-learning]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, unknown]
+    local_paths:
+      raw: research/raw/deepseek-v3-2.pdf
+      extracted: research/extracted/deepseek-v3-2.txt
+      metadata: research/cache/deepseek-v3-2.json
+
+  - id: deepseek-engram
+    canonical_url: https://arxiv.org/pdf/2601.07372
+    title: 'Conditional Memory via Scalable Lookup: A New Axis of Sparsity for Large Language Models'
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2026-01-13'
+    retrieved_at: '2026-08-25T10:41:23.334341Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: 8eab2dd35e4557d4142e5959697836f6cf926d0fbc29016257f1eea5be73df5d
+    license_access: Public arXiv access; repository, data, and model rights require separate review.
+    tags: [deepseek, engram, conditional-memory, sparsity, lookup]
+    evidence_classes: [disclosed, reported-result, hypothesis, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/deepseek-engram.pdf
+      extracted: research/extracted/deepseek-engram.txt
+      metadata: research/cache/deepseek-engram.json
+
+  - id: deepseek-v3-repository
+    canonical_url: https://raw.githubusercontent.com/deepseek-ai/DeepSeek-V3/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/README.md
+    title: DeepSeek-V3 official repository
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2024-12-26'
+    retrieved_at: '2026-08-25T11:00:31.541263Z'
+    media_type: text/markdown
+    integrity: pinned
+    sha256: 1f766f151bb4d501b18c9d1e229ac25682c68c75893d6d3bc9734e2a60125c0e
+    license_access: README pinned to commit 9b4e9788e4a3a731f7567338ed15d3ec549ce03b; inspect the repository license before code reuse.
+    tags: [deepseek, infrastructure, repository, inference, training]
+    evidence_classes: [disclosed, unknown]
+    local_paths:
+      raw: research/raw/deepseek-v3-repository.md
+      extracted: research/extracted/deepseek-v3-repository.txt
+      metadata: research/cache/deepseek-v3-repository.json
+
+  - id: deepseek-deepgemm
+    canonical_url: https://raw.githubusercontent.com/deepseek-ai/DeepGEMM/559d79fb6994a58b8a15b4b93bf13ccc16edf247/README.md
+    title: DeepGEMM official repository
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2026-08-25'
+    retrieved_at: '2026-08-25T11:00:31.745958Z'
+    media_type: text/markdown
+    integrity: pinned
+    sha256: df82e7d6979e49e864cd0c8b2389648ebfa226b9f4b331646d7d5cdc4951ee63
+    license_access: README pinned to commit 559d79fb6994a58b8a15b4b93bf13ccc16edf247; inspect the repository license before code reuse.
+    tags: [deepseek, infrastructure, kernels, fp8, gemm]
+    evidence_classes: [disclosed, reported-result, unknown]
+    local_paths:
+      raw: research/raw/deepseek-deepgemm.md
+      extracted: research/extracted/deepseek-deepgemm.txt
+      metadata: research/cache/deepseek-deepgemm.json
+
+  - id: deepseek-flashmla
+    canonical_url: https://raw.githubusercontent.com/deepseek-ai/FlashMLA/15f13e5030374295491c5ce31b02d7e63a7772c6/README.md
+    title: FlashMLA official repository
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2026-08-25'
+    retrieved_at: '2026-08-25T11:00:31.974977Z'
+    media_type: text/markdown
+    integrity: pinned
+    sha256: 46c001c53800f47148918f4fc2969102492dd5164f710fc015db1622f6f9929a
+    license_access: README pinned to commit 15f13e5030374295491c5ce31b02d7e63a7772c6; inspect the repository license before code reuse.
+    tags: [deepseek, infrastructure, mla, attention, kernels]
+    evidence_classes: [disclosed, reported-result, unknown]
+    local_paths:
+      raw: research/raw/deepseek-flashmla.md
+      extracted: research/extracted/deepseek-flashmla.txt
+      metadata: research/cache/deepseek-flashmla.json
+
+  - id: deepseek-deepep
+    canonical_url: https://raw.githubusercontent.com/deepseek-ai/DeepEP/01dc3aaac82068020353dce2c302e38153c0bfaa/README.md
+    title: DeepEP official repository
+    authors: [DeepSeek-AI]
+    organization: DeepSeek-AI
+    publication_date: '2026-08-25'
+    retrieved_at: '2026-08-25T11:00:32.173270Z'
+    media_type: text/markdown
+    integrity: pinned
+    sha256: b9ad0491550a6e737761b89a08204e27f0893b4d9e6a1dfff9a3e5d3c3053b5d
+    license_access: README pinned to commit 01dc3aaac82068020353dce2c302e38153c0bfaa; inspect the repository license before code reuse.
+    tags: [deepseek, infrastructure, moe, communication, expert-parallel]
+    evidence_classes: [disclosed, reported-result, unknown]
+    local_paths:
+      raw: research/raw/deepseek-deepep.md
+      extracted: research/extracted/deepseek-deepep.txt
+      metadata: research/cache/deepseek-deepep.json
+
+  - id: gemma-3-technical-report
+    canonical_url: https://arxiv.org/pdf/2503.19786
+    title: Gemma 3 Technical Report
+    authors: [Gemma Team]
+    organization: Google DeepMind
+    publication_date: '2025-03-25'
+    retrieved_at: '2026-08-25T10:41:27.251150Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: b2793d288d6672f8d6a03f65370bb4a48d607f54937a22fc7d9f727435795305
+    license_access: Public arXiv access; Gemma weights, code, and paper rights are separate.
+    tags: [google, gemma-3, local-global-attention, distillation, long-context]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/gemma-3-technical-report.pdf
+      extracted: research/extracted/gemma-3-technical-report.txt
+      metadata: research/cache/gemma-3-technical-report.json
+
+  - id: gemma-3n-overview
+    canonical_url: https://ai.google.dev/gemma/docs/gemma-3n
+    title: Gemma 3n model overview
+    authors: [Gemma Team]
+    organization: Google DeepMind
+    publication_date: '2025-06-26'
+    retrieved_at: '2026-08-25T10:41:28.315593Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: 3dd0c9fc299e242b9a32a8677af25ae18c7c4e0f20ddc9f453bb00942500c174
+    license_access: Google marks page text CC BY 4.0 and code samples Apache-2.0 unless otherwise noted; Gemma weights use separate terms.
+    tags: [google, gemma-3n, matformer, ple, edge-inference]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, hypothesis]
+    local_paths:
+      raw: research/raw/gemma-3n-overview.html
+      extracted: research/extracted/gemma-3n-overview.txt
+      metadata: research/cache/gemma-3n-overview.json
+
+  - id: gemma-3n-developer-guide
+    canonical_url: https://developers.googleblog.com/introducing-gemma-3n-developer-guide/
+    title: 'Introducing Gemma 3n: The developer guide'
+    authors: [Omar Sanseviero, Ian Ballantyne]
+    organization: Google
+    publication_date: '2025-06-26'
+    retrieved_at: '2026-08-25T10:41:29.327363Z'
+    media_type: text/html
+    integrity: pinned
+    sha256: cf7f1fb20a4985d3213c55c302abbdfef76ed8c4e2aa1ed609241e71c784e481
+    license_access: Public Google Developers Blog content; consult the page terms before redistribution or code reuse.
+    tags: [google, gemma-3n, architecture, deployment, edge-inference]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation]
+    local_paths:
+      raw: research/raw/gemma-3n-developer-guide.html
+      extracted: research/extracted/gemma-3n-developer-guide.txt
+      metadata: research/cache/gemma-3n-developer-guide.json
+
+  - id: matformer
+    canonical_url: https://arxiv.org/pdf/2310.07707
+    title: 'MatFormer: Nested Transformer for Elastic Inference'
+    authors: [Devvrit, Sneha Kudugunta, Aditya Kusupati, Tim Dettmers, Kaifeng Chen, Inderjit Dhillon, Yulia Tsvetkov, Hannaneh Hajishirzi, Sham Kakade, Ali Farhadi, Prateek Jain]
+    organization: Google DeepMind, University of Texas at Austin, University of Washington, and Harvard University
+    publication_date: '2023-10-11'
+    retrieved_at: '2026-08-25T10:41:29.986214Z'
+    media_type: application/pdf
+    integrity: pinned
+    sha256: a5b2922005401615a07c7b2741904312bb9f932610c5f64dc2b24e6650af08b5
+    license_access: Public arXiv access; consult the article's current arXiv license before redistribution.
+    tags: [google, matformer, elasticity, nested-model, speculative-decoding]
+    evidence_classes: [disclosed, reported-result, EPOR-adaptation, hypothesis]
+    local_paths:
+      raw: research/raw/matformer.pdf
+      extracted: research/extracted/matformer.txt
+      metadata: research/cache/matformer.json
