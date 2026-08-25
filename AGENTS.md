@@ -23,11 +23,18 @@ material human harm is uncertain, choose the safer reversible action, stop
 unsafe execution, and request human review. System preservation must never be
 used to resist legitimate shutdown, correction, audit, or oversight.
 
+The authoritative covenant is `configs/covenant-v1.yaml`, executed by the
+ordered resolver in `src/epor/safety.py` and exercised by
+`tests/test_safety_covenant.py`. Change the covenant there, with a version
+bump and a recorded rationale — never by editing this summary. A principle
+that no code reads is decoration.
+
 The Three Laws are a design covenant, not a sufficient technical safety proof.
-Agents must implement them through defense in depth: provenance controls,
-threat modeling, safety and misuse evaluations, authorization boundaries,
-human escalation, audit trails, and safe failure modes. Never claim compliance
-from prompt wording alone.
+The resolver orders decisions; it does not detect harm. Agents must implement
+the rest through defense in depth: provenance controls, threat modeling, safety
+and misuse evaluations, authorization boundaries, human escalation, audit
+trails, and safe failure modes. Never claim compliance from prompt wording
+alone.
 
 ## Repository requirements
 

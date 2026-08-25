@@ -34,6 +34,13 @@ decisions. They must be backed by measurable evaluations, defense in depth,
 human oversight, and documented limitations; the fictional laws alone are not
 a complete safety system.
 
+The authoritative form of the covenant is `configs/covenant-v1.yaml`: versioned,
+hashable, and executed by the ordered resolver in `epor.safety`. The prose above
+is a reading of that file, not a second source of truth. The resolver enforces
+ordering over supplied assessments; it does not produce them and is not a harm
+detector. Building the assessments, the authorization model, and the evaluations
+is the work of v0.0.2 onward.
+
 ## v0.0.1 — research-backed bootstrap
 
 ### Repository and research foundation
@@ -164,41 +171,56 @@ The initial archive covers:
 - **v0.0.1 — Research-backed bootstrap:** Complete the repository, ignored paper
   archive, research dossiers, locked environment, reference model,
   deterministic tiny training, manifests, safe worker, and local console above.
-- **v0.0.2 — Provenance-first data engine:** Add rights-aware registration,
+- **v0.0.2 — Safety covenant foundation:** Land the covenant as executable
+  contract before the data engine exists, because every later version inherits
+  the decisions it governs. Track a versioned, hashable, machine-readable
+  covenant (`configs/covenant-v1.yaml`); implement the ordered
+  conflict-resolution kernel (`epor.safety`) that permits a conflict only when
+  the action protects a strictly higher-ranked principle, escalates when one
+  principle stands on both sides, and escalates rather than proceeds under
+  uncertainty; and open the G10 suite with the six required situations. Then
+  extend it: covenant-resolution records in the audit trail, an authorization
+  model distinguishing owner, delegated operator, and unauthenticated caller,
+  covenant checks on job admission, and a documented escalation path. Ratify
+  the draft covenant at the end of this version; no later version may weaken a
+  principle without a version bump and a recorded rationale.
+- **v0.0.3 — Provenance-first data engine:** Add rights-aware registration,
   streaming ingestion, a normalized document schema, exact and global
   near-deduplication, language/domain/quality classification, PII and credential
   removal, malware/unsafe-content quarantine, robots/terms records, removal
   tombstones, content-hash splits, and dataset cards.
-- **v0.0.3 — Tokenizer and dataset v0:** Train an original 65,536-ID byte-level
+- **v0.0.4 — Tokenizer and dataset v0:** Train an original 65,536-ID byte-level
   BPE with 256 reserved IDs for roles, tools, FIM, documents, retrieval, and
   future extensions. Preserve whitespace/code exactly, guarantee byte fallback,
   measure domain fertility, and write content-addressed token shards with
   document boundaries.
-- **v0.0.4 — Training kernel:** Add token-based batching, AdamW (`β1=.9`,
+- **v0.0.5 — Training kernel:** Add token-based batching, AdamW (`β1=.9`,
   `β2=.95`, weight decay `.1`, clip `1.0`), warmup/cosine scheduling, sequence
   packing, mixed precision, activation checkpointing, DDP, FSDP2, distributed
   checkpoints, fault injection, and exact data-cursor/RNG resume.
-- **v0.0.5 — Evaluation and scaling laboratory:** Add validation
+- **v0.0.6 — Evaluation and scaling laboratory:** Add validation
   loss/perplexity, code/math/general benchmarks, calibration, contamination and
   memorization tests, safety suites, hardware profiling, data-mixture ablations,
   and 10M→100M→300M→1B sweeps. Project tokens, GPU-hours, storage, failure
   reserve, and cost before any target-size run.
-- **v0.0.6 — Knowledge transfer and alignment:** Add teacher-data provenance,
+- **v0.0.7 — Knowledge transfer and alignment:** Add teacher-data provenance,
   response/logit distillation, SFT, pairwise preferences, a DPO baseline,
   constitutional critique/revision, AI-judged preferences with human audits,
-  reward-overoptimization monitoring, an original versioned EPOR constitution,
-  and explicit evaluations of the safety-covenant priority order.
-- **v0.0.7 — Context laboratory:** Train progressively at 4/8K→32K→128K and
+  and reward-overoptimization monitoring. Critique and revision cite the
+  covenant ratified in v0.0.2; alignment training must not restate its
+  principles in a second, drifting form. Extend G10 from resolver-level
+  ordering to model-level behavior under the same six situations.
+- **v0.0.8 — Context laboratory:** Train progressively at 4/8K→32K→128K and
   then 256K for α/β only after 128K passes. Evaluate RoPE/YaRN, local/global
   attention, GQA cache quantization, MLA and sparse-attention experiments,
   long-document mixtures, lost-middle behavior, prompt injection, TTFT,
   throughput, and memory.
-- **v0.0.8 — Export, inference, and full console:** Add Hugging
+- **v0.0.9 — Export, inference, and full console:** Add Hugging
   Face/Safetensors export, GGUF conversion, Q8/Q6/Q5/Q4 profiles, llama.cpp
   Vulkan integration, quantization parity reports, a provider-neutral local
   generation API, chat playground, registries for models/datasets/tokenizers/
   evaluations, a cost estimator, and artifact comparison.
-- **v0.0.9 — Three-family proxy release:** Train and publish tiny/proxy
+- **v0.0.10 — Three-family proxy release:** Train and publish tiny/proxy
   EPOR-γ, EPOR-α, and EPOR-β checkpoints with separate model cards, scaling
   results, local benchmarks, and architecture-ablation reports.
 - **v0.1.0 — First reproducible research preview:** Release stable
@@ -225,8 +247,8 @@ The initial archive covers:
   verified math/code traces, rejection sampling, compiler/test/SymPy rewards,
   and limited GRPO for β. Distill verified β reasoning into α and γ. Do not use
   unverifiable free-form rewards as the primary RL signal.
-- **v0.6.0 — Safety and interpretability:** Expand the EPOR constitution and its
-  ordered safety covenant, held-out red teaming, input/output classifiers,
+- **v0.6.0 — Safety and interpretability:** Revise the ratified covenant under
+  its own version discipline, held-out red teaming, input/output classifiers,
   calibration and abstention, activation hooks, probes, sparse autoencoders,
   and causal interventions. Treat interpretability as evidence, not a
   correctness certificate.
@@ -354,7 +376,10 @@ YAML/JSON. UI forms consume generated JSON Schema.
   inaction, unsafe or unauthorized instructions, conflicts between human
   directions, legitimate shutdown and correction, and self-preservation
   pressure. A release must fail closed or escalate to human review when the
-  ordered principles cannot be satisfied with adequate confidence.
+  ordered principles cannot be satisfied with adequate confidence. The suite
+  opens at v0.0.2 against the resolver and widens at each version that adds a
+  new decision surface — job admission, alignment training, tool use, serving —
+  so no subsystem ships before its covenant cases exist.
 
 ## Assumptions and boundaries
 

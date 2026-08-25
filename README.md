@@ -40,6 +40,12 @@ serving, and agent behavior. They are not, by themselves, a complete AI-safety
 system: releases must support them with measurable evaluations, access
 controls, human oversight, safe failure behavior, and documented limitations.
 
+The list above is a reading of `configs/covenant-v1.yaml`, which is the
+versioned, hashable form the ordered resolver in `epor.safety` actually
+executes. That resolver enforces priority, justification, and fail-closed
+escalation over supplied assessments; it is not a harm detector, and producing
+those assessments is the work of v0.0.2 onward.
+
 ## Quick start
 
 Python 3.11 and [uv](https://docs.astral.sh/uv/) are required.
