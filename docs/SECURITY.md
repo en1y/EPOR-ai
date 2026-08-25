@@ -21,6 +21,12 @@ must bind to loopback. It is not an internet-facing multi-tenant service.
   path must never escape via `..`, an absolute path, or a symlink.
 - The worker dispatches typed allowlisted jobs and never executes a supplied
   shell string.
+- Every job passes covenant admission before its specification is parsed, and
+  the worker re-resolves at dispatch. A job type with no reviewed covenant
+  declaration escalates rather than running. The covenant file is resolved from
+  the repository, not from settings, so no configuration change can point the
+  gate at a weaker covenant. Cancellation and shutdown are deliberately never
+  gated.
 - API origins are exact and local. Error messages and logs redact credentials
   and avoid environment dumps.
 - SQLite is local coordination state, not an authorization boundary or immutable

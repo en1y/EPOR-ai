@@ -24,7 +24,7 @@ from .database import create_session_factory, create_sqlite_engine, initialize_d
 from .models import Job, JobStatus, JobType
 from .schemas import TINY_CONTROL_CORPUS_MAX_BYTES
 from .security import PathOutsideRootError, contained_path
-from .service import InvalidTransitionError, JobService
+from .service import CovenantBlockedError, InvalidTransitionError, JobService
 from .settings import ControlSettings
 
 
@@ -247,6 +247,19 @@ class JobWorker:
             if refreshed.status is JobStatus.CANCELLING:
                 return self.service.complete_success(claimed.id, self.worker_id)
             raise
+
+        # Re-resolve at dispatch rather than trusting admission. A queued job may
+        # have been admitted under an earlier covenant, and the worker is the
+        # last point before the work actually runs.
+        try:
+            self.service.admit(active.type)
+        except CovenantBlockedError as exc:
+            return self.service.complete_failure(
+                active.id,
+                self.worker_id,
+                code=exc.code,
+                message=exc.message,
+            )
 
         context = WorkerContext(self.service, active.id, self.worker_id)
         handler = self.handlers[active.type]

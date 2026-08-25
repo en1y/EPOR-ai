@@ -21,7 +21,12 @@ from epor.control.security import (
     contained_path,
     redact,
 )
-from epor.control.service import ArtifactPathError, InvalidJobSpecError, JobService
+from epor.control.service import (
+    ArtifactPathError,
+    CovenantBlockedError,
+    InvalidJobSpecError,
+    JobService,
+)
 from epor.control.settings import ControlSettings
 from epor.control.worker import DEFAULT_HANDLERS, JobWorker, WorkerContext
 
@@ -421,3 +426,63 @@ def test_worker_runs_tiny_train_and_eval_through_allowlisted_adapter(tmp_path: P
     evaluated = worker.run_once()
     assert evaluated is not None and evaluated.status is JobStatus.SUCCEEDED
     assert {item.kind for item in service.list_artifacts(eval_job.id)} == {"evaluation-report"}
+
+
+def test_no_job_is_queued_without_a_recorded_covenant_resolution(tmp_path: Path) -> None:
+    _settings, service = make_service(tmp_path)
+    job = service.create_job(JobType.SYSTEM_PROBE)
+
+    queued = [event for event in service.list_events(job.id) if event.kind == "job.queued"]
+    assert len(queued) == 1
+    resolution = queued[0].payload["covenant"]
+    assert resolution["outcome"] == "allow"
+    assert resolution["covenant_sha256"] == service.covenant.sha256
+    assert resolution["covenant_version"] == service.covenant.covenant_version
+
+    # The audit record lives in immutable file truth, not only the SQLite index.
+    assert service.settings.artifact_root is not None
+    events_path = service.settings.artifact_root / "_control" / "jobs" / job.id / "events.jsonl"
+    assert service.covenant.sha256 in events_path.read_text(encoding="utf-8")
+
+
+def test_work_the_covenant_does_not_permit_never_reaches_the_queue(tmp_path: Path) -> None:
+    _settings, service = make_service(tmp_path)
+    before = len(service.list_jobs())
+
+    with pytest.raises(CovenantBlockedError) as raised:
+        service.create_job("model_serve")  # type: ignore[arg-type]
+
+    assert raised.value.status_code == 403
+    assert raised.value.code == "covenant_blocked"
+    assert raised.value.details["outcome"] == "escalate"
+    assert raised.value.details["binding_priority"] == 1
+    assert len(service.list_jobs()) == before
+
+
+def test_cancellation_is_never_gated_by_the_covenant(tmp_path: Path) -> None:
+    # Principle 2 outranks principle 3: stopping work is always accepted, so the
+    # admission gate must sit only on starting work.
+    _settings, service = make_service(tmp_path)
+    job = service.create_job(JobType.SYSTEM_PROBE)
+    cancelled = service.cancel(job.id)
+    assert cancelled.status is JobStatus.CANCELLED
+    assert service.cancel(job.id).status is JobStatus.CANCELLED
+
+
+def test_worker_refuses_to_execute_work_the_covenant_no_longer_permits(tmp_path: Path) -> None:
+    settings, service = make_service(tmp_path)
+    job = service.create_job(JobType.SYSTEM_PROBE)
+    worker = JobWorker(settings, service=service, worker_id="worker-covenant")
+
+    # Withdraw the declaration after admission; the worker must re-resolve.
+    from epor import actions
+
+    withdrawn = actions.DECLARED_ACTIONS.pop(JobType.SYSTEM_PROBE.value)
+    try:
+        executed = worker.run_once()
+    finally:
+        actions.DECLARED_ACTIONS[JobType.SYSTEM_PROBE.value] = withdrawn
+
+    assert executed is not None and executed.id == job.id
+    assert executed.status is JobStatus.FAILED
+    assert executed.error_code == "covenant_blocked"

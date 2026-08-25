@@ -62,6 +62,29 @@ def _planned(command: FutureCommand, target: str) -> None:
     raise typer.Exit(code=2)
 
 
+def authorize(action_id: str) -> None:
+    """Resolve ``action_id`` against the safety covenant before executing it.
+
+    The CLI runs work that never passes through the control plane, so it
+    carries the same gate.  An action the covenant does not permit exits
+    non-zero having done nothing.
+    """
+
+    from epor.actions import resolve_action
+    from epor.safety import load_covenant
+
+    resolution = resolve_action(action_id, load_covenant())
+    if resolution.outcome == "allow":
+        return
+    console.print(
+        f"[red]refused by the EPOR safety covenant[/red] "
+        f"({resolution.outcome}, covenant v{resolution.covenant_version})"
+    )
+    for reason in resolution.reasons:
+        console.print(f"  - {reason}")
+    raise typer.Exit(code=3)
+
+
 @app.command()
 def version() -> None:
     """Print the repository interface version."""
@@ -159,6 +182,7 @@ def train_pretrain(
 ) -> None:
     """Run the bounded, single-process CPU reference pretrainer."""
 
+    authorize("tiny_train")
     from epor.training import pretrain
 
     result = pretrain(
@@ -196,6 +220,7 @@ def train_resume(
 ) -> None:
     """Resume an exact deterministic trajectory from a trusted EPOR checkpoint."""
 
+    authorize("tiny_train")
     from epor.training import pretrain
 
     result = pretrain(
@@ -222,6 +247,7 @@ def eval_run(
 ) -> None:
     """Evaluate a tiny reference checkpoint on deterministic fixture windows."""
 
+    authorize("tiny_eval")
     from epor.training import evaluate
 
     result = evaluate(checkpoint, corpus_path=corpus, max_batches=max_batches)
@@ -239,6 +265,7 @@ def generate_command(
 ) -> None:
     """Greedily generate from a tiny reference checkpoint."""
 
+    authorize("generate")
     from epor.training import generate
 
     result = generate(checkpoint, prompt, max_new_tokens=max_new_tokens)
@@ -309,62 +336,62 @@ def ui_command() -> None:
 def serve_command() -> None:
     """Reserve the future provider-neutral local inference surface."""
 
-    _planned(FutureCommand.serve, "v0.0.8")
+    _planned(FutureCommand.serve, "v0.0.9")
 
 
 @data_app.command("ingest")
 def data_ingest() -> None:
-    _planned(FutureCommand.data_ingest, "v0.0.2")
+    _planned(FutureCommand.data_ingest, "v0.0.3")
 
 
 @data_app.command("build")
 def data_build() -> None:
-    _planned(FutureCommand.data_build, "v0.0.2")
+    _planned(FutureCommand.data_build, "v0.0.3")
 
 
 @data_app.command("audit")
 def data_audit() -> None:
-    _planned(FutureCommand.data_audit, "v0.0.2")
+    _planned(FutureCommand.data_audit, "v0.0.3")
 
 
 @tokenizer_app.command("train")
 def tokenizer_train() -> None:
-    _planned(FutureCommand.tokenizer_train, "v0.0.3")
+    _planned(FutureCommand.tokenizer_train, "v0.0.4")
 
 
 @tokenizer_app.command("evaluate")
 def tokenizer_evaluate() -> None:
-    _planned(FutureCommand.tokenizer_evaluate, "v0.0.3")
+    _planned(FutureCommand.tokenizer_evaluate, "v0.0.4")
 
 
 @train_app.command("sft")
 def train_sft() -> None:
-    _planned(FutureCommand.train_sft, "v0.0.6")
+    _planned(FutureCommand.train_sft, "v0.0.7")
 
 
 @train_app.command("preference")
 def train_preference() -> None:
-    _planned(FutureCommand.train_preference, "v0.0.6")
+    _planned(FutureCommand.train_preference, "v0.0.7")
 
 
 @train_app.command("grpo")
 def train_grpo() -> None:
-    _planned(FutureCommand.train_grpo, "v0.0.6")
+    _planned(FutureCommand.train_grpo, "v0.0.7")
 
 
 @eval_app.command("compare")
 def eval_compare() -> None:
-    _planned(FutureCommand.eval_compare, "v0.0.5")
+    _planned(FutureCommand.eval_compare, "v0.0.6")
 
 
 @export_app.command("hf")
 def export_hf() -> None:
-    _planned(FutureCommand.export_hf, "v0.0.8")
+    _planned(FutureCommand.export_hf, "v0.0.9")
 
 
 @export_app.command("gguf")
 def export_gguf() -> None:
-    _planned(FutureCommand.export_gguf, "v0.0.8")
+    _planned(FutureCommand.export_gguf, "v0.0.9")
 
 
 if __name__ == "__main__":

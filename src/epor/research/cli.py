@@ -36,6 +36,9 @@ def sync_command(
         typer.Option("--source", help="Limit work to a catalog source ID."),
     ] = None,
 ) -> None:
+    from epor.cli import authorize
+
+    authorize("research_sync")
     results = sync_catalog(catalog, offline=offline, source_ids=source)
     _emit(results)
     if any(item.status in {SyncStatus.ERROR, SyncStatus.MISSING} for item in results):

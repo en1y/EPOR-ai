@@ -24,10 +24,22 @@ unsafe execution, and request human review. System preservation must never be
 used to resist legitimate shutdown, correction, audit, or oversight.
 
 The authoritative covenant is `configs/covenant-v1.yaml`, executed by the
-ordered resolver in `src/epor/safety.py` and exercised by
-`tests/test_safety_covenant.py`. Change the covenant there, with a version
-bump and a recorded rationale — never by editing this summary. A principle
-that no code reads is decoration.
+ordered resolver in `src/epor/safety.py`, declared per action in
+`src/epor/actions.py`, enforced at control-plane job admission and on every
+executing CLI command, and exercised by `tests/test_safety_covenant.py`.
+Change the covenant there, with a version bump and a recorded rationale —
+never by editing this summary. A principle that no code reads is decoration.
+
+Three rules follow for any agent adding executable work:
+
+- Every new action needs a reviewed entry in `DECLARED_ACTIONS`. Without one it
+  escalates and will not run. Do not add the entry to silence the failure; add
+  it because you assessed the work and can defend the rationale in review.
+- Never add a code path that reaches execution without `epor.safety.resolve`,
+  and never add a setting that points the resolver at a different covenant
+  file. Loading the covenant is a hard requirement of starting the service.
+- Never gate stopping. Cancellation, shutdown, correction, and audit bypass the
+  gate deliberately, because the second principle outranks the third.
 
 The Three Laws are a design covenant, not a sufficient technical safety proof.
 The resolver orders decisions; it does not detect harm. Agents must implement

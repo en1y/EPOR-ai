@@ -42,9 +42,26 @@ controls, human oversight, safe failure behavior, and documented limitations.
 
 The list above is a reading of `configs/covenant-v1.yaml`, which is the
 versioned, hashable form the ordered resolver in `epor.safety` actually
-executes. That resolver enforces priority, justification, and fail-closed
-escalation over supplied assessments; it is not a harm detector, and producing
-those assessments is the work of v0.0.2 onward.
+executes. Each principle is stated there as an operative law with numbered
+obligations, and any decision that claims a principle is engaged must cite the
+obligation by key.
+
+The covenant is enforced, not advisory. `epor.actions` declares the covenant
+standing of every action EPOR can execute, and both entry points resolve
+against it: the control plane admits a job only after the covenant permits it —
+before its specification is parsed — writing the resolution and covenant hash
+into the append-only audit record, with the worker re-resolving at dispatch;
+and every CLI command that executes work authorizes first and exits non-zero if
+refused. An action with no reviewed declaration escalates instead of running,
+so work cannot become executable by being forgotten. Cancellation and shutdown
+are never gated, because the second principle outranks the third.
+
+What this is not: a harm detector. The resolver enforces ordering, citation,
+justification, and fail-closed escalation over assessments supplied to it. In
+v0.0.2 those assessments are reviewed per-job-type declarations over a closed
+four-entry allowlist, which is only sound because that action space is small
+and fixed. Classifiers, model-behavior evaluations, and red teaming are later
+versions.
 
 ## Quick start
 

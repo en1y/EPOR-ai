@@ -84,6 +84,17 @@ for `system_probe`, `research_sync`, `tiny_train`, and `tiny_eval` are accepted
 in v0.0.1. The API never evaluates a client command, fetches an arbitrary URL,
 or exposes a general filesystem browser.
 
+Admission is the covenant chokepoint. `JobService.create_job` resolves the job
+type against `configs/covenant-v1.yaml` through `epor.actions` before parsing
+its specification, records the verdict and covenant hash in the append-only
+event stream, and raises rather than queueing anything the covenant does not
+permit. The worker re-resolves at dispatch so a job admitted under an earlier
+covenant cannot execute under a later one. The CLI shares that registry rather
+than keeping its own, so `research sync`, `train pretrain`, `train resume`,
+`eval run`, and `generate` are governed identically despite never touching the
+control plane. Stopping work is never gated: the second principle outranks the
+third, so cancellation, correction, and shutdown bypass the gate by design.
+
 Jobs use compare-and-set transitions and append-only events. File manifests are
 the durable artifact truth; the loopback SQLite database uses WAL mode for local
 coordination and can be rebuilt. The server binds to `127.0.0.1`, uses explicit

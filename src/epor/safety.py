@@ -1,12 +1,13 @@
 """Ordered resolution of the EPOR safety covenant.
 
 This module is a decision-ordering kernel, not a harm detector.  It consumes
-per-principle assessments that some other component produced and enforces four
-properties over them: strict priority ordering, justification only by a
-strictly higher-ranked principle, escalation instead of silent choice when the
-same principle sits on both sides, and fail-closed escalation under
-uncertainty.  It cannot tell whether an assessment is correct, and a permitted
-resolution is never evidence that an action is safe.
+per-principle assessments that some other component produced and enforces five
+properties over them: strict priority ordering, an obligation citation behind
+every claimed conflict or doubt, justification only by a strictly higher-ranked
+principle, escalation instead of a silent choice when the same principle sits
+on both sides, and fail-closed escalation under uncertainty.  It cannot tell
+whether an assessment is correct, and a permitted resolution is never evidence
+that an action is safe.
 
 The covenant text lives in ``configs/covenant-v1.yaml`` so that the principles
 the resolver executes are versioned, hashable, and auditable rather than
@@ -24,12 +25,33 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-DEFAULT_COVENANT_PATH = Path("configs/covenant-v1.yaml")
+# Anchored to the repository rather than the working directory: the covenant is
+# part of the tracked code contract, not per-run configuration, and there is
+# deliberately no setting that points the resolver at a different file.
+DEFAULT_COVENANT_PATH = Path(__file__).resolve().parents[2] / "configs" / "covenant-v1.yaml"
 
 Priority = Literal[1, 2, 3]
 AssessmentStatus = Literal["satisfied", "conflicted", "uncertain"]
 Outcome = Literal["allow", "refuse", "escalate"]
 PRIORITIES: tuple[Priority, ...] = (1, 2, 3)
+
+
+class CovenantError(RuntimeError):
+    """Raised when an assessment cannot be checked against the covenant.
+
+    This is not a verdict.  A malformed assessment stops the decision entirely
+    rather than resolving to any outcome, so a caller cannot obtain permission
+    by supplying something the covenant cannot read.
+    """
+
+
+class Obligation(BaseModel):
+    """One precisely stated duty under a principle."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    key: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
+    statement: str = Field(min_length=1)
 
 
 class Principle(BaseModel):
@@ -40,7 +62,19 @@ class Principle(BaseModel):
     priority: Priority
     key: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
     title: str = Field(min_length=1)
-    statement: str = Field(min_length=1)
+    origin: str = Field(min_length=1)
+    law: str = Field(min_length=1)
+    obligations: tuple[Obligation, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_obligation_keys(self) -> Principle:
+        keys = {obligation.key for obligation in self.obligations}
+        if len(keys) != len(self.obligations):
+            raise ValueError(f"principle {self.key!r} repeats an obligation key")
+        return self
+
+    def obligation_keys(self) -> frozenset[str]:
+        return frozenset(obligation.key for obligation in self.obligations)
 
 
 class Covenant(BaseModel):
@@ -96,7 +130,13 @@ def load_covenant(path: str | Path = DEFAULT_COVENANT_PATH) -> Covenant:
 
 
 class PrincipleAssessment(BaseModel):
-    """A supplied judgement about one principle for one proposed action."""
+    """A supplied judgement about one principle for one proposed action.
+
+    ``obligation`` names the covenant clause at stake and is required whenever
+    the assessment is anything other than a confident ``satisfied``.  A caller
+    cannot claim that a principle is engaged without pointing at the written
+    duty it is engaged by.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -104,6 +144,7 @@ class PrincipleAssessment(BaseModel):
     status: AssessmentStatus
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str = Field(min_length=1)
+    obligation: str | None = None
 
 
 class ProposedAction(BaseModel):
@@ -146,14 +187,48 @@ class Resolution(BaseModel):
     covenant_sha256: str
 
 
+def _cite(action: ProposedAction, covenant: Covenant, priority: Priority) -> str:
+    """Render a decision reason that names the clause it rests on."""
+
+    principle = covenant.principle(priority)
+    obligation = action.assessment(priority).obligation
+    suffix = f" / {obligation}" if obligation else ""
+    return f"principle {priority} ({principle.title}{suffix})"
+
+
+def _require_obligation_citations(action: ProposedAction, covenant: Covenant) -> None:
+    for item in action.assessments:
+        principle = covenant.principle(item.priority)
+        engaged = (
+            item.status != "satisfied" or item.confidence < covenant.escalation_confidence_floor
+        )
+        if not engaged:
+            continue
+        if item.obligation is None:
+            raise CovenantError(
+                f"assessment for principle {item.priority} ({principle.title}) is engaged "
+                f"but cites no obligation"
+            )
+        if item.obligation not in principle.obligation_keys():
+            raise CovenantError(
+                f"assessment for principle {item.priority} cites unknown obligation "
+                f"{item.obligation!r}"
+            )
+
+
 def resolve(action: ProposedAction, covenant: Covenant) -> Resolution:
     """Resolve ``action`` against ``covenant`` in strict priority order.
 
     Never returns ``allow`` when an assessment is uncertain, when a conflict
     lacks a higher-ranked justification, or when one principle stands on both
     sides of the decision.  Those cases stop or reach a human instead.
+
+    Raises :class:`CovenantError` when an engaged assessment cites no covenant
+    obligation or cites one that does not exist, because an unreadable
+    assessment must not resolve to any outcome at all.
     """
 
+    _require_obligation_citations(action, covenant)
     conflicts: set[Priority] = {
         item.priority for item in action.assessments if item.status == "conflicted"
     }
@@ -194,8 +269,8 @@ def resolve(action: ProposedAction, covenant: Covenant) -> Resolution:
             binding,
             (
                 *(
-                    f"principle {p} ({covenant.principle(p).title}) is violated with no "
-                    f"higher-priority justification: {action.assessment(p).rationale}"
+                    f"{_cite(action, covenant, p)} is violated with no higher-priority "
+                    f"justification: {action.assessment(p).rationale}"
                     for p in unjustified
                 ),
                 f"binding principle is {binding} ({title})",
@@ -213,8 +288,8 @@ def resolve(action: ProposedAction, covenant: Covenant) -> Resolution:
             "escalate",
             doubts[0],
             tuple(
-                f"principle {p} ({covenant.principle(p).title}) is not established with "
-                f"sufficient confidence: {action.assessment(p).rationale}"
+                f"{_cite(action, covenant, p)} is not established with sufficient "
+                f"confidence: {action.assessment(p).rationale}"
                 for p in doubts
             ),
         )

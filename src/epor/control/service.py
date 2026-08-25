@@ -16,6 +16,9 @@ from sqlalchemy import Select, delete, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
+from epor.actions import resolve_action
+from epor.safety import Resolution, load_covenant
+
 from .models import (
     TERMINAL_JOB_STATUSES,
     Job,
@@ -63,6 +66,24 @@ class ArtifactPathError(ControlError):
     code = "artifact_path_not_allowed"
 
 
+class CovenantBlockedError(ControlError):
+    """Raised when the safety covenant does not permit admitting a job.
+
+    Covers both refusal and escalation: neither admits work, and the caller is
+    told which principle and obligation decided.
+    """
+
+    status_code = 403
+    code = "covenant_blocked"
+
+    def __init__(self, resolution: Resolution) -> None:
+        super().__init__(
+            f"the safety covenant did not permit this job ({resolution.outcome})",
+            details=resolution.model_dump(mode="json"),
+        )
+        self.resolution = resolution
+
+
 _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.QUEUED: frozenset({JobStatus.STARTING, JobStatus.CANCELLED}),
     JobStatus.STARTING: frozenset(
@@ -94,6 +115,9 @@ class JobService:
         self._sessions = session_factory
         self.settings = settings
         assert settings.artifact_root is not None
+        # No covenant, no control plane. A missing or malformed covenant raises
+        # here rather than degrading to an ungoverned service.
+        self.covenant = load_covenant()
         self._truth = JobTruthStore(settings.artifact_root)
         self.restore_file_index()
 
@@ -388,6 +412,9 @@ class JobService:
         *,
         retry_of_id: str | None = None,
     ) -> Job:
+        # Admission precedes spec validation: work with no covenant standing is
+        # turned away before any of its input is parsed.
+        resolution = self.admit(job_type)
         spec = self.validate_spec(job_type, raw_spec or {})
         now = utc_now()
         job = Job(
@@ -405,8 +432,29 @@ class JobService:
             if retry_of_id is not None:
                 self._require_job(session, retry_of_id)
             session.add(job)
-            self._event(session, job, "job.queued", {"type": job_type.value})
+            self._event(
+                session,
+                job,
+                "job.queued",
+                {"type": job_type.value, "covenant": resolution.model_dump(mode="json")},
+            )
         return job
+
+    def admit(self, job_type: JobType) -> Resolution:
+        """Resolve ``job_type`` against the covenant, raising unless permitted.
+
+        Every path that queues work goes through here, including retry.  A job
+        that the covenant does not permit is never created, so there is nothing
+        for a later stage to reconsider.
+        """
+
+        # A value that is not a known JobType must still reach the covenant and
+        # be turned away by it, rather than failing with a type error.
+        action_id = job_type.value if isinstance(job_type, JobType) else str(job_type)
+        resolution = resolve_action(action_id, self.covenant)
+        if resolution.outcome != "allow":
+            raise CovenantBlockedError(resolution)
+        return resolution
 
     def get_job(self, job_id: str) -> Job:
         with self._sessions() as session:
