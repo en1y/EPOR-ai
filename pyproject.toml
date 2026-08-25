@@ -1,0 +1,125 @@
+[build-system]
+requires = ["hatchling==1.32.0", "editables==0.3"]
+build-backend = "hatchling.build"
+
+[project]
+name = "epor-ai"
+version = "0.0.1"
+description = "Reproducible, paper-backed research infrastructure for original-weight EPOR language models"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "EPOR AI contributors" }]
+keywords = ["language-model", "research", "pytorch", "reproducibility"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "alembic>=1.16,<2",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "psutil>=7,<8",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "pyyaml>=6.0.2,<7",
+  "rich>=14,<15",
+  "sqlalchemy>=2.0.41,<3",
+  "typer>=0.16,<1",
+  "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "editables==0.3",
+  "hatchling==1.32.0",
+  "hypothesis>=6.135,<7",
+  "pyright>=1.1.402,<2",
+  "pytest>=8.4,<10",
+  "pytest-cov>=6.2,<8",
+  "ruff>=0.12,<1",
+]
+research = [
+  "beautifulsoup4>=4.13,<5",
+  "pypdf>=5.7,<7",
+]
+data = [
+  "datasets>=4,<5",
+  "datasketch>=1.6.5,<2",
+  "duckdb>=1.3,<2",
+  "fsspec>=2025.5,<2027",
+  "polars>=1.31,<2",
+  "pyarrow>=20,<24",
+  "tokenizers>=0.21,<1",
+  "warcio>=1.7.5,<2",
+  "xxhash>=3.5,<4",
+]
+train-cpu = [
+  "accelerate>=1.8,<2",
+  "einops>=0.8.1,<1",
+  "safetensors>=0.5.3,<1",
+  "tensorboard>=2.19,<3",
+  "torch>=2.7,<3",
+  "transformers>=4.52,<6",
+]
+eval = [
+  "lm-eval>=0.4.8,<1",
+  "sympy>=1.14,<2",
+  "torch>=2.7,<3",
+  "tree-sitter>=0.24,<1",
+]
+serve = ["uvicorn[standard]>=0.35,<1"]
+ui = ["uvicorn[standard]>=0.35,<1"]
+
+[project.scripts]
+epor = "epor.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/epor"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["epor"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+allowed-confusables = ["α", "β", "γ"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+include = ["src", "tests"]
+exclude = ["ui", "research/raw", "research/extracted", "research/cache"]
+
+[tool.uv]
+package = true
+build-constraint-dependencies = ["editables==0.3", "hatchling==1.32.0"]
+
+[tool.uv.extra-build-dependencies]
+epor-ai = ["editables==0.3", "hatchling==1.32.0"]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "train-cpu" },
+  { index = "pytorch-cpu", extra = "eval" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+# Provider-specific CUDA/ROCm profiles are deliberately added only when a
+# provider, driver, and wheel index are selected and pinned together.
