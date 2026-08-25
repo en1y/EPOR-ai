@@ -12,12 +12,34 @@ EPOR can actually perform.
   cost.
 - **`[disclosed]`** The report describes knowledge distillation during training
   and configured context up to 128K for larger Gemma 3 variants.
+- **`[disclosed]`** The described pattern places five local sliding-window
+  attention layers between each global layer, with a bounded window on the local
+  layers; the report's 2B configuration pairs that ratio with a 1024-token
+  window.
+- **`[reported-result]`** The report compares local-to-global ratios from 1:1
+  through 7:1 and observes little perplexity movement across them, and separately
+  compares sliding-window sizes; these are results for Google's models and setup.
+- **`[disclosed]`** The report replaces the previous generation's attention logit
+  soft-capping with query/key normalization.
+- **`[disclosed]`** For long context the report raises the RoPE base frequency on
+  global layers from ten thousand to one million while leaving local layers at
+  ten thousand, and extends position handling by an interpolation-style
+  procedure with a small integer scaling factor.
+- **`[disclosed]`** Quantized releases are produced by a short quantization-aware
+  fine-tune, on the order of a few thousand steps, using the unquantized
+  checkpoint's own output probabilities as targets.
 - **`[reported-result]`** Google's quality and context measurements apply to its
   released models, data, training, and evaluation setup; EPOR has not reproduced
   them.
 - **`[EPOR-adaptation]`** EPOR-α tests backend-supported local/global attention
   against a full-attention reference and records position-wise quality, TTFT,
-  throughput, KV-cache memory, and short-context regression before adoption.
+  throughput, KV-cache memory, and short-context regression before adoption. The
+  ratio, window size, dual RoPE base, and QK-norm are each separate proxy-scale
+  ablations with a dense control, not settings copied because Gemma uses them.
+- **`[hypothesis]`** A ratio that costs little perplexity in Google's study may
+  behave differently under EPOR's data mixture, tokenizer, and much smaller proxy
+  scales; the KV-cache saving is the reason to test it, not evidence of quality
+  parity.
 
 ## Gemma 3n parameter meanings
 
