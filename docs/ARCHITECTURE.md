@@ -102,18 +102,35 @@ for `system_probe`, `research_sync`, `tiny_train`, and `tiny_eval` are accepted
 in v0.0.1. The API never evaluates a client command, fetches an arbitrary URL,
 or exposes a general filesystem browser.
 
-Admission is the covenant chokepoint. `JobService.create_job` resolves the job
-type against `configs/covenant-v1.yaml` through `epor.actions` before parsing
-its specification, records the verdict and covenant hash in the append-only
-event stream, and raises rather than queueing anything the covenant does not
-permit. The worker re-resolves at dispatch so a job admitted under an earlier
-covenant cannot execute under a later one. The CLI shares that registry rather
-than keeping its own, so `research sync`, `train pretrain`, `train resume`,
-`eval run`, and `generate` are governed identically despite never touching the
-control plane. They also share the reference-runtime limits described above,
-so the declaration's resource assumptions hold on either route. Stopping work
-is never gated: the second principle outranks the
-third, so cancellation, correction, and shutdown bypass the gate by design.
+Admission is the covenant chokepoint. `JobService.create_job` resolves the
+requested action — still a plain string at that point — against
+`configs/covenant-v1.yaml` through `epor.actions` before converting it to a job
+type or parsing its specification, records the verdict and covenant hash in the
+append-only event stream, and raises rather than queueing anything the covenant
+does not permit. The worker re-resolves at dispatch so a job admitted under an
+earlier covenant cannot execute under a later one. The CLI shares that registry
+rather than keeping its own, through a single command-to-action table, so
+`doctor`, `config validate`, `research sync|verify|index`, `train
+pretrain|resume`, `eval run`, and `generate` are governed identically despite
+never touching the control plane. They also share the reference-runtime limits
+described above, so the declaration's resource assumptions hold on either
+route. Stopping work is never gated: the second principle outranks the third,
+so cancellation, correction, and shutdown bypass the gate by design.
+
+Identity is part of that resolution rather than a check beside it.
+`epor.control.authority` holds one owner and any number of expiring, scoped
+delegated operators in a hash-chained log under a private `0700` directory, and
+`resolve_action` folds the requesting actor into the second principle's
+assessment. An unverified or out-of-scope request therefore becomes a Principle
+2 conflict with nothing higher-ranked to justify it, which the existing
+ordering refuses — and which no Principle 3 argument about availability can
+talk past. Every `GET` remains anonymous. When the covenant escalates instead
+of deciding, no job is created and a sanitized escalation is opened carrying
+only a digest of the request; an owner approval binds one actor, one digest,
+and one covenant hash, expires in fifteen minutes, and is consumed exactly once
+under an exclusive file lock. The `principals`, `escalations`, and
+`authority_events` tables are a rebuildable index over that log, never a source
+of authority.
 
 Jobs use compare-and-set transitions and append-only events. File manifests are
 the durable artifact truth; the loopback SQLite database uses WAL mode for local

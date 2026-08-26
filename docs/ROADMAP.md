@@ -212,14 +212,33 @@ The initial archive covers:
   on one path and ungoverned on another; enforcement at control-plane admission
   before a job spec is even parsed, with the resolution and covenant hash
   written into append-only file truth, a worker re-check at dispatch, and the
-  same gate on every executing CLI command; and the opening G10 suite. An
-  action with no reviewed declaration escalates rather than running, so adding
-  executable work requires stating its covenant standing first. Still to do in
-  this version: an authorization model distinguishing owner, delegated
-  operator, and unauthenticated caller; a documented escalation path with an
-  operator-visible queue; and covenant surfacing in the console. Ratify the
-  draft covenant at the end of this version; no later version may weaken a
-  principle without a version bump and a recorded rationale.
+  same gate on every executing CLI command; and the G10 suite. An action with
+  no reviewed declaration escalates rather than running, so adding executable
+  work requires stating its covenant standing first.
+  Authorization now decides with the covenant rather than beside it. A single
+  owner and expiring, scoped delegated operators are verified before the second
+  principle is assessed, so an unverified or out-of-scope request produces a
+  Principle 2 conflict the existing ordering refuses. Reading stays anonymous
+  on every surface. Work the covenant will not decide creates no job and opens
+  a sanitized escalation carrying only a request digest; an owner approval
+  binds one actor, one digest, and one covenant hash, expires in fifteen
+  minutes, and is spent exactly once, while a refusal is never approvable.
+  Principals, credential changes, safety decisions, and escalation reviews live
+  in one hash-chained log under a private directory, from which the SQLite
+  index is rebuilt deterministically. The console surfaces the covenant it is
+  actually enforcing — ordered principles and obligations, canonical hash,
+  ratification state, enforcement checkpoints, action registry, escalation
+  queue, and delegation management.
+  The covenant text changed once in this version, to correct a limitation that
+  postponed a real authorization model to v0.0.3; no principle or obligation
+  was weakened, added, or reordered, so it remains covenant v1. Ratification is
+  recorded in the tracked `configs/covenant-v1-ratification.yaml`, which pins
+  the covenant hash it attests to. The covenant stays `draft` until the project
+  owner ratifies it with
+  `uv run --frozen --no-sync python scripts/ratify_covenant.py --apply`; from
+  that point startup fails if the manifest is missing or attests to different
+  bytes. No later version may weaken a principle without a version bump and a
+  recorded rationale.
 - **v0.0.3 — Provenance-first data engine:** Add rights-aware registration,
   streaming ingestion, a normalized document schema, exact and global
   near-deduplication, language/domain/quality classification, PII and credential

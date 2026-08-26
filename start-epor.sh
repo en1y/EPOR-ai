@@ -188,6 +188,11 @@ if [[ ! -x ui/node_modules/.bin/vite ]]; then
 fi
 
 printf 'Starting EPOR from %s\n' "${PROJECT_ROOT}"
+# Reading the console needs no credential, so a missing owner is a hint rather
+# than a failure. Mutations will ask for one.
+if ! uv run --frozen --no-sync epor auth status >/dev/null 2>&1; then
+  printf 'No owner credential yet. Run '\''uv run --frozen --no-sync epor auth bootstrap'\'' to queue work.\n'
+fi
 # Each command performs its own covenant authorization before starting work.
 start_service api uv run --frozen --no-sync epor api --host 127.0.0.1 --port 8742
 api_pid="${SERVICE_PIDS[0]}"
