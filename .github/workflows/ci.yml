@@ -1,0 +1,106 @@
+name: v0.0.1 offline acceptance
+
+"on":
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+      - "version/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python, control plane, and CPU smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.19"
+          python-version: "3.11.15"
+          enable-cache: true
+          cache-python: true
+          cache-dependency-glob: uv.lock
+
+      - name: Validate lock and provision frozen environment
+        run: |
+          uv python install 3.11.15
+          uv lock --check
+          uv sync --frozen --extra dev --extra research --extra train-cpu
+          uv run --frozen --no-sync python -c "import platform; assert platform.python_version() == '3.11.15'"
+
+      - name: Run capability doctor
+        run: uv run --frozen --no-sync epor doctor --json
+
+      - name: Upgrade and validate the rebuildable database
+        env:
+          EPOR_CONTROL_DATABASE: "${{ runner.temp }}/epor-control.sqlite3"
+        run: |
+          uv run --frozen --no-sync alembic -c migrations/alembic.ini upgrade head
+          uv run --frozen --no-sync alembic -c migrations/alembic.ini current --check-heads
+          uv run --frozen --no-sync alembic -c migrations/alembic.ini check
+
+      - name: Run static and unit acceptance gates
+        run: |
+          uv run --frozen --no-sync ruff check .
+          uv run --frozen --no-sync ruff format --check .
+          uv run --frozen --no-sync pyright
+          uv run --frozen --no-sync pytest
+
+      - name: Run offline tiny CPU smoke
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+          UV_OFFLINE: "1"
+          WANDB_MODE: offline
+        run: |
+          uv run --frozen --no-sync epor config validate configs/models/epor-tiny.yaml
+          uv run --frozen --no-sync epor train pretrain configs/models/epor-tiny.yaml --output runs/ci-smoke --max-steps 1 --batch-size 1 --sequence-length 8
+
+      - name: Build distributions and validate source resources
+        run: |
+          uv build
+          uv run --frozen --no-sync python scripts/check_sdist.py dist/epor_ai-0.0.1.tar.gz
+
+  ui:
+    name: Browser console
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install frozen UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Test browser console
+        working-directory: ui
+        run: npm test
+
+      - name: Build browser console
+        working-directory: ui
+        run: npm run build
