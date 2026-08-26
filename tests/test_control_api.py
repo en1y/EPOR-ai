@@ -42,6 +42,21 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "error",
                 "unknown",
             }
+            by_id = {item["id"]: item for item in research["sources"]}
+            content_pinned = by_id["anthropic-long-context-prompting"]
+            assert content_pinned["integrity"] == "content-pinned"
+            assert content_pinned["tracked_raw_sha256"] is None
+            assert len(content_pinned["tracked_content_sha256"]) == 64
+            assert content_pinned["content_scope"] == "article"
+            assert content_pinned["content_profile"] == "html-article-text-v1"
+            assert "sha256" not in content_pinned
+
+            raw_pinned = by_id["deepseek-r1"]
+            assert raw_pinned["integrity"] == "pinned"
+            assert len(raw_pinned["tracked_raw_sha256"]) == 64
+            assert raw_pinned["tracked_content_sha256"] is None
+            assert raw_pinned["content_scope"] is None
+            assert raw_pinned["content_profile"] is None
 
             models = (await client.get("/api/v1/models")).json()["items"]
             assert [item["slug"] for item in models] == [

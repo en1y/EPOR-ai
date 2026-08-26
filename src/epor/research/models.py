@@ -1,9 +1,10 @@
 """Validated schemas used by the EPOR research archive.
 
 The tracked catalog intentionally describes both downloaded and not-yet-downloaded
-sources.  A ``null`` SHA-256 means that the source has not been pinned yet; the
-first successful synchronization records the observed digest in ignored local
-metadata without silently editing the tracked ledger.
+sources. Raw-byte pins are preferred for immutable artifacts. Explicit
+content-level pins are available for dynamic HTML shells whose normalized
+semantic article remains stable; raw transfer digests still remain visible in
+ignored local metadata.
 """
 
 from __future__ import annotations
@@ -32,6 +33,9 @@ ENTRY_FIELDS = frozenset(
         "media_type",
         "integrity",
         "sha256",
+        "content_sha256",
+        "content_scope",
+        "content_profile",
         "license_access",
         "tags",
         "evidence_classes",
@@ -59,7 +63,28 @@ class IntegrityStatus(StrEnum):
     """Whether a source digest is part of the reviewed, tracked ledger."""
 
     PINNED = "pinned"
+    CONTENT_PINNED = "content-pinned"
     UNPINNED = "unpinned"
+
+
+class ContentScope(StrEnum):
+    """Normalized HTML region covered by a content-level digest."""
+
+    DOCUMENT = "document"
+    ARTICLE = "article"
+
+
+class ContentProfile(StrEnum):
+    """Versioned normalization algorithm used by a content-level digest."""
+
+    HTML_DOCUMENT_TEXT_V1 = "html-document-text-v1"
+    HTML_ARTICLE_TEXT_V1 = "html-article-text-v1"
+
+
+CONTENT_PROFILES = {
+    ContentScope.DOCUMENT: ContentProfile.HTML_DOCUMENT_TEXT_V1,
+    ContentScope.ARTICLE: ContentProfile.HTML_ARTICLE_TEXT_V1,
+}
 
 
 class SyncStatus(StrEnum):
@@ -122,6 +147,9 @@ class ResearchEntry:
     media_type: str
     integrity: IntegrityStatus
     sha256: str | None
+    content_sha256: str | None
+    content_scope: ContentScope
+    content_profile: ContentProfile | None
     license_access: str
     tags: tuple[str, ...]
     evidence_classes: tuple[EvidenceClass, ...]
@@ -159,10 +187,56 @@ class ResearchEntry:
         digest = value.get("sha256")
         if digest is not None and (not isinstance(digest, str) or not SHA256_RE.fullmatch(digest)):
             raise CatalogError(f"{source_id}: sha256 must be null or 64 lowercase hex chars")
+        content_digest = value.get("content_sha256")
+        if content_digest is not None and (
+            not isinstance(content_digest, str) or not SHA256_RE.fullmatch(content_digest)
+        ):
+            raise CatalogError(
+                f"{source_id}: content_sha256 must be null or 64 lowercase hex chars"
+            )
         if integrity is IntegrityStatus.PINNED and digest is None:
             raise CatalogError(f"{source_id}: pinned integrity requires a SHA-256")
-        if integrity is IntegrityStatus.UNPINNED and digest is not None:
-            raise CatalogError(f"{source_id}: unpinned integrity requires sha256: null")
+        if integrity is IntegrityStatus.PINNED and content_digest is not None:
+            raise CatalogError(f"{source_id}: raw-byte pinned integrity forbids content_sha256")
+        if integrity is IntegrityStatus.CONTENT_PINNED:
+            if media_type != "text/html":
+                raise CatalogError(f"{source_id}: content-pinned integrity requires text/html")
+            if digest is not None:
+                raise CatalogError(f"{source_id}: content-pinned integrity requires sha256: null")
+            if content_digest is None:
+                raise CatalogError(f"{source_id}: content-pinned integrity requires content_sha256")
+            try:
+                content_scope = ContentScope(
+                    _required_string(value, "content_scope", context=source_id)
+                )
+            except ValueError as exc:
+                raise CatalogError(f"{source_id}: invalid content_scope: {exc}") from exc
+            try:
+                content_profile = ContentProfile(
+                    _required_string(value, "content_profile", context=source_id)
+                )
+            except ValueError as exc:
+                raise CatalogError(f"{source_id}: invalid content_profile: {exc}") from exc
+            expected_profile = CONTENT_PROFILES[content_scope]
+            if content_profile is not expected_profile:
+                raise CatalogError(
+                    f"{source_id}: content_profile must be {expected_profile.value!r} "
+                    f"for {content_scope.value!r} scope"
+                )
+        else:
+            if "content_scope" in value or "content_profile" in value:
+                raise CatalogError(
+                    f"{source_id}: content_scope and content_profile require content-pinned "
+                    "integrity"
+                )
+            content_scope = ContentScope.DOCUMENT
+            content_profile = None
+        if integrity is IntegrityStatus.UNPINNED and (
+            digest is not None or content_digest is not None
+        ):
+            raise CatalogError(
+                f"{source_id}: unpinned integrity requires sha256 and content_sha256 to be null"
+            )
 
         authors = _string_sequence(value.get("authors"), "authors", source_id)
         tags = _string_sequence(value.get("tags"), "tags", source_id)
@@ -191,6 +265,9 @@ class ResearchEntry:
             media_type=media_type,
             integrity=integrity,
             sha256=digest,
+            content_sha256=content_digest,
+            content_scope=content_scope,
+            content_profile=content_profile,
             license_access=_required_string(value, "license_access", context=source_id),
             tags=tags,
             evidence_classes=evidence_classes,
@@ -242,7 +319,7 @@ class SyncResult:
     source_id: str
     status: SyncStatus
     path: str
-    sha256: str | None = None
+    raw_sha256: str | None = None
     size_bytes: int | None = None
     message: str = ""
 
@@ -252,7 +329,7 @@ class IndexResult:
     source_id: str
     status: IndexStatus
     path: str
-    sha256: str | None = None
+    extracted_sha256: str | None = None
     characters: int | None = None
     message: str = ""
 

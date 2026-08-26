@@ -12,10 +12,30 @@ from typer.testing import CliRunner
 
 from epor.research import IndexStatus, SyncStatus
 from epor.research.cli import research_app
-from epor.research.extract import extract_text
+from epor.research.extract import ExtractionError, extract_text
 from epor.research.service import index_catalog, sync_catalog, verify_catalog
 
 HTML = b"<!doctype html><html><body><h1>Hello</h1><script>bad()</script><p>World</p></body></html>"
+DYNAMIC_HTML_V1 = b"""<!doctype html><html><body>
+<header>Build 100</header>
+<article><h1>Page title</h1><article><h2>Stable evidence</h2>
+<p>The reviewed claim stays the same.</p></article><aside>Related alpha</aside></article>
+</body></html>"""
+DYNAMIC_HTML_V2 = b"""<!doctype html><html><body>
+<header>Build 101 with a different navigation shell</header>
+<article><h1>Moved page title</h1><article><h2>Stable evidence</h2>
+<p>The reviewed claim stays the same.</p></article><aside>Related beta</aside></article>
+<footer>New footer</footer></body></html>"""
+DYNAMIC_HTML_CHANGED = b"""<!doctype html><html><body>
+<article><article><h2>Stable evidence</h2>
+<p>The reviewed claim has changed.</p></article></article>
+</body></html>"""
+DOCUMENT_HTML_V1 = b"""<!doctype html><html data-build="100"><body>
+<h1>Stable document</h1><p>The reviewed document stays the same.</p>
+<script>window.build = 100</script></body></html>"""
+DOCUMENT_HTML_V2 = b"""<!doctype html><html data-build="101"><body>
+<h1>Stable document</h1><p>The reviewed document stays the same.</p>
+<script>window.build = 101</script></body></html>"""
 PDF_TEXT = "Offline PDF evidence"
 
 
@@ -65,6 +85,9 @@ def _write_catalog(
     source_url: str = "https://ai.google.dev/example",
     media_type: str = "text/html",
     raw_path: str = "research/raw/example-source.html",
+    content_digest: str | None = None,
+    content_scope: str | None = None,
+    content_profile: str | None = None,
 ) -> Path:
     if integrity == "pinned" and digest is None:
         digest = hashlib.sha256(HTML).hexdigest()
@@ -82,6 +105,9 @@ def _write_catalog(
                 "media_type": media_type,
                 "integrity": integrity,
                 "sha256": digest,
+                **({"content_sha256": content_digest} if content_digest is not None else {}),
+                **({"content_scope": content_scope} if content_scope is not None else {}),
+                **({"content_profile": content_profile} if content_profile is not None else {}),
                 "license_access": "Test fixture only.",
                 "tags": ["fixture"],
                 "evidence_classes": ["disclosed", "EPOR-adaptation"],
@@ -143,6 +169,9 @@ def test_pinned_sync_is_atomic_verified_and_idempotent(tmp_path: Path) -> None:
         (tmp_path / "research/cache/example-source.json").read_text(encoding="utf-8")
     )
     assert metadata["sha256"] == hashlib.sha256(HTML).hexdigest()
+    assert metadata["content_sha256"] is None
+    assert metadata["content_scope"] is None
+    assert metadata["content_profile"] is None
     assert metadata["size_bytes"] == len(HTML)
     assert not list((tmp_path / "research/raw").glob("*.part"))
 
@@ -167,6 +196,156 @@ def test_unpinned_source_is_reusable_but_never_reported_verified(tmp_path: Path)
     assert offline[0].status is SyncStatus.UNPINNED
     assert "no digest is pinned" in offline[0].message
     assert verify_catalog(project_root=tmp_path)[0].status is SyncStatus.UNPINNED
+
+
+def test_content_pinned_sync_accepts_shell_changes_and_indexes_reviewed_text(
+    tmp_path: Path,
+) -> None:
+    seed = tmp_path / "reviewed.html"
+    seed.write_bytes(DYNAMIC_HTML_V1)
+    reviewed_text = extract_text(seed, "text/html", content_scope="article")
+    content_digest = hashlib.sha256(reviewed_text.encode()).hexdigest()
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    for root in (first_root, second_root):
+        _write_catalog(
+            root,
+            integrity="content-pinned",
+            digest=None,
+            content_digest=content_digest,
+            content_scope="article",
+            content_profile="html-article-text-v1",
+        )
+
+    bodies = iter((DYNAMIC_HTML_V1, DYNAMIC_HTML_V2))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _streaming_response(next(bodies))
+
+    with _client(handler) as client:
+        first = sync_catalog(project_root=first_root, client=client)
+        second = sync_catalog(project_root=second_root, client=client)
+
+    assert first[0].status is SyncStatus.DOWNLOADED
+    assert second[0].status is SyncStatus.DOWNLOADED
+    assert first[0].raw_sha256 != second[0].raw_sha256
+    assert "normalized article content matches" in second[0].message
+    assert verify_catalog(project_root=first_root)[0].status is SyncStatus.VERIFIED
+    assert verify_catalog(project_root=second_root)[0].status is SyncStatus.VERIFIED
+
+    indexed = index_catalog(project_root=second_root)
+    assert indexed[0].status is IndexStatus.INDEXED
+    assert indexed[0].extracted_sha256 == content_digest
+    record = json.loads((second_root / "research/cache/index.json").read_text(encoding="utf-8"))[
+        "sources"
+    ][0]
+    assert record["integrity"] == "content-pinned"
+    assert record["raw_sha256"] == hashlib.sha256(DYNAMIC_HTML_V2).hexdigest()
+    assert record["extracted_sha256"] == content_digest
+    assert record["tracked_content_sha256"] == content_digest
+    assert record["tracked_raw_sha256"] is None
+    assert record["content_scope"] == "article"
+    assert record["content_profile"] == "html-article-text-v1"
+    metadata = json.loads(
+        (second_root / "research/cache/example-source.json").read_text(encoding="utf-8")
+    )
+    assert metadata["content_sha256"] == content_digest
+    assert metadata["content_scope"] == "article"
+    assert metadata["content_profile"] == "html-article-text-v1"
+
+    changed_path = second_root / "research/raw/example-source.html"
+    changed_path.write_bytes(DYNAMIC_HTML_CHANGED)
+    changed = verify_catalog(project_root=second_root)
+    assert changed[0].status is SyncStatus.ERROR
+    assert "normalized article content SHA-256 mismatch" in changed[0].message
+
+
+def test_content_pinned_sync_rejects_changed_text_and_preserves_existing_file(
+    tmp_path: Path,
+) -> None:
+    seed = tmp_path / "reviewed.html"
+    seed.write_bytes(DYNAMIC_HTML_V1)
+    reviewed_text = extract_text(seed, "text/html", content_scope="article")
+    content_digest = hashlib.sha256(reviewed_text.encode()).hexdigest()
+    _write_catalog(
+        tmp_path,
+        integrity="content-pinned",
+        digest=None,
+        content_digest=content_digest,
+        content_scope="article",
+        content_profile="html-article-text-v1",
+    )
+    destination = tmp_path / "research/raw/example-source.html"
+    destination.parent.mkdir(parents=True)
+    previous = b"<!doctype html><html><body><article>Previous mismatch</article></body></html>"
+    destination.write_bytes(previous)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _streaming_response(DYNAMIC_HTML_CHANGED)
+
+    with _client(handler) as client:
+        result = sync_catalog(project_root=tmp_path, client=client)
+
+    assert result[0].status is SyncStatus.ERROR
+    assert "normalized article content SHA-256 mismatch" in result[0].message
+    assert destination.read_bytes() == previous
+    assert not list(destination.parent.glob("*.part"))
+
+
+def test_article_scope_requires_a_semantic_article(tmp_path: Path) -> None:
+    path = tmp_path / "shell-only.html"
+    path.write_bytes(HTML)
+    with pytest.raises(ExtractionError, match="no semantic <article>"):
+        extract_text(path, "text/html", content_scope="article")
+
+
+def test_article_scope_ranks_normalized_nonempty_candidates(tmp_path: Path) -> None:
+    path = tmp_path / "article-candidates.html"
+    path.write_text(
+        "<!doctype html><html><body><article>             </article>"
+        "<article><p>Reviewed evidence</p></article></body></html>",
+        encoding="utf-8",
+    )
+    assert extract_text(path, "text/html", content_scope="article") == "Reviewed evidence\n"
+
+    path.write_text(
+        "<!doctype html><html><body><article>     </article></body></html>",
+        encoding="utf-8",
+    )
+    with pytest.raises(ExtractionError, match="contain no visible text"):
+        extract_text(path, "text/html", content_scope="article")
+
+
+def test_document_content_pin_ignores_hidden_shell_bytes(tmp_path: Path) -> None:
+    seed = tmp_path / "reviewed-document.html"
+    seed.write_bytes(DOCUMENT_HTML_V1)
+    reviewed_text = extract_text(seed, "text/html", content_scope="document")
+    content_digest = hashlib.sha256(reviewed_text.encode()).hexdigest()
+    first_root = tmp_path / "document-first"
+    second_root = tmp_path / "document-second"
+    for root in (first_root, second_root):
+        _write_catalog(
+            root,
+            integrity="content-pinned",
+            digest=None,
+            content_digest=content_digest,
+            content_scope="document",
+            content_profile="html-document-text-v1",
+        )
+
+    bodies = iter((DOCUMENT_HTML_V1, DOCUMENT_HTML_V2))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _streaming_response(next(bodies))
+
+    with _client(handler) as client:
+        first = sync_catalog(project_root=first_root, client=client)
+        second = sync_catalog(project_root=second_root, client=client)
+
+    assert first[0].status is SyncStatus.DOWNLOADED
+    assert second[0].status is SyncStatus.DOWNLOADED
+    assert first[0].raw_sha256 != second[0].raw_sha256
+    assert verify_catalog(project_root=second_root)[0].status is SyncStatus.VERIFIED
 
 
 def test_index_extracts_locally_and_is_deterministic(tmp_path: Path) -> None:
@@ -217,7 +396,7 @@ def test_index_extracts_pdf_offline_and_is_deterministic(tmp_path: Path) -> None
     extracted = f"{PDF_TEXT}\n"
     extracted_digest = hashlib.sha256(extracted.encode()).hexdigest()
     assert first[0].status is IndexStatus.INDEXED
-    assert first[0].sha256 == extracted_digest
+    assert first[0].extracted_sha256 == extracted_digest
     assert first[0].characters == len(extracted)
     assert second[0].status is IndexStatus.UNCHANGED
     assert index_path.read_bytes() == first_index
