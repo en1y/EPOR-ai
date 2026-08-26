@@ -4,4 +4,7 @@
 /.codex/
 /.agents/
 /.claude/settings.local.json
+
+# CLAUDE.md is a symlink to AGENTS.md. Excluded so the shared agent
+# instructions are indexed once, under AGENTS.md, instead of twice.
 /CLAUDE.md
