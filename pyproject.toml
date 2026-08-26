@@ -104,6 +104,7 @@ exclude = ["ui", "research/raw", "research/extracted", "research/cache"]
 
 [tool.uv]
 package = true
+required-version = "==0.11.19"
 build-constraint-dependencies = ["editables==0.3", "hatchling==1.32.0"]
 
 [tool.uv.extra-build-dependencies]

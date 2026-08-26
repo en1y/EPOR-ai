@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from epor.reference_policy import REFERENCE_CORPUS_MAX_BYTES
+
 from .models import JobStatus, JobType
 
 
@@ -28,9 +30,8 @@ TinyModelConfigPath = Literal[
     "configs/models/epor-reference.yaml",
 ]
 
-# Control jobs are deliberately fixture-scale. The standalone training CLI is
-# not governed by this local-console guardrail and has its own explicit inputs.
-TINY_CONTROL_CORPUS_MAX_BYTES = 1 * 1024 * 1024
+# Control and standalone commands share the same v0.0.1 reference-runtime cap.
+TINY_CONTROL_CORPUS_MAX_BYTES = REFERENCE_CORPUS_MAX_BYTES
 
 
 class TinyTrainSpec(StrictSchema):
@@ -181,8 +182,13 @@ class ResearchSourceRead(BaseModel):
     canonical_url: str
     tags: list[str]
     evidence_classes: list[str]
+    integrity: Literal["pinned", "content-pinned", "unpinned"]
     sync_status: Literal["verified", "missing", "error", "unknown"]
-    sha256: str | None = None
+    raw_sha256: str | None = None
+    tracked_raw_sha256: str | None = None
+    tracked_content_sha256: str | None = None
+    content_scope: Literal["document", "article"] | None = None
+    content_profile: Literal["html-document-text-v1", "html-article-text-v1"] | None = None
     size_bytes: int | None = None
     status_message: str = ""
 

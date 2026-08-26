@@ -16,11 +16,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from epor.models.config import (
     ModelConfig,
     dump_model_config,
-    load_model_config,
     model_config_from_mapping,
 )
 from epor.models.reference import EporDecoder
 from epor.models.tokenizer import DebugByteTokenizer
+from epor.reference_policy import (
+    load_reference_model_config,
+    validate_reference_batch,
+    validate_reference_eval_batches,
+    validate_reference_generation,
+    validate_reference_model,
+    validate_reference_steps,
+)
 
 from .checkpoint import (
     atomic_write_json,
@@ -245,7 +252,7 @@ def _checkpoint_payload(
 def _model_from_checkpoint(
     payload: dict[str, Any],
 ) -> tuple[ModelConfig, EporDecoder]:
-    config = model_config_from_mapping(payload["model_config"])
+    config = validate_reference_model(model_config_from_mapping(payload["model_config"]))
     model = EporDecoder(config, seed=0, device="cpu", dtype=torch.float32)
     model_state = payload["model_state"]
     if not isinstance(model_state, dict):
@@ -280,10 +287,9 @@ def pretrain(
     match the checkpoint; only the absolute final step may change.
     """
 
-    if max_steps < 1:
-        raise ValueError("max_steps must be positive")
+    validate_reference_steps(max_steps)
     destination = Path(output_dir).resolve()
-    recipe_config = load_model_config(config_path)
+    recipe_config = load_reference_model_config(config_path)
     resume_payload = load_checkpoint(resume_from) if resume_from is not None else None
     saved_settings = (
         TrainingSettings.model_validate(resume_payload["training_settings"])
@@ -300,6 +306,7 @@ def pretrain(
         data_seed=data_seed,
         checkpoint_every=checkpoint_every,
     )
+    validate_reference_batch(settings.batch_size, settings.sequence_length)
     if settings.sequence_length > recipe_config.configured_max_context:
         raise ValueError("training sequence length exceeds configured model context")
     config = ModelConfig.model_validate(
@@ -312,9 +319,8 @@ def pretrain(
         }
     )
 
+    validate_reference_model(config)
     tokenizer = DebugByteTokenizer()
-    if tokenizer.vocab_size != config.vocab_size:
-        raise ValueError("the v0.0.1 debug trainer requires a 260-token model configuration")
     corpus = load_token_corpus(corpus_path, tokenizer=tokenizer)
     data_stream = RandomBatchStream(
         corpus,
@@ -513,12 +519,14 @@ def evaluate(
 ) -> EvaluationResult:
     """Evaluate a reference checkpoint on deterministic contiguous windows."""
 
+    validate_reference_eval_batches(max_batches)
     checkpoint = Path(checkpoint_path).resolve()
     payload = load_checkpoint(checkpoint)
     config, model = _model_from_checkpoint(payload)
     saved = TrainingSettings.model_validate(payload["training_settings"])
     active_batch_size = saved.batch_size if batch_size is None else batch_size
     active_sequence_length = saved.sequence_length if sequence_length is None else sequence_length
+    validate_reference_batch(active_batch_size, active_sequence_length)
     if active_sequence_length > config.configured_max_context:
         raise ValueError("evaluation sequence length exceeds configured context")
     corpus = load_token_corpus(corpus_path)
@@ -590,8 +598,7 @@ def generate(
 ) -> GenerationResult:
     """Greedily generate text from a reference checkpoint using debug bytes."""
 
-    if max_new_tokens < 0:
-        raise ValueError("max_new_tokens must be non-negative")
+    validate_reference_generation(max_new_tokens)
     payload = load_checkpoint(checkpoint_path)
     config, model = _model_from_checkpoint(payload)
     tokenizer = DebugByteTokenizer()

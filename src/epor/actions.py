@@ -91,13 +91,19 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
             "and the result is neither released nor served"
         ),
         direction=f"{_OPERATOR_REQUEST}; the corpus is capped and contained below the roots",
-        system="CPU-safe, deterministic, and cooperatively cancellable",
+        system=(
+            "fixed model, corpus, checkpoint, batch-token, and step limits keep the reference "
+            "path CPU-safe; control jobs add checkpoint-boundary cooperative cancellation"
+        ),
     ),
     "tiny_eval": _declared(
         "evaluate a tiny reference checkpoint on a bounded local corpus",
         people=f"offline measurement of a fixture checkpoint; {_LOCAL_AND_OFFLINE}",
         direction=f"{_OPERATOR_REQUEST}; the checkpoint is contained below the configured root",
-        system="read-only over the checkpoint and cooperatively cancellable",
+        system=(
+            "bounded batches and inputs; read-only over the checkpoint, with cooperative "
+            "cancellation in control jobs"
+        ),
     ),
     "generate": _declared(
         "greedily generate text from a tiny reference checkpoint",
@@ -110,7 +116,7 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
             "no-harmful-output before this declaration can be reused"
         ),
         direction=f"{_OPERATOR_REQUEST}; the prompt comes from the operator's own command line",
-        system="bounded token count and read-only over the checkpoint",
+        system="bounded checkpoint and token count, and read-only over the checkpoint",
     ),
     "control_api_start": _declared(
         "start the typed control API on numeric loopback",

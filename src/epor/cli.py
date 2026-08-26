@@ -85,6 +85,28 @@ def authorize(action_id: str) -> None:
     raise typer.Exit(code=3)
 
 
+def _reference_path(
+    supplied: Path,
+    *,
+    label: str,
+    must_exist: bool,
+) -> tuple[Path, Path]:
+    """Resolve a direct reference-command path beneath ``EPOR_PROJECT_ROOT``."""
+
+    from epor.control.security import PathOutsideRootError, contained_path
+    from epor.control.settings import project_root_from_environment
+
+    project_root = project_root_from_environment()
+    try:
+        resolved = contained_path(project_root, supplied, must_exist=must_exist)
+        if must_exist and not resolved.is_file():
+            raise FileNotFoundError(resolved)
+    except (OSError, PathOutsideRootError) as exc:
+        console.print(f"[red]reference command refused[/red]: {label} {exc}")
+        raise typer.Exit(code=2) from exc
+    return project_root, resolved
+
+
 @app.command()
 def version() -> None:
     """Print the repository interface version."""
@@ -167,13 +189,13 @@ def config_validate(
 def train_pretrain(
     config: Annotated[
         Path,
-        typer.Argument(exists=True, dir_okay=False, readable=True),
+        typer.Argument(dir_okay=False),
     ],
     output: Annotated[Path, typer.Option("--output", help="Run output directory.")],
-    max_steps: Annotated[int, typer.Option(min=1, max=100_000)] = 2,
+    max_steps: Annotated[int, typer.Option(min=1, max=1_000)] = 2,
     corpus: Annotated[
         Path,
-        typer.Option(exists=True, dir_okay=False, readable=True),
+        typer.Option(dir_okay=False),
     ] = Path("fixtures/tiny_corpus.txt"),
     batch_size: Annotated[int | None, typer.Option(min=1)] = None,
     sequence_length: Annotated[int | None, typer.Option(min=1)] = None,
@@ -185,6 +207,9 @@ def train_pretrain(
     authorize("tiny_train")
     from epor.training import pretrain
 
+    project_root, config = _reference_path(config, label="config path", must_exist=True)
+    _, corpus = _reference_path(corpus, label="corpus path", must_exist=True)
+    _, output = _reference_path(output, label="output path", must_exist=False)
     result = pretrain(
         config,
         output,
@@ -194,6 +219,7 @@ def train_pretrain(
         sequence_length=sequence_length,
         model_seed=model_seed,
         data_seed=data_seed,
+        project_root=project_root,
     )
     typer.echo(result.model_dump_json(indent=2))
 
@@ -202,20 +228,20 @@ def train_pretrain(
 def train_resume(
     config: Annotated[
         Path,
-        typer.Argument(exists=True, dir_okay=False, readable=True),
+        typer.Argument(dir_okay=False),
     ],
     checkpoint: Annotated[
         Path,
-        typer.Argument(exists=True, dir_okay=False, readable=True),
+        typer.Argument(dir_okay=False),
     ],
     output: Annotated[Path, typer.Option("--output", help="Run output directory.")],
     max_steps: Annotated[
         int,
-        typer.Option(min=1, help="Absolute final optimizer step."),
+        typer.Option(min=1, max=1_000, help="Absolute final optimizer step."),
     ],
     corpus: Annotated[
         Path,
-        typer.Option(exists=True, dir_okay=False, readable=True),
+        typer.Option(dir_okay=False),
     ] = Path("fixtures/tiny_corpus.txt"),
 ) -> None:
     """Resume an exact deterministic trajectory from a trusted EPOR checkpoint."""
@@ -223,12 +249,17 @@ def train_resume(
     authorize("tiny_train")
     from epor.training import pretrain
 
+    project_root, config = _reference_path(config, label="config path", must_exist=True)
+    _, checkpoint = _reference_path(checkpoint, label="checkpoint path", must_exist=True)
+    _, corpus = _reference_path(corpus, label="corpus path", must_exist=True)
+    _, output = _reference_path(output, label="output path", must_exist=False)
     result = pretrain(
         config,
         output,
         max_steps=max_steps,
         resume_from=checkpoint,
         corpus_path=corpus,
+        project_root=project_root,
     )
     typer.echo(result.model_dump_json(indent=2))
 
@@ -237,19 +268,21 @@ def train_resume(
 def eval_run(
     checkpoint: Annotated[
         Path,
-        typer.Argument(exists=True, dir_okay=False, readable=True),
+        typer.Argument(dir_okay=False),
     ],
     corpus: Annotated[
         Path,
-        typer.Option(exists=True, dir_okay=False, readable=True),
+        typer.Option(dir_okay=False),
     ] = Path("fixtures/tiny_corpus.txt"),
-    max_batches: Annotated[int | None, typer.Option(min=1)] = None,
+    max_batches: Annotated[int | None, typer.Option(min=1, max=10_000)] = None,
 ) -> None:
     """Evaluate a tiny reference checkpoint on deterministic fixture windows."""
 
     authorize("tiny_eval")
     from epor.training import evaluate
 
+    _, checkpoint = _reference_path(checkpoint, label="checkpoint path", must_exist=True)
+    _, corpus = _reference_path(corpus, label="corpus path", must_exist=True)
     result = evaluate(checkpoint, corpus_path=corpus, max_batches=max_batches)
     typer.echo(result.model_dump_json(indent=2))
 
@@ -258,7 +291,7 @@ def eval_run(
 def generate_command(
     checkpoint: Annotated[
         Path,
-        typer.Argument(exists=True, dir_okay=False, readable=True),
+        typer.Argument(dir_okay=False),
     ],
     prompt: Annotated[str, typer.Argument(help="Prompt encoded with the debug tokenizer.")],
     max_new_tokens: Annotated[int, typer.Option(min=0, max=4096)] = 32,
@@ -268,6 +301,7 @@ def generate_command(
     authorize("generate")
     from epor.training import generate
 
+    _, checkpoint = _reference_path(checkpoint, label="checkpoint path", must_exist=True)
     result = generate(checkpoint, prompt, max_new_tokens=max_new_tokens)
     typer.echo(result.model_dump_json(indent=2))
 

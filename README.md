@@ -129,6 +129,13 @@ uv run --frozen --no-sync epor train pretrain configs/models/epor-tiny.yaml --ou
 uv run --frozen --no-sync pytest
 ```
 
+Executable reference commands are deliberately capped at 50 million structural
+parameters, a 1 MiB in-memory corpus, 1,000 training steps, 4,096 tokens per
+batch, 10,000 evaluation batches, and a 768 MiB trusted-checkpoint container.
+Their config, corpus, checkpoint, and output paths must resolve beneath the
+source checkout (or the explicit `EPOR_PROJECT_ROOT`). These are v0.0.1
+correctness limits, not configurable scale-training defaults.
+
 The browser console is built separately from `ui/`; it calls only the
 allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary

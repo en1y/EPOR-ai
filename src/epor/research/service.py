@@ -100,7 +100,7 @@ def verify_catalog(
     source_ids: Sequence[str] | None = None,
     max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> list[SyncResult]:
-    """Verify local files against pinned or locally recorded SHA-256 digests."""
+    """Verify local files against raw, normalized-content, or local digests."""
 
     if max_bytes <= 0:
         raise ValueError("max_bytes must be positive")
@@ -151,7 +151,11 @@ def index_catalog(
             continue
         raw_path = _contained_path(root, source.local_paths.raw)
         try:
-            text = extract_text(raw_path, source.media_type)
+            text = extract_text(
+                raw_path,
+                source.media_type,
+                content_scope=source.content_scope.value,
+            )
             encoded = text.encode("utf-8")
             digest = hashlib.sha256(encoded).hexdigest()
             unchanged = extracted_path.is_file() and _sha256(extracted_path) == digest
@@ -163,7 +167,7 @@ def index_catalog(
                     source.id,
                     status,
                     str(source.local_paths.extracted),
-                    sha256=digest,
+                    extracted_sha256=digest,
                     characters=len(text),
                 )
             )
@@ -180,10 +184,20 @@ def index_catalog(
                     "media_type": source.media_type,
                     "organization": source.organization,
                     "publication_date": source.publication_date,
-                    "raw_sha256": verification.sha256,
+                    "raw_sha256": verification.raw_sha256,
                     "tags": list(source.tags),
                     "text_characters": len(text),
                     "title": source.title,
+                    "tracked_raw_sha256": source.sha256,
+                    "tracked_content_sha256": source.content_sha256,
+                    "content_scope": (
+                        source.content_scope.value
+                        if source.integrity is IntegrityStatus.CONTENT_PINNED
+                        else None
+                    ),
+                    "content_profile": (
+                        source.content_profile.value if source.content_profile is not None else None
+                    ),
                 }
             )
         except (OSError, ExtractionError) as exc:
@@ -276,11 +290,20 @@ def _download_entry(
                         f"{declared_length}"
                     )
                 observed = digest.hexdigest()
-                if source.sha256 is not None and observed != source.sha256:
+                if source.integrity is IntegrityStatus.PINNED and observed != source.sha256:
                     raise ResearchSyncError(
                         f"{source.id}: SHA-256 mismatch (expected {source.sha256}, got {observed})"
                     )
                 _validate_file_signature(temporary, source.media_type)
+                content_digest = None
+                if source.integrity is IntegrityStatus.CONTENT_PINNED:
+                    content_digest = _content_digest(temporary, source)
+                    if content_digest != source.content_sha256:
+                        raise ResearchSyncError(
+                            f"{source.id}: normalized {source.content_scope.value} content "
+                            f"SHA-256 mismatch (expected {source.content_sha256}, got "
+                            f"{content_digest})"
+                        )
                 os.replace(temporary, destination)
                 temporary = None
                 metadata = {
@@ -291,6 +314,15 @@ def _download_entry(
                     "retrieved_at": _utc_now(),
                     "media_type": actual_type,
                     "sha256": observed,
+                    "content_sha256": content_digest,
+                    "content_scope": (
+                        source.content_scope.value
+                        if source.integrity is IntegrityStatus.CONTENT_PINNED
+                        else None
+                    ),
+                    "content_profile": (
+                        source.content_profile.value if source.content_profile is not None else None
+                    ),
                     "size_bytes": size,
                 }
                 _atomic_write_json(metadata_path, metadata)
@@ -298,14 +330,9 @@ def _download_entry(
                     source.id,
                     SyncStatus.DOWNLOADED,
                     str(source.local_paths.raw),
-                    sha256=observed,
+                    raw_sha256=observed,
                     size_bytes=size,
-                    message=(
-                        "downloaded digest is recorded only in ignored local metadata; "
-                        "the tracked catalog remains unpinned"
-                        if source.integrity is IntegrityStatus.UNPINNED
-                        else ""
-                    ),
+                    message=_integrity_message(source, downloaded=True),
                 )
         raise ResearchSyncError(f"{source.id}: redirect handling failed")
     finally:
@@ -327,7 +354,7 @@ def _verify_entry(source: ResearchEntry, root: Path, *, max_bytes: int) -> SyncR
         if size <= 0 or size > max_bytes:
             raise ResearchSyncError(f"local size {size} is outside the allowed range")
         digest = _sha256(raw_path)
-        expected = source.sha256
+        _validate_file_signature(raw_path, source.media_type)
         if source.integrity is IntegrityStatus.UNPINNED:
             metadata_path = _contained_path(root, source.local_paths.metadata)
             metadata = _load_metadata(metadata_path, source)
@@ -339,26 +366,32 @@ def _verify_entry(source: ResearchEntry, root: Path, *, max_bytes: int) -> SyncR
             recorded_size = metadata.get("size_bytes")
             if recorded_size != size:
                 raise ResearchSyncError(f"size mismatch (metadata {recorded_size!r}, local {size})")
-        if digest != expected:
-            raise ResearchSyncError(f"SHA-256 mismatch (expected {expected}, got {digest})")
-        _validate_file_signature(raw_path, source.media_type)
+            if digest != expected:
+                raise ResearchSyncError(f"SHA-256 mismatch (expected {expected}, got {digest})")
+        elif source.integrity is IntegrityStatus.PINNED:
+            if digest != source.sha256:
+                raise ResearchSyncError(
+                    f"SHA-256 mismatch (expected {source.sha256}, got {digest})"
+                )
+        else:
+            content_digest = _content_digest(raw_path, source)
+            if content_digest != source.content_sha256:
+                raise ResearchSyncError(
+                    f"normalized {source.content_scope.value} content SHA-256 mismatch "
+                    f"(expected {source.content_sha256}, got {content_digest})"
+                )
         status = (
             SyncStatus.VERIFIED
-            if source.integrity is IntegrityStatus.PINNED
+            if source.integrity is not IntegrityStatus.UNPINNED
             else SyncStatus.UNPINNED
         )
         return SyncResult(
             source.id,
             status,
             str(source.local_paths.raw),
-            sha256=digest,
+            raw_sha256=digest,
             size_bytes=size,
-            message=(
-                "local bytes match ignored synchronization metadata, but no digest is "
-                "pinned in the tracked catalog"
-                if status is SyncStatus.UNPINNED
-                else ""
-            ),
+            message=_integrity_message(source, downloaded=False),
         )
     except (OSError, ValueError, ResearchSyncError) as exc:
         return SyncResult(
@@ -404,6 +437,38 @@ def _validate_response_headers(
             "the archive hashes transfer bytes"
         )
     return actual_type, length
+
+
+def _content_digest(path: Path, source: ResearchEntry) -> str:
+    try:
+        text = extract_text(
+            path,
+            source.media_type,
+            content_scope=source.content_scope.value,
+        )
+    except ExtractionError as exc:
+        raise ResearchSyncError(f"{source.id}: cannot verify normalized content: {exc}") from exc
+    if not text:
+        raise ResearchSyncError(f"{source.id}: normalized content is empty")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _integrity_message(source: ResearchEntry, *, downloaded: bool) -> str:
+    if source.integrity is IntegrityStatus.UNPINNED:
+        return (
+            "downloaded digest is recorded only in ignored local metadata; the tracked catalog "
+            "remains unpinned"
+            if downloaded
+            else "local bytes match ignored synchronization metadata, but no digest is pinned "
+            "in the tracked catalog"
+        )
+    if source.integrity is IntegrityStatus.CONTENT_PINNED:
+        action = "downloaded raw bytes" if downloaded else "local raw bytes"
+        return (
+            f"{action} have a volatile transfer digest; normalized "
+            f"{source.content_scope.value} content matches the tracked SHA-256"
+        )
+    return ""
 
 
 def _validate_file_signature(path: Path, media_type: str) -> None:

@@ -52,6 +52,17 @@ is the work of v0.0.2 onward.
 
 ## v0.0.1 — research-backed bootstrap
 
+> **Implementation complete (2026-08-26).** The repository now contains the
+> tracked research ledger and offline extraction path, locked Python/UI
+> environments, bounded reference runtime, deterministic checkpoint/resume
+> loop, source-complete archive contract, loopback control plane and worker,
+> and the four-page local console described below. Pull requests and version
+> branches run the applicable offline G1/G3/G8 checks; a manual, networked G0
+> workflow performs the full allowlisted research sync, verification, and
+> indexing gate. This closes implementation scope only. Formal release still
+> requires successful hosted workflows, owner sign-off, and an authorized tag
+> or publication action.
+
 ### Repository and research foundation
 
 - Write `.gitignore` before downloading anything. Ignore virtual environments,
@@ -184,7 +195,8 @@ The initial archive covers:
 
 ### v0.0.x — prove every subsystem cheaply
 
-- **v0.0.1 — Research-backed bootstrap:** Complete the repository, ignored paper
+- **v0.0.1 — Research-backed bootstrap (implementation complete; formal release
+  pending):** Complete the repository, ignored paper
   archive, research dossiers, locked environment, reference model,
   deterministic tiny training, manifests, safe worker, and local console above.
 - **v0.0.2 — Safety covenant foundation:** Land the covenant as executable
