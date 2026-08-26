@@ -11,11 +11,14 @@ All model weights begin from independent random initialization. Teacher models
 may provide licensed signals or synthetic data, but their parameters are never
 copied, merged, or used as checkpoint initialization.
 
-| Family | Planned structure | Parameter accounting | Context target |
-|---|---|---|---:|
+Families are listed alphabetically, and intended capability descends in the same
+order: α is the flagship, γ the compact local model.
+
+| Family                | Planned structure                                                                         | Parameter accounting                                  |                                Context target |
+|-----------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------|----------------------------------------------:|
+| EPOR-α (`epor-alpha`) | Shared plus fine-grained routed experts                                                   | ≈30B total; 6–8B active measured per token            |  256K configured; 8K local certification goal |
+| EPOR-β (`epor-beta`)  | Dense RMSNorm/SwiGLU/GQA/RoPE decoder with backend-supported local/global attention       | 10–12B total and active                               | 256K configured; 16K local certification goal |
 | EPOR-γ (`epor-gamma`) | Elastic dense decoder with nested slices; optional PLE and conditional-memory experiments | ≈8B total, ≈4B core resident path, optional ≈2B slice | 128K configured; 32K local certification goal |
-| EPOR-α (`epor-alpha`) | Dense RMSNorm/SwiGLU/GQA/RoPE decoder with backend-supported local/global attention | 10–12B total and active | 256K configured; 16K local certification goal |
-| EPOR-β (`epor-beta`) | Shared plus fine-grained routed experts | ≈30B total; 6–8B active measured per token | 256K configured; 8K local certification goal |
 
 Every recipe keeps these concepts separate:
 

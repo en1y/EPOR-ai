@@ -168,7 +168,7 @@ def _research_payload(settings: ControlSettings) -> ResearchCatalogRead:
 
 def _models_payload(settings: ControlSettings) -> ModelFamilyList:
     items: list[ModelFamilyRead] = []
-    for family in ("gamma", "alpha", "beta"):
+    for family in ("alpha", "beta", "gamma"):
         path = settings.project_root / "configs" / "models" / f"epor-{family}.yaml"
         if not path.is_file():
             continue
