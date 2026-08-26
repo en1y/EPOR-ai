@@ -37,6 +37,16 @@ describe('markdown rendering', () => {
     expect(mermaidRender).toHaveBeenCalledWith(expect.any(String), 'graph TD\nA-->B')
   })
 
+  it('does not let document text forge a diagram marker', () => {
+    const { container } = render(
+      <Markdown markdown={'Inline <!--epor-diagram--> and\n\n<!--epor-diagram-->\n'} />,
+    )
+
+    expect(container.querySelector('figure.diagram')).toBeNull()
+    expect(container.querySelector('pre.mermaid-source')).toBeNull()
+    expect(container.textContent).toContain('<!--epor-diagram-->')
+  })
+
   it('keeps the drawn diagram across re-renders of the reader', async () => {
     const markdown = '```mermaid\ngraph TD\nA-->B\n```'
     const { container, rerender } = render(<Markdown markdown={markdown} />)
