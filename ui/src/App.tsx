@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AccessPage, SignInDialog } from './AccessPage'
 import { DocsPage } from './DocsPage'
+import { SafetyPage } from './SafetyPage'
 import { api } from './api'
+import {
+  EmptyState,
+  StatusPill,
+  formatDate,
+  shortId,
+  titleCase,
+  useDialogBehavior,
+} from './shared'
 import type {
   Artifact,
   Capabilities,
+  DeclaredAction,
   Health,
+  Identity,
   Job,
   JobEvent,
   JobStatus,
@@ -15,7 +27,16 @@ import type {
   ResearchCatalog,
 } from './types'
 
-type Page = 'overview' | 'training' | 'jobs' | 'models' | 'research' | 'docs'
+const anonymousIdentity: Identity = {
+  role: 'anonymous',
+  principal_id: null,
+  label: '',
+  scopes: [],
+  authenticated: false,
+  expires_at: null,
+}
+
+type Page = 'overview' | 'training' | 'jobs' | 'safety' | 'access' | 'models' | 'research' | 'docs'
 
 const pageCopy: Record<Page, { title: string; summary: string }> = {
   overview: {
@@ -29,6 +50,14 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   jobs: {
     title: 'Jobs',
     summary: 'Every queued and completed local job other than training and evaluation.',
+  },
+  safety: {
+    title: 'Safety covenant',
+    summary: 'The covenant being enforced right now, the actions declared under it, and the work it stopped.',
+  },
+  access: {
+    title: 'Access',
+    summary: 'Who may direct EPOR, which actions they hold, and how those credentials are managed.',
   },
   models: {
     title: 'Model families',
@@ -46,6 +75,7 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
 
 const navGroups: { label: string; pages: Page[] }[] = [
   { label: 'Workspace', pages: ['overview', 'training', 'jobs'] },
+  { label: 'Governance', pages: ['safety', 'access'] },
   { label: 'Reference', pages: ['models', 'research', 'docs'] },
 ]
 
@@ -62,85 +92,8 @@ const healthPollMilliseconds = 5_000
 
 type FormValue = string | boolean
 
-const focusableSelector = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled]):not([type="hidden"])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(',')
-
-function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter(
-    (element) => element.getAttribute('aria-hidden') !== 'true',
-  )
-}
-
 function progressPercentage(progress: number): number {
-  return Math.round(Math.min(1, Math.max(0, progress)) * 100)
-}
-
-function useDialogBehavior<T extends HTMLElement>(onClose: () => void) {
-  const dialogRef = useRef<T>(null)
-  const restoreFocusRef = useRef<HTMLElement | null>(
-    typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
-  )
-
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-    const initialFocus =
-      dialog.querySelector<HTMLElement>('[data-dialog-initial-focus]') ??
-      focusableElements(dialog)[0] ??
-      dialog
-    initialFocus.focus()
-
-    return () => {
-      const restoreFocus = restoreFocusRef.current
-      if (restoreFocus?.isConnected) restoreFocus.focus()
-    }
-  }, [])
-
-  const onDialogKeyDown = useCallback(
-    (event: React.KeyboardEvent<T>) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        onClose()
-        return
-      }
-      if (event.key !== 'Tab') return
-
-      const dialog = dialogRef.current
-      if (!dialog) return
-      const focusable = focusableElements(dialog)
-      if (focusable.length === 0) {
-        event.preventDefault()
-        dialog.focus()
-        return
-      }
-
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      const active = document.activeElement
-      if (!dialog.contains(active)) {
-        event.preventDefault()
-        ;(event.shiftKey ? last : first).focus()
-      } else if (event.shiftKey && (active === first || active === dialog)) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    },
-    [onClose],
-  )
-
-  return { dialogRef, onDialogKeyDown }
+  return Math.max(0, Math.min(100, Math.round(progress * 100)))
 }
 
 export function schemaPropertyType(property: JsonSchemaProperty): string {
@@ -233,22 +186,6 @@ function formatBytes(value: number | null | unknown): string {
   return `${amount.toFixed(index > 1 ? 1 : 0)} ${units[index]}`
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
-
-function shortId(value: string): string {
-  return value.slice(0, 8)
-}
-
-function titleCase(value: string): string {
-  return value.replaceAll('_', ' ').replaceAll('-', ' ')
-}
-
 function numberField(result: Record<string, unknown> | null, key: string): number | null {
   const value = result?.[key]
   return typeof value === 'number' ? value : null
@@ -263,17 +200,6 @@ function formatLoss(value: number | null): string {
   return value === null ? '—' : value.toFixed(4)
 }
 
-function StatusPill({ status }: { status: string }) {
-  const tone = ['succeeded', 'verified', 'ok', 'certified'].includes(status)
-    ? 'positive'
-    : ['failed', 'error', 'interrupted'].includes(status)
-      ? 'negative'
-      : ['running', 'starting', 'cancelling'].includes(status)
-        ? 'active'
-        : 'neutral'
-  return <span className={`status-pill ${tone}`}>{titleCase(status)}</span>
-}
-
 function Icon({ name }: { name: Page }) {
   if (name === 'overview') {
     return <path d="M4 5h16v12H4zM8 21h8M12 17v4M8 9h8M8 13h5" />
@@ -283,6 +209,12 @@ function Icon({ name }: { name: Page }) {
   }
   if (name === 'jobs') {
     return <path d="M5 5h14v14H5zM9 9h6M9 13h6M9 17h3" />
+  }
+  if (name === 'safety') {
+    return <path d="M12 3l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6l7-3ZM9 12l2 2 4-4" />
+  }
+  if (name === 'access') {
+    return <path d="M12 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM4 21a8 8 0 0 1 16 0" />
   }
   if (name === 'models') {
     return <path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Zm-8 9 8 4.5 8-4.5M4 16.5l8 4.5 8-4.5" />
@@ -298,11 +230,13 @@ function Navigation({
   onPage,
   health,
   capabilities,
+  covenantStatus,
 }: {
   page: Page
   onPage: (page: Page) => void
   health: Health | null
   capabilities: Capabilities | null
+  covenantStatus: string
 }) {
   return (
     <aside className="sidebar">
@@ -352,14 +286,14 @@ function Navigation({
             <dt>Bound to</dt>
             <dd>{capabilities?.bind_host ?? '127.0.0.1'}</dd>
           </div>
+          <div>
+            <dt>Covenant</dt>
+            <dd>{covenantStatus}</dd>
+          </div>
         </dl>
       </div>
     </aside>
   )
-}
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return <div className="empty-state">{children}</div>
 }
 
 function OverviewPage({
@@ -805,10 +739,12 @@ export function JobDetail({
   job,
   onClose,
   onChanged,
+  canMutate = true,
 }: {
   job: Job
   onClose: () => void
   onChanged: () => void
+  canMutate?: boolean
 }) {
   const [events, setEvents] = useState<JobEvent[]>([])
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
@@ -908,12 +844,14 @@ export function JobDetail({
           <div><dt>Created</dt><dd>{formatDate(job.created_at)}</dd></div>
           <div><dt>Worker</dt><dd>{job.worker_id ?? 'Awaiting claim'}</dd></div>
           <div><dt>Parent run</dt><dd>{job.retry_of_id ? shortId(job.retry_of_id) : '—'}</dd></div>
+          <div><dt>Submitted by</dt><dd>{job.submitted_by_id ? `${titleCase(job.submitted_by_role ?? 'operator')} ${shortId(job.submitted_by_id)}` : 'Before identity existed'}</dd></div>
+          <div><dt>Admitted under</dt><dd>{job.admission_covenant_sha256 ? <code className="hash">{job.admission_covenant_sha256}</code> : '—'}</dd></div>
         </dl>
         {job.error_message && <div className="error-banner"><strong>{job.error_code}</strong>{job.error_message}</div>}
         {actionError && <div className="error-banner">{actionError}</div>}
         <div className="drawer-actions">
-          {!terminalStatuses.has(job.status) && <button className="danger-button" type="button" onClick={() => void perform('cancel')}>Cancel job</button>}
-          {['failed', 'cancelled', 'interrupted'].includes(job.status) && <button className="primary-button" type="button" onClick={() => void perform('retry')}>Retry as new job</button>}
+          {!terminalStatuses.has(job.status) && <button className="danger-button" type="button" disabled={!canMutate} title={canMutate ? undefined : 'Sign in to stop this job'} onClick={() => void perform('cancel')}>Cancel job</button>}
+          {['failed', 'cancelled', 'interrupted'].includes(job.status) && <button className="primary-button" type="button" disabled={!canMutate} title={canMutate ? undefined : 'Sign in to retry this job'} onClick={() => void perform('retry')}>Retry as new job</button>}
         </div>
         {lossPoints.length > 1 && (
           <section className="detail-section">
@@ -1027,7 +965,7 @@ export function JobForm({
   )
 }
 
-export function JobsPage({ jobs, onSelect, onNew }: { jobs: Job[]; onSelect: (job: Job) => void; onNew: () => void }) {
+export function JobsPage({ jobs, onSelect, onNew, canQueue = true }: { jobs: Job[]; onSelect: (job: Job) => void; onNew: () => void; canQueue?: boolean }) {
   const activeCount = jobs.filter((job) => !terminalStatuses.has(job.status)).length
   return (
     <section className="panel table-panel">
@@ -1036,7 +974,7 @@ export function JobsPage({ jobs, onSelect, onNew }: { jobs: Job[]; onSelect: (jo
           <h2>{jobs.length} jobs · {activeCount} active</h2>
           <p>Append-only lifecycle. Training and evaluation runs have their own page.</p>
         </div>
-        <button className="primary-button" type="button" onClick={onNew}>New job</button>
+        <button className="primary-button" type="button" onClick={onNew}>{canQueue ? 'New job' : 'Sign in to queue'}</button>
       </div>
       {jobs.length === 0 ? <EmptyState>No jobs yet. Queue a typed system probe to exercise the worker.</EmptyState> : (
         <div className="table-scroll"><table><thead><tr><th>Job</th><th>Status</th><th>Progress</th><th>Created</th><th>Worker</th></tr></thead><tbody>
@@ -1050,8 +988,17 @@ export function JobsPage({ jobs, onSelect, onNew }: { jobs: Job[]; onSelect: (jo
   )
 }
 
+/**
+ * Reading is anonymous throughout. A control that would change something is
+ * shown, but disabled or redirected to sign-in, so the boundary is visible
+ * rather than discovered by clicking and receiving a 401.
+ */
 export default function App() {
   const [page, setPage] = useState<Page>('overview')
+  const [identity, setIdentity] = useState<Identity>(anonymousIdentity)
+  const [actions, setActions] = useState<DeclaredAction[]>([])
+  const [covenantStatus, setCovenantStatus] = useState('unknown')
+  const [signingIn, setSigningIn] = useState(false)
   const [health, setHealth] = useState<Health | null>(null)
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
   const [research, setResearch] = useState<ResearchCatalog | null>(null)
@@ -1066,6 +1013,30 @@ export default function App() {
 
   const refreshJobs = useCallback(async () => {
     try { setJobs(await api.jobs()) } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not load jobs') }
+  }, [])
+
+  const refreshIdentity = useCallback(async () => {
+    try { setIdentity(await api.identity()) } catch { setIdentity(anonymousIdentity) }
+  }, [])
+
+  useEffect(() => { void refreshIdentity() }, [refreshIdentity])
+
+  useEffect(() => {
+    let disposed = false
+    api.actions()
+      .then((registry) => { if (!disposed) setActions(registry.items) })
+      .catch(() => undefined)
+    api.covenant()
+      .then((covenant) => {
+        if (disposed) return
+        setCovenantStatus(
+          covenant.status === 'ratified' && covenant.ratification.matches_covenant
+            ? `v${covenant.covenant_version} ratified`
+            : `v${covenant.covenant_version} draft`,
+        )
+      })
+      .catch(() => undefined)
+    return () => { disposed = true }
   }, [])
 
   useEffect(() => {
@@ -1109,18 +1080,53 @@ export default function App() {
 
   const selectedJob = jobs.find((job) => job.id === selectedId) ?? null
   const queueQuickJob = async (type: JobType, spec: Record<string, unknown> = {}) => {
+    if (!identity.authenticated) { setSigningIn(true); return }
     try { const job = await api.createJob(type, spec); setPage('jobs'); setSelectedId(job.id); await refreshJobs() }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not queue job') }
+  }
+  const startJob = (next: { type?: JobType; values?: Record<string, FormValue> }) => {
+    if (identity.authenticated) setJobForm(next)
+    else setSigningIn(true)
   }
 
   return (
     <div className="app-shell">
-      <Navigation page={page} onPage={setPage} health={health} capabilities={capabilities} />
+      <Navigation
+        page={page}
+        onPage={setPage}
+        health={health}
+        capabilities={capabilities}
+        covenantStatus={covenantStatus}
+      />
       <main>
         <header className="topbar">
           <div>
             <h1>{pageCopy[page].title}</h1>
             <p>{pageCopy[page].summary}</p>
+          </div>
+          <div className="identity-control">
+            <button
+              type="button"
+              className="identity-chip"
+              onClick={() => setPage('access')}
+              aria-label={`Signed in as ${identity.authenticated ? identity.label || identity.role : 'anonymous'}. Open access settings.`}
+            >
+              <StatusPill status={identity.role} />
+              <span>{identity.authenticated ? identity.label || titleCase(identity.role) : 'Anonymous'}</span>
+            </button>
+            {identity.authenticated ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void api.closeSession().finally(() => void refreshIdentity())}
+              >
+                Sign out
+              </button>
+            ) : (
+              <button type="button" className="ghost-button" onClick={() => setSigningIn(true)}>
+                Sign in
+              </button>
+            )}
           </div>
         </header>
         {error && <div className="global-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError('')}>Dismiss</button></div>}
@@ -1130,19 +1136,34 @@ export default function App() {
             <TrainingPage
               jobs={jobs}
               onSelect={(job) => setSelectedId(job.id)}
-              onTrain={() => setJobForm({ type: 'tiny_train' })}
+              onTrain={() => startJob({ type: 'tiny_train' })}
               onEvaluate={(checkpointPath) =>
-                setJobForm({ type: 'tiny_eval', values: { checkpoint_path: checkpointPath } })
+                startJob({ type: 'tiny_eval', values: { checkpoint_path: checkpointPath } })
               }
             />
           )}
-          {page === 'jobs' && <JobsPage jobs={jobs.filter((job) => !trainingTypes.has(job.type))} onSelect={(job) => setSelectedId(job.id)} onNew={() => setJobForm({})} />}
+          {page === 'jobs' && <JobsPage jobs={jobs.filter((job) => !trainingTypes.has(job.type))} onSelect={(job) => setSelectedId(job.id)} onNew={() => startJob({})} canQueue={identity.authenticated} />}
+          {page === 'safety' && <SafetyPage identity={identity} />}
+          {page === 'access' && (
+            <AccessPage
+              identity={identity}
+              actions={actions}
+              onIdentityChanged={() => void refreshIdentity()}
+              onSignIn={() => setSigningIn(true)}
+            />
+          )}
           {page === 'models' && <ModelsPage models={models} />}
           {page === 'research' && <ResearchPage catalog={research} />}
           {page === 'docs' && <DocsPage />}
         </div>
       </main>
-      {selectedJob && <JobDetail job={selectedJob} onClose={() => setSelectedId(null)} onChanged={() => void refreshJobs()} />}
+      {selectedJob && <JobDetail job={selectedJob} onClose={() => setSelectedId(null)} onChanged={() => void refreshJobs()} canMutate={identity.authenticated} />}
+      {signingIn && (
+        <SignInDialog
+          onClose={() => setSigningIn(false)}
+          onSignedIn={() => { setSigningIn(false); void refreshIdentity() }}
+        />
+      )}
       {jobForm && (
         <JobForm
           definitions={definitions}
