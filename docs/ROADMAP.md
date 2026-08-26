@@ -60,8 +60,8 @@ is the work of v0.0.2 onward.
 - Provide a root README, documentation index, this roadmap, architecture
   overview, data-governance policy, compute policy, and contribution/security
   guidance.
-- License project code under Apache-2.0. Assign dataset and weight licenses only
-  after their own provenance audits.
+- Keep project code proprietary with all rights reserved. Assign dataset and
+  weight licenses only after their own provenance audits.
 - Track `research/catalog.yaml` as the source ledger. Keep `research/raw/`,
   `research/extracted/`, and `research/cache/` ignored. Track only original,
   paraphrased dossiers under `docs/research/`.
