@@ -16,11 +16,25 @@ from sqlalchemy import Select, delete, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
-from epor.actions import resolve_action
-from epor.safety import Resolution, load_covenant
+from epor.actions import authorization_denied, resolve_action
+from epor.safety import Covenant, Resolution, load_covenant
 
+from .authority import ANONYMOUS, Actor, AuthorityStore, Escalation, EscalationState, request_digest
+from .errors import (
+    ArtifactPathError,
+    AuthenticationRequiredError,
+    AuthorizationDeniedError,
+    ControlError,
+    CovenantBlockedError,
+    CovenantEscalatedError,
+    CovenantRefusedError,
+    InvalidJobSpecError,
+    InvalidTransitionError,
+    JobNotFoundError,
+)
 from .models import (
     TERMINAL_JOB_STATUSES,
+    AuthorityEvent,
     Job,
     JobArtifact,
     JobEvent,
@@ -28,60 +42,31 @@ from .models import (
     JobType,
     utc_now,
 )
+from .models import (
+    Escalation as EscalationRow,
+)
+from .models import (
+    Principal as PrincipalRow,
+)
 from .schemas import JOB_SPEC_MODELS, TINY_CONTROL_CORPUS_MAX_BYTES
 from .security import PathOutsideRootError, contained_path, redact, redact_text
 from .settings import ControlSettings
 from .truth import JobTruthStore, TruthStoreError, parse_utc
 
-
-class ControlError(Exception):
-    """Base class mapped to the stable control API error envelope."""
-
-    status_code = 400
-    code = "control_error"
-
-    def __init__(self, message: str, *, details: Any = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.details = redact(details)
-
-
-class JobNotFoundError(ControlError):
-    status_code = 404
-    code = "job_not_found"
-
-
-class InvalidTransitionError(ControlError):
-    status_code = 409
-    code = "invalid_job_transition"
-
-
-class InvalidJobSpecError(ControlError):
-    status_code = 422
-    code = "invalid_job_spec"
-
-
-class ArtifactPathError(ControlError):
-    status_code = 422
-    code = "artifact_path_not_allowed"
-
-
-class CovenantBlockedError(ControlError):
-    """Raised when the safety covenant does not permit admitting a job.
-
-    Covers both refusal and escalation: neither admits work, and the caller is
-    told which principle and obligation decided.
-    """
-
-    status_code = 403
-    code = "covenant_blocked"
-
-    def __init__(self, resolution: Resolution) -> None:
-        super().__init__(
-            f"the safety covenant did not permit this job ({resolution.outcome})",
-            details=resolution.model_dump(mode="json"),
-        )
-        self.resolution = resolution
+__all__ = [
+    "ArtifactPathError",
+    "AuthenticationRequiredError",
+    "AuthorizationDeniedError",
+    "ControlError",
+    "CovenantBlockedError",
+    "CovenantEscalatedError",
+    "CovenantRefusedError",
+    "InvalidJobSpecError",
+    "InvalidTransitionError",
+    "JobNotFoundError",
+    "JobService",
+    "re_safe_code",
+]
 
 
 _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
@@ -115,11 +100,14 @@ class JobService:
         self._sessions = session_factory
         self.settings = settings
         assert settings.artifact_root is not None
-        # No covenant, no control plane. A missing or malformed covenant raises
-        # here rather than degrading to an ungoverned service.
+        assert settings.safety_root is not None
+        # No covenant, no control plane. A missing, malformed, or unratifiable
+        # covenant raises here rather than degrading to an ungoverned service.
         self.covenant = load_covenant()
+        self.authority = AuthorityStore(settings.safety_root)
         self._truth = JobTruthStore(settings.artifact_root)
         self.restore_file_index()
+        self.restore_authority_index()
 
     @contextmanager
     def _write_session(self) -> Iterator[Session]:
@@ -351,6 +339,11 @@ class JobService:
             "worker_id": state.get("worker_id"),
             "event_cursor": int(state["event_cursor"]),
             "retry_of_id": state.get("retry_of_id"),
+            # Absent in v0.0.1 truth, which must keep restoring unchanged.
+            "submitted_by_id": state.get("submitted_by_id"),
+            "submitted_by_role": state.get("submitted_by_role"),
+            "admission_covenant_sha256": state.get("admission_covenant_sha256"),
+            "escalation_id": state.get("escalation_id"),
             "created_at": created_at,
             "updated_at": updated_at,
             "started_at": parse_utc(state.get("started_at")),
@@ -407,24 +400,46 @@ class JobService:
 
     def create_job(
         self,
-        job_type: JobType,
+        action_id: str | JobType,
         raw_spec: dict[str, Any] | None = None,
         *,
+        actor: Actor = ANONYMOUS,
         retry_of_id: str | None = None,
     ) -> Job:
-        # Admission precedes spec validation: work with no covenant standing is
-        # turned away before any of its input is parsed.
-        resolution = self.admit(job_type)
-        spec = self.validate_spec(job_type, raw_spec or {})
+        """Admit, then validate, then queue.
+
+        ``action_id`` stays a plain string until the covenant has spoken.  A
+        request naming work EPOR does not declare must reach the resolver and
+        be turned away by it, not fail on an enum conversion that never
+        consulted the covenant — and its specification must not be parsed, let
+        alone stored, before then.
+        """
+
+        requested = action_id.value if isinstance(action_id, JobType) else str(action_id)
+        spec = dict(raw_spec or {})
+        resolution, escalation = self.admit(requested, spec=spec, actor=actor)
+        try:
+            job_type = JobType(requested)
+        except ValueError as exc:
+            # Declared and permitted, but not work the control plane runs; the
+            # CLI owns it. Reported as a bad request, never as a crash.
+            raise InvalidJobSpecError(
+                "this action is declared but is not a control-plane job type"
+            ) from exc
+        validated = self.validate_spec(job_type, spec)
         now = utc_now()
         job = Job(
             id=str(uuid4()),
             type=job_type,
             status=JobStatus.QUEUED,
-            spec=spec,
+            spec=validated,
             progress=0.0,
             event_cursor=0,
             retry_of_id=retry_of_id,
+            submitted_by_id=actor.id if actor.is_authenticated else None,
+            submitted_by_role=actor.role.value if actor.is_authenticated else None,
+            admission_covenant_sha256=resolution.covenant_sha256,
+            escalation_id=escalation.id if escalation is not None else None,
             created_at=now,
             updated_at=now,
         )
@@ -436,25 +451,127 @@ class JobService:
                 session,
                 job,
                 "job.queued",
-                {"type": job_type.value, "covenant": resolution.model_dump(mode="json")},
+                {
+                    "type": job_type.value,
+                    "covenant": resolution.model_dump(mode="json"),
+                    "submitted_by": job.submitted_by_id,
+                    "escalation_id": job.escalation_id,
+                },
             )
+        if escalation is not None:
+            self.authority.attach_job(escalation.id, job.id)
         return job
 
-    def admit(self, job_type: JobType) -> Resolution:
-        """Resolve ``job_type`` against the covenant, raising unless permitted.
+    def admit(
+        self,
+        action_id: str,
+        *,
+        spec: Any = None,
+        actor: Actor = ANONYMOUS,
+        surface: str = "api",
+    ) -> tuple[Resolution, Escalation | None]:
+        """Resolve ``action_id`` for ``actor``, raising unless work may proceed.
 
-        Every path that queues work goes through here, including retry.  A job
-        that the covenant does not permit is never created, so there is nothing
-        for a later stage to reconsider.
+        Every path that starts work goes through here, including retry and the
+        worker's dispatch recheck.  The covenant file is reloaded on each call
+        so a corrected covenant governs work that is already queued, and every
+        resolution is written to durable safety truth whatever it decided — a
+        gate that records only its refusals cannot be audited for what it let
+        through.
+
+        Returns the resolution and, when a prior human approval was spent to
+        get here, the escalation it came from.
         """
 
-        # A value that is not a known JobType must still reach the covenant and
-        # be turned away by it, rather than failing with a type error.
-        action_id = job_type.value if isinstance(job_type, JobType) else str(job_type)
-        resolution = resolve_action(action_id, self.covenant)
-        if resolution.outcome != "allow":
-            raise CovenantBlockedError(resolution)
-        return resolution
+        covenant = self.reload_covenant()
+        digest = request_digest(action_id, spec)
+        resolution = resolve_action(action_id, covenant, actor=actor)
+        self.authority.record_decision(
+            actor=actor,
+            action_id=action_id,
+            surface=surface,
+            outcome=resolution.outcome,
+            binding_priority=resolution.binding_priority,
+            reasons=resolution.reasons,
+            covenant_sha256=resolution.covenant_sha256,
+            request_digest_value=digest,
+        )
+        if resolution.outcome == "allow":
+            return resolution, None
+        if resolution.outcome == "refuse":
+            # A refusal is the covenant's own decision about the work itself.
+            # No approval path exists for it, deliberately.
+            if authorization_denied(resolution):
+                if not actor.is_authenticated:
+                    raise AuthenticationRequiredError(
+                        "this action requires a verified operator identity"
+                    )
+                raise AuthorizationDeniedError(
+                    f"actor holds no delegation covering {action_id!r}",
+                    details=resolution.model_dump(mode="json"),
+                )
+            raise CovenantRefusedError(resolution)
+
+        approved = self.authority.consume_approval(
+            actor=actor,
+            action_id=action_id,
+            request_digest_value=digest,
+            covenant_sha256=resolution.covenant_sha256,
+        )
+        if approved is not None:
+            return resolution, approved
+        opened = self.authority.open_escalation(
+            actor=actor,
+            action_id=action_id,
+            request_digest_value=digest,
+            covenant_sha256=resolution.covenant_sha256,
+            binding_priority=resolution.binding_priority,
+            reasons=resolution.reasons,
+        )
+        raise CovenantEscalatedError(resolution, escalation_id=opened.id)
+
+    def reload_covenant(self) -> Covenant:
+        """Re-read the tracked covenant so a correction takes effect at once."""
+
+        self.covenant = load_covenant()
+        return self.covenant
+
+    def actor_for(self, job: Job) -> Actor:
+        """Re-derive a queued job's submitter at dispatch time.
+
+        A delegation revoked or expired since admission yields the anonymous
+        actor, which the covenant's second principle then refuses.  Trusting
+        the recorded role instead would let a revoked operator's queued work
+        keep running.
+        """
+
+        if job.submitted_by_id is None:
+            return ANONYMOUS
+        principals = {item.id: item for item in self.authority.principals()}
+        principal = principals.get(job.submitted_by_id)
+        if principal is None or not principal.active():
+            return ANONYMOUS
+        return principal.actor()
+
+    def approved_at_dispatch(self, job: Job, resolution: Resolution) -> bool:
+        """Whether a still-valid consumed approval covers this dispatch.
+
+        The approval is spent once, at admission; the worker re-reads it rather
+        than spending another.  It counts only while the covenant that granted
+        it is still the covenant in force.
+        """
+
+        if job.escalation_id is None:
+            return False
+        try:
+            escalation = self.authority.escalation(job.escalation_id)
+        except ControlError:
+            return False
+        return (
+            escalation.state is EscalationState.CONSUMED
+            and escalation.covenant_sha256 == resolution.covenant_sha256
+            and escalation.action_id == job.type.value
+        )
 
     def get_job(self, job_id: str) -> Job:
         with self._sessions() as session:
@@ -699,7 +816,7 @@ class JobService:
                 interrupted.append(job.id)
         return interrupted
 
-    def retry(self, job_id: str) -> Job:
+    def retry(self, job_id: str, *, actor: Actor = ANONYMOUS) -> Job:
         with self._sessions() as session:
             original = self._require_job(session, job_id)
             if original.status not in {
@@ -712,7 +829,80 @@ class JobService:
                 )
             job_type = original.type
             spec = dict(original.spec)
-        return self.create_job(job_type, spec, retry_of_id=job_id)
+        # A retry is a fresh submission by whoever asked for it, not a replay of
+        # the original submitter's authority.
+        return self.create_job(job_type, spec, actor=actor, retry_of_id=job_id)
+
+    def restore_authority_index(self) -> int:
+        """Rebuild the identity and escalation tables from hash-chained truth.
+
+        Deterministic by construction: the same log always produces the same
+        rows.  Deleting the SQLite file loses nothing, and a broken chain raises
+        out of here rather than leaving a half-built index in place.
+        """
+
+        records = self.authority.records()
+        principals = self.authority.principals()
+        escalations = self.authority.escalations(limit=len(records) + 1)
+        with self._write_session() as session:
+            session.execute(delete(AuthorityEvent))
+            session.execute(delete(PrincipalRow))
+            session.execute(delete(EscalationRow))
+            for principal in principals:
+                session.add(
+                    PrincipalRow(
+                        id=principal.id,
+                        role=principal.role.value,
+                        label=principal.label,
+                        scopes=sorted(principal.scopes),
+                        credential_sha256=principal.credential_sha256,
+                        created_at=principal.created_at,
+                        expires_at=principal.expires_at,
+                        revoked_at=principal.revoked_at,
+                        rotated_at=principal.rotated_at,
+                    )
+                )
+            for escalation in escalations:
+                session.add(
+                    EscalationRow(
+                        id=escalation.id,
+                        actor_id=escalation.actor_id,
+                        actor_role=escalation.actor_role.value,
+                        action_id=escalation.action_id,
+                        request_digest=escalation.request_digest,
+                        covenant_sha256=escalation.covenant_sha256,
+                        binding_priority=escalation.binding_priority,
+                        reasons=list(escalation.reasons),
+                        state=escalation.effective_state().value,
+                        decided_by=escalation.decided_by,
+                        rationale=escalation.rationale,
+                        created_at=escalation.created_at,
+                        decided_at=escalation.decided_at,
+                        approval_expires_at=escalation.approval_expires_at,
+                        consumed_at=escalation.consumed_at,
+                        consumed_job_id=escalation.consumed_job_id,
+                    )
+                )
+            for record in records:
+                created_at = parse_utc(record.get("recorded_at"))
+                if created_at is None:
+                    raise TruthStoreError("authority record requires recorded_at")
+                body = record.get("principal") or record.get("escalation") or {}
+                subject = body.get("id") if isinstance(body, dict) else None
+                session.add(
+                    AuthorityEvent(
+                        sequence=int(record["sequence"]),
+                        kind=str(record["kind"])[:48],
+                        actor_id=record.get("by") or record.get("actor_id"),
+                        subject_id=(
+                            subject or record.get("principal_id") or record.get("escalation_id")
+                        ),
+                        payload=redact(_indexable(record)),
+                        record_sha256=str(record["record_sha256"]),
+                        created_at=created_at,
+                    )
+                )
+        return len(records)
 
     def register_artifact(
         self,
@@ -764,6 +954,13 @@ class JobService:
                 },
             )
         return artifact
+
+
+def _indexable(record: dict[str, Any]) -> dict[str, Any]:
+    """Drop chain framing from a record before indexing its body."""
+
+    framing = {"schema_version", "sequence", "previous_sha256", "record_sha256", "kind"}
+    return {key: value for key, value in record.items() if key not in framing}
 
 
 def re_safe_code(value: str) -> str:

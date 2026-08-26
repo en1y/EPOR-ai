@@ -49,6 +49,9 @@ jobs:
       - name: Validate project version surfaces
         run: uv run --frozen --no-sync python scripts/sync_project_version.py --check
 
+      - name: Validate the covenant ratification record
+        run: uv run --frozen --no-sync python scripts/ratify_covenant.py --check
+
       - name: Upgrade and validate the rebuildable database
         env:
           EPOR_CONTROL_DATABASE: "${{ runner.temp }}/epor-control.sqlite3"

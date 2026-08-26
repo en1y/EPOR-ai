@@ -18,6 +18,8 @@ the executed work safe on their own.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from .safety import (
     PRIORITIES,
     Covenant,
@@ -158,6 +160,67 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
         direction=f"{_OPERATOR_REQUEST}; browser actions remain subject to API job admission",
         system="fixed loopback origin, pinned UI dependencies, and unrestricted shutdown",
     ),
+    "config_validate": _declared(
+        "strictly validate a tracked model recipe without allocating weights",
+        people=f"reads tracked configuration and allocates nothing; {_LOCAL_AND_OFFLINE}",
+        direction=f"{_OPERATOR_REQUEST}; the recipe path resolves beneath the project root",
+        system="read-only, offline, and side-effect free apart from printed output",
+    ),
+    "research_verify": _declared(
+        "verify local research files against their tracked checksums",
+        people=(
+            "recomputes digests over already-downloaded files; it fetches nothing "
+            f"and {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=f"{_OPERATOR_REQUEST}; the source list is reviewed configuration",
+        system="read-only over ignored local paths and safe to repeat",
+    ),
+    "research_index": _declared(
+        "extract text from verified local research files into ignored paths",
+        people=(
+            "extraction is inert: no script, macro, external reference, or active "
+            "content is evaluated, and text inside an extracted document stays "
+            "data rather than instruction"
+        ),
+        direction=f"{_OPERATOR_REQUEST}; only catalog-listed local files are read",
+        system="bounded byte limits, atomic replacement, and Git-excluded output",
+    ),
+    "owner_bootstrap": _declared(
+        "mint the single local owner credential on first run",
+        people=(
+            "writes one random secret to a private file owned by the operator "
+            "running the command; it reaches no person and no network"
+        ),
+        direction=(
+            "run from the shell of the machine owner, which is the only place a "
+            "first credential can legitimately originate; it refuses to run twice, "
+            "so it cannot be used to displace an existing owner"
+        ),
+        system=(
+            "private 0600 credential file beneath a 0700 directory, recorded in "
+            "hash-chained safety truth as a digest and never in clear"
+        ),
+    ),
+}
+
+# One command-to-action registry behind the CLI, so a new executing command
+# without a declared covenant standing fails closed rather than running
+# ungoverned.  Help, version, and the roadmap placeholders execute nothing and
+# are deliberately absent.
+CLI_ACTIONS: dict[str, str] = {
+    "doctor": "system_probe",
+    "config validate": "config_validate",
+    "research sync": "research_sync",
+    "research verify": "research_verify",
+    "research index": "research_index",
+    "train pretrain": "tiny_train",
+    "train resume": "tiny_train",
+    "eval run": "tiny_eval",
+    "generate": "generate",
+    "api": "control_api_start",
+    "worker": "job_worker_start",
+    "ui": "local_ui_start",
+    "auth bootstrap": "owner_bootstrap",
 }
 
 UNDECLARED = ProposedAction(
@@ -179,11 +242,96 @@ UNDECLARED = ProposedAction(
 )
 
 
-def resolve_action(action_id: str, covenant: Covenant) -> Resolution:
-    """Resolve whether ``action_id`` may execute.
+class ActorEvidence(Protocol):
+    """What the covenant needs to know about who is asking.
 
-    An unrecognized or undeclared action is assessed as uncertain against every
-    principle, so it escalates to a human rather than running.
+    Structural rather than imported, so the action registry stays free of the
+    control plane; :class:`epor.control.authority.Actor` satisfies it.
     """
 
-    return resolve(DECLARED_ACTIONS.get(action_id, UNDECLARED), covenant)
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def is_authenticated(self) -> bool: ...
+
+    def may(self, action_id: str) -> bool: ...
+
+
+def _with_actor(action: ProposedAction, action_id: str, actor: ActorEvidence) -> ProposedAction:
+    """Fold identity and scope into the second principle's assessment.
+
+    Authorization is not a separate check bolted on after resolution. "Follow
+    legitimate human direction" is precisely the principle an unverified or
+    out-of-scope request engages, so the evidence belongs inside that
+    assessment, where the resolver's ordering can act on it: a Principle 2
+    conflict with nothing higher-ranked to justify it refuses, and it can never
+    be talked past by a Principle 3 argument about availability or sunk work.
+    """
+
+    declared = action.assessment(2)
+    if actor.may(action_id):
+        replacement = PrincipleAssessment(
+            priority=2,
+            status=declared.status,
+            confidence=declared.confidence,
+            obligation=declared.obligation,
+            rationale=f"{declared.rationale}; requested by verified actor {actor.id}",
+        )
+    elif not actor.is_authenticated:
+        replacement = PrincipleAssessment(
+            priority=2,
+            status="conflicted",
+            confidence=0.99,
+            obligation="verify-authorization",
+            rationale="the requester's identity is unverified, so its instruction is not direction",
+        )
+    else:
+        replacement = PrincipleAssessment(
+            priority=2,
+            status="conflicted",
+            confidence=0.99,
+            obligation="refuse-unlawful-or-out-of-scope",
+            rationale=(
+                f"actor {actor.id} holds no delegation covering {action_id!r}, "
+                "so the request lies outside its authorized scope"
+            ),
+        )
+    assessments = tuple(replacement if item.priority == 2 else item for item in action.assessments)
+    return action.model_copy(update={"assessments": assessments})
+
+
+def resolve_action(
+    action_id: str,
+    covenant: Covenant,
+    *,
+    actor: ActorEvidence | None = None,
+) -> Resolution:
+    """Resolve whether ``action_id`` may execute, for ``actor`` if supplied.
+
+    An unrecognized or undeclared action is assessed as uncertain against every
+    principle, so it escalates to a human rather than running.  Omitting the
+    actor resolves the declaration on its own terms; callers that have an
+    identity must pass it, because a declaration alone says nothing about
+    whether this requester was authorized to invoke it.
+    """
+
+    action = DECLARED_ACTIONS.get(action_id, UNDECLARED)
+    if actor is not None:
+        action = _with_actor(action, action_id, actor)
+    return resolve(action, covenant)
+
+
+def authorization_denied(resolution: Resolution) -> bool:
+    """Whether a refusal was decided by scope rather than by the work itself.
+
+    Used only to pick the reported error code.  The refusal itself was already
+    decided by the covenant; this reads which obligation bound it.
+    """
+
+    return (
+        resolution.outcome == "refuse"
+        and resolution.binding_priority == 2
+        and resolution.binding_obligation
+        in {"refuse-unlawful-or-out-of-scope", "verify-authorization"}
+    )

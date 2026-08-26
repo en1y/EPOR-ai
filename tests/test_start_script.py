@@ -38,7 +38,7 @@ set -eu
 service=""
 for argument in "$@"; do
   case "${argument}" in
-    version | api | worker | ui)
+    version | auth | api | worker | ui)
       service="${argument}"
       break
       ;;
@@ -48,6 +48,11 @@ done
 printf '%s\n' "${service}" >> "${EPOR_LAUNCH_TEST_LOG:?}"
 if [[ "${service}" == version ]]; then
   exit 0
+fi
+if [[ "${service}" == auth ]]; then
+  # No owner credential yet: the launcher must hint and carry on, because
+  # reading the console never requires one.
+  exit 1
 fi
 if [[ "${service}" == ui && -n "${EPOR_TEST_UI_EXIT:-}" ]]; then
   sleep 0.2
@@ -141,7 +146,10 @@ def test_child_failure_stops_the_other_services_without_installing(tmp_path: Pat
 
     assert completed.returncode == 7
     lines = log_path.read_text(encoding="utf-8").splitlines()
-    assert lines[:5] == ["version", "api", "health", "worker", "ui"]
+    # The owner-credential hint runs between the readiness check and the
+    # services, and never blocks them.
+    assert lines[:6] == ["version", "auth", "api", "health", "worker", "ui"]
+    assert "No owner credential yet." in completed.stdout
     assert {"api:term", "worker:term"} <= set(lines)
     assert not any(line.startswith("npm:") for line in lines)
     assert "A service exited unexpectedly (status 7)." in completed.stderr

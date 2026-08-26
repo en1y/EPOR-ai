@@ -30,6 +30,10 @@ const job: Job = {
   error_message: null,
   worker_id: null,
   retry_of_id: null,
+  submitted_by_id: null,
+  submitted_by_role: null,
+  admission_covenant_sha256: null,
+  escalation_id: null,
   created_at: '2026-08-25T10:00:00Z',
   updated_at: '2026-08-25T10:00:00Z',
   started_at: null,
@@ -296,10 +300,15 @@ describe('API health polling', () => {
     vi.spyOn(api, 'models').mockResolvedValue([])
     vi.spyOn(api, 'jobTypes').mockResolvedValue([])
     vi.spyOn(api, 'jobs').mockResolvedValue([])
+    // The shell asks who you are on mount; anonymous is the default answer.
+    vi.spyOn(api, 'identity').mockRejectedValue(new Error('anonymous'))
+    vi.spyOn(api, 'actions').mockRejectedValue(new Error('unavailable'))
+    vi.spyOn(api, 'covenant').mockRejectedValue(new Error('unavailable'))
 
     render(<App />)
     await act(async () => { await Promise.resolve() })
     expect(screen.getByText('EPOR 0.0.1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
     expect(screen.getByText('EPOR offline')).toBeInTheDocument()

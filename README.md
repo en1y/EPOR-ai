@@ -67,12 +67,25 @@ refused. An action with no reviewed declaration escalates instead of running,
 so work cannot become executable by being forgotten. Cancellation and shutdown
 are never gated, because the second principle outranks the third.
 
+Who is asking is part of that decision rather than a separate check beside it.
+Every mutation requires a verified identity — the project owner, or an
+operator holding an expiring delegation that names declared actions
+explicitly — and the actor is folded into the second principle's assessment, so
+an unverified or out-of-scope request produces a Principle 2 conflict that the
+ordering then refuses. Reading stays anonymous throughout. Work the covenant
+will not decide creates no job and opens a sanitized escalation instead,
+carrying only a digest of the request; an owner approval binds one actor, one
+digest, and one covenant hash, expires in fifteen minutes, and is spent exactly
+once. A refusal is never approvable.
+
 What this is not: a harm detector. The resolver enforces ordering, citation,
 justification, and fail-closed escalation over assessments supplied to it. In
-v0.0.2 those assessments are reviewed per-job-type declarations over a closed
-four-entry allowlist, which is only sound because that action space is small
-and fixed. Classifiers, model-behavior evaluations, and red teaming are later
-versions.
+v0.0.2 those assessments are reviewed per-action declarations over a closed
+allowlist, which is only sound because that action space is small and fixed.
+The authorization model is local and single-machine: it verifies a bearer
+credential held on this machine, and cannot defend against a compromised local
+account that can read that credential from disk. Classifiers, model-behavior
+evaluations, and red teaming are later versions.
 
 ## Quick start
 
@@ -96,8 +109,18 @@ Start the API, worker, and browser console together:
 ./start-epor.sh
 ```
 
-Open the console at [http://127.0.0.1:5173](http://127.0.0.1:5173). The live
-control-API reference is available at
+Mint the owner credential once, before the first mutation. It is printed a
+single time and stored only as a SHA-256 digest:
+
+```bash
+uv run --frozen --no-sync epor auth bootstrap
+```
+
+Open the console at [http://127.0.0.1:5173](http://127.0.0.1:5173). Every page
+is readable without signing in. To queue, cancel, or retry work, use **Sign in**
+in the console header and paste that credential; it is exchanged for a 12-hour
+session cookie and is not kept by the page. Every session ends when the API
+restarts. The live control-API reference is available at
 [http://127.0.0.1:8742/api/v1/docs](http://127.0.0.1:8742/api/v1/docs).
 
 Press `Ctrl+C` in the launcher terminal to stop the API, worker, and UI

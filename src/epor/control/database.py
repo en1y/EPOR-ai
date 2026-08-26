@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+import tempfile
 from pathlib import Path
 
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import Engine, create_engine, event, inspect
+from sqlalchemy import Engine, MetaData, create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
-
-from .models import Base
 
 
 def create_sqlite_engine(database_path: Path) -> Engine:
@@ -57,14 +56,40 @@ def initialize_database(engine: Engine) -> None:
                 connection,
                 opts={"compare_type": True, "render_as_batch": True},
             )
-            differences = compare_metadata(migration_context, Base.metadata)
+            # Compare against a scratch database built by revision 0001, not
+            # against current metadata. Current metadata carries every column
+            # later revisions add, so a legitimate v0.0.1 database would read
+            # as drift and a genuinely drifted one could slip through.
+            differences = compare_metadata(
+                migration_context, _revision_metadata("0001_control_plane")
+            )
             if differences:
                 raise RuntimeError("unversioned control schema differs from the v0.0.1 migration")
-            # This is safe only after an empty autogenerate diff proves the
-            # pre-Alembic create_all schema is exactly revision 0001.
+            # Safe only after an empty autogenerate diff proves the pre-Alembic
+            # create_all schema is exactly revision 0001. The upgrade below then
+            # applies every later revision normally.
             command.stamp(config, "0001_control_plane")
         command.upgrade(config, "head")
         connection.commit()
+
+
+def _revision_metadata(revision: str) -> MetaData:
+    """Reflect the schema one Alembic revision produces, in a scratch database."""
+
+    with tempfile.TemporaryDirectory(prefix="epor-schema-") as directory:
+        engine = create_engine(f"sqlite+pysqlite:///{Path(directory) / 'reference.sqlite3'}")
+        try:
+            config = migration_config(engine)
+            with engine.connect() as connection:
+                config.attributes["connection"] = connection
+                command.upgrade(config, revision)
+                connection.commit()
+            metadata = MetaData()
+            metadata.reflect(bind=engine)
+        finally:
+            engine.dispose()
+    metadata.remove(metadata.tables["alembic_version"])
+    return metadata
 
 
 def migration_config(engine: Engine) -> Config:

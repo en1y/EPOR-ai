@@ -1,0 +1,65 @@
+# Ratification record for covenant v1.
+#
+# This manifest is the human act of adopting one exact covenant text. It is
+# deliberately a separate tracked file rather than a flag inside the covenant:
+# `epor.safety.load_covenant` refuses to start the service when the covenant
+# claims `status: ratified` and this manifest is missing or attests to
+# different bytes. A status flip with no matching review record therefore
+# stops EPOR instead of silently claiming an approval nobody gave.
+#
+# `covenant_sha256` below is the hash of covenant-v1.yaml *in its ratified
+# form* — that is, with `status: ratified`. While the covenant remains a draft
+# its live hash differs, which is expected, and is why the console reports
+# ratification as prepared rather than in force. Regenerate the hash and flip
+# the status together with:
+#
+#     uv run --frozen --no-sync python scripts/ratify_covenant.py --apply
+#
+# and verify at any time with `--check`, which CI runs on every pull request.
+schema_version: "1"
+covenant_id: epor-covenant
+covenant_version: 1
+covenant_sha256: bdd741a8f66dd5613afed2038fcd0042c7f9bec7dec969cb8314deb3a25183db
+roadmap_version: v0.0.2
+ratified_on: "2026-08-26"
+reviewer_role: project-owner
+
+rationale: >-
+  Covenant v1 is adopted as the standing decision-ordering contract for EPOR,
+  at the point where every claim it makes about itself is executed by code and
+  exercised by tests rather than asserted in prose. The three principles keep
+  Asimov's priority order and are restated in operative terms for a language
+  model and a control plane. The ordered resolver permits a conflict only when
+  the action protects a strictly higher-ranked principle, requires every
+  claimed conflict or doubt to cite an obligation by key, escalates when one
+  principle stands on both sides, and escalates rather than proceeds under
+  insufficient confidence. One action registry serves the control plane and the
+  command line, so no action is governed on one path and ungoverned on another.
+  Enforcement sits at job admission before a specification is parsed, again at
+  worker dispatch, and on every executing CLI command. Work the covenant will
+  not admit creates no job and reaches a durable escalation queue whose
+  approvals bind one actor, one request digest, and one covenant hash, expire
+  in fifteen minutes, and are spent exactly once. A refusal is never
+  approvable. Cancellation, shutdown, correction, and audit are never gated,
+  because the second principle outranks the third.
+  This version's only change to the covenant text corrects a limitation that
+  postponed a real authorization model to v0.0.3. That model landed here, so
+  the limitation now states what v0.0.2 actually enforces and, more
+  importantly, what it still does not: it is local, single-machine, and offers
+  no defence against a compromised local account. No principle or obligation
+  was weakened, added, or reordered, so the covenant version remains 1.
+  Ratifying this text is not a claim that EPOR is safe. The resolver orders
+  decisions; it does not detect harm. The assessments it orders are reviewed
+  human judgements over a small closed action space, which is defensible only
+  while that space stays small and closed. Classifiers, model-behaviour
+  evaluations, and red teaming are separate work and remain undone.
+
+evidence:
+  - tests/test_safety_covenant.py
+  - tests/test_authorization.py
+  - tests/test_escalation.py
+  - tests/test_control_service.py
+  - tests/test_control_api.py
+  - tests/test_control_migrations.py
+  - ui/src/SafetyPage.test.tsx
+  - docs/SECURITY.md

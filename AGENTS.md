@@ -144,6 +144,12 @@ alone.
   when necessary to describe actual project behavior or a dependency. Do not add
   generated-by, non-human co-author, or equivalent attribution trailers; human
   authorship and review attribution remain allowed.
+- Use the repository owner's GitHub noreply address for every commit author and
+  committer identity. Before committing, verify the effective `user.name` and
+  `user.email`; never use a personal email address in Git metadata. Configure
+  the local repository and the global Git default to the account's
+  `ID+username@users.noreply.github.com` address so future repositories inherit
+  the same privacy-preserving identity.
 - Review `git status` and the staged diff before every commit. Never commit
   downloaded research, datasets, checkpoints, weights, run output, local
   databases, secrets, or unrelated user changes merely to make the tree clean.
