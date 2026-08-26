@@ -1,0 +1,7 @@
+# Keep generated and assistant-local metadata out of the project graph.
+/.git/
+/graphify-out/
+/.codex/
+/.agents/
+/.claude/settings.local.json
+/CLAUDE.md

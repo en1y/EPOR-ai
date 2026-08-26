@@ -120,3 +120,22 @@ alone.
   redaction, and safe failure.
 - Run the relevant Python and UI validation before handing off a change, and
   report any test that could not be run.
+
+## graphify
+
+Graphify is required for every codebase investigation and implementation in
+this repository. Its generated `graphify-out/` state is deliberately ignored
+by Git; that is not permission to skip it.
+
+- Before reading broadly, use `graphify query "<question>"` when
+  `graphify-out/graph.json` exists. Use `graphify path "<A>" "<B>"` for
+  relationships and `graphify explain "<concept>"` for focused concepts.
+- If the graph is absent, build it locally with the installed Graphify skill.
+  If it is stale, run `graphify update .` before relying on it.
+- Treat graph results as navigation leads and verify claims against the current
+  source, configuration, documentation, and working-tree diff.
+- After relevant source, configuration, or documentation changes, run
+  `graphify update .` before handoff. The incremental update is local and has
+  no API cost.
+- When the user types `/graphify`, follow the installed project skill before
+  doing anything else.
