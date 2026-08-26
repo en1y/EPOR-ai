@@ -1,10 +1,23 @@
 import { useState } from 'react'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { JobDetail, JobForm, JobsPage, TrainingPage } from './App'
+import App, { JobDetail, JobForm, JobsPage, TrainingPage } from './App'
 import { api } from './api'
-import type { Job, JobTypeDefinition } from './types'
+import type {
+  Capabilities,
+  Health,
+  Job,
+  JobEvent,
+  JobTypeDefinition,
+  ResearchCatalog,
+} from './types'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => { resolve = next })
+  return { promise, resolve }
+}
 
 const job: Job = {
   id: '12345678-1234-1234-1234-123456789abc',
@@ -69,7 +82,10 @@ const evalDefinition: JobTypeDefinition = {
   },
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('schema-driven job form', () => {
   it('keeps nullable arrays empty and omits them from a research sync request', async () => {
@@ -179,6 +195,118 @@ describe('keyboard-accessible dialogs', () => {
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+})
+
+describe('job detail polling', () => {
+  const event = (sequence: number, kind: string): JobEvent => ({
+    sequence,
+    kind,
+    payload: { message: `event ${sequence}` },
+    created_at: `2026-08-25T10:00:0${sequence}Z`,
+  })
+
+  it('deduplicates and sorts out-of-order responses without regressing the cursor', async () => {
+    vi.useFakeTimers()
+    const older = deferred<{ items: JobEvent[]; next_after: number }>()
+    const newer = deferred<{ items: JobEvent[]; next_after: number }>()
+    const events = vi.spyOn(api, 'events')
+      .mockImplementationOnce(() => older.promise)
+      .mockImplementationOnce(() => newer.promise)
+      .mockResolvedValue({ items: [], next_after: 3 })
+    vi.spyOn(api, 'artifacts').mockResolvedValue([])
+
+    render(<JobDetail job={job} onClose={() => undefined} onChanged={() => undefined} />)
+    expect(events).toHaveBeenNthCalledWith(1, job.id, 0)
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_800) })
+    expect(events).toHaveBeenNthCalledWith(2, job.id, 0)
+
+    await act(async () => {
+      newer.resolve({ items: [event(3, 'job.third'), event(2, 'job.second')], next_after: 3 })
+      await newer.promise
+    })
+    await act(async () => {
+      older.resolve({ items: [event(2, 'job.second-repeat'), event(1, 'job.first')], next_after: 2 })
+      await older.promise
+    })
+
+    expect(
+      screen.getAllByRole('listitem').map((item) => item.querySelector('strong')?.textContent),
+    ).toEqual(['first', 'second', 'third'])
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_800) })
+    expect(events).toHaveBeenNthCalledWith(3, job.id, 3)
+  })
+})
+
+describe('progress accessibility', () => {
+  it('exposes table progress as a named percentage progressbar', () => {
+    render(<JobsPage jobs={[{ ...job, progress: 0.426 }]} onSelect={() => undefined} onNew={() => undefined} />)
+
+    const progress = screen.getByRole('progressbar', { name: /system probe job 12345678 progress/i })
+    expect(progress).toHaveAttribute('aria-valuemin', '0')
+    expect(progress).toHaveAttribute('aria-valuemax', '100')
+    expect(progress).toHaveAttribute('aria-valuenow', '43')
+    expect(progress).toHaveAttribute('aria-valuetext', '43%')
+  })
+
+  it('exposes drawer progress and clamps invalid values to its range', () => {
+    vi.spyOn(api, 'events').mockResolvedValue({ items: [], next_after: 0 })
+    vi.spyOn(api, 'artifacts').mockResolvedValue([])
+    render(<JobDetail job={{ ...job, progress: 1.2 }} onClose={() => undefined} onChanged={() => undefined} />)
+
+    const progress = screen.getByRole('progressbar', { name: /system probe job progress/i })
+    expect(progress).toHaveAttribute('aria-valuenow', '100')
+    expect(progress).toHaveAttribute('aria-valuetext', '100%')
+    expect(progress.firstElementChild).toHaveStyle({ width: '100%' })
+  })
+})
+
+describe('API health polling', () => {
+  const health: Health = { status: 'ok', database: 'ok', version: '0.0.1' }
+  const capabilities: Capabilities = {
+    bind_host: '127.0.0.1',
+    allowed_origin: 'http://127.0.0.1:5173',
+    job_types: ['system_probe', 'research_sync', 'tiny_train', 'tiny_eval'],
+    cancellation: true,
+    event_transport: 'polling',
+    arbitrary_commands: false,
+    arbitrary_url_fetching: false,
+    filesystem_browser: false,
+    hardware: {},
+  }
+  const research: ResearchCatalog = {
+    schema_version: 1,
+    available: true,
+    catalog_path: 'research/catalog.yaml',
+    sources: [],
+    count: 0,
+    error: null,
+  }
+
+  it('marks the API unavailable after a failed refresh and recovers later', async () => {
+    vi.useFakeTimers()
+    const healthRequest = vi.spyOn(api, 'health')
+      .mockResolvedValueOnce(health)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(health)
+    vi.spyOn(api, 'capabilities').mockResolvedValue(capabilities)
+    vi.spyOn(api, 'research').mockResolvedValue(research)
+    vi.spyOn(api, 'models').mockResolvedValue([])
+    vi.spyOn(api, 'jobTypes').mockResolvedValue([])
+    vi.spyOn(api, 'jobs').mockResolvedValue([])
+
+    render(<App />)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('EPOR 0.0.1')).toBeInTheDocument()
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(screen.getByText('EPOR offline')).toBeInTheDocument()
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(screen.getByText('EPOR 0.0.1')).toBeInTheDocument()
+    expect(healthRequest).toHaveBeenCalledTimes(3)
   })
 })
 

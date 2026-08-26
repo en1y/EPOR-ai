@@ -20,7 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from epor import __version__
 from epor.models.config import load_model_config
 from epor.research.catalog import load_catalog
-from epor.research.models import CatalogError
+from epor.research.models import CatalogError, IntegrityStatus
 from epor.research.service import verify_catalog
 from epor.system import probe_system
 
@@ -152,8 +152,19 @@ def _research_payload(settings: ControlSettings) -> ResearchCatalogRead:
                 canonical_url=source.canonical_url,
                 tags=list(source.tags),
                 evidence_classes=[item.value for item in source.evidence_classes],
+                integrity=source.integrity.value,
                 sync_status=sync_status,  # type: ignore[arg-type]
-                sha256=result.sha256 if result is not None else None,
+                raw_sha256=result.raw_sha256 if result is not None else None,
+                tracked_raw_sha256=source.sha256,
+                tracked_content_sha256=source.content_sha256,
+                content_scope=(
+                    source.content_scope.value
+                    if source.integrity is IntegrityStatus.CONTENT_PINNED
+                    else None
+                ),
+                content_profile=(
+                    source.content_profile.value if source.content_profile is not None else None
+                ),
                 size_bytes=result.size_bytes if result is not None else None,
                 status_message=redact_text(result.message) if result is not None else "",
             )

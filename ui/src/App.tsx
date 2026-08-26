@@ -57,6 +57,8 @@ const terminalStatuses = new Set<JobStatus>([
 ])
 
 const trainingTypes = new Set<JobType>(['tiny_train', 'tiny_eval'])
+const jobDetailPollMilliseconds = 1_800
+const healthPollMilliseconds = 5_000
 
 type FormValue = string | boolean
 
@@ -73,6 +75,10 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector)).filter(
     (element) => element.getAttribute('aria-hidden') !== 'true',
   )
+}
+
+function progressPercentage(progress: number): number {
+  return Math.round(Math.min(1, Math.max(0, progress)) * 100)
 }
 
 function useDialogBehavior<T extends HTMLElement>(onClose: () => void) {
@@ -813,14 +819,23 @@ export function JobDetail({
     let disposed = false
     let cursor = 0
     setEvents([])
+    setArtifacts([])
     const refresh = async () => {
       try {
         const response = await api.events(job.id, cursor)
-        if (!disposed && response.items.length) {
-          cursor = response.next_after
+        if (disposed) return
+        cursor = Math.max(
+          cursor,
+          response.next_after,
+          ...response.items.map((item) => item.sequence),
+        )
+        if (response.items.length) {
           setEvents((current) => {
-            const known = new Set(current.map((item) => item.sequence))
-            return [...current, ...response.items.filter((item) => !known.has(item.sequence))]
+            const merged = new Map(current.map((item) => [item.sequence, item]))
+            for (const item of response.items) {
+              if (!merged.has(item.sequence)) merged.set(item.sequence, item)
+            }
+            return [...merged.values()].sort((left, right) => left.sequence - right.sequence)
           })
         }
         const nextArtifacts = await api.artifacts(job.id)
@@ -830,7 +845,7 @@ export function JobDetail({
       }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 1800)
+    const timer = window.setInterval(() => void refresh(), jobDetailPollMilliseconds)
     return () => { disposed = true; window.clearInterval(timer) }
   }, [job.id])
 
@@ -842,6 +857,7 @@ export function JobDetail({
       }),
     [events],
   )
+  const progress = progressPercentage(job.progress)
 
   const perform = async (action: 'cancel' | 'retry') => {
     setActionError('')
@@ -875,8 +891,18 @@ export function JobDetail({
         </div>
         <div className="drawer-status">
           <StatusPill status={job.status} />
-          <span>{Math.round(job.progress * 100)}%</span>
-          <div className="progress-track"><i style={{ width: `${job.progress * 100}%` }} /></div>
+          <span>{progress}%</span>
+          <div
+            className="progress-track"
+            role="progressbar"
+            aria-label={`${titleCase(job.type)} job progress`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            aria-valuetext={`${progress}%`}
+          >
+            <i aria-hidden="true" style={{ width: `${progress}%` }} />
+          </div>
         </div>
         <dl className="detail-facts">
           <div><dt>Created</dt><dd>{formatDate(job.created_at)}</dd></div>
@@ -1014,7 +1040,10 @@ export function JobsPage({ jobs, onSelect, onNew }: { jobs: Job[]; onSelect: (jo
       </div>
       {jobs.length === 0 ? <EmptyState>No jobs yet. Queue a typed system probe to exercise the worker.</EmptyState> : (
         <div className="table-scroll"><table><thead><tr><th>Job</th><th>Status</th><th>Progress</th><th>Created</th><th>Worker</th></tr></thead><tbody>
-          {jobs.map((job) => <tr className="clickable-row" key={job.id} onClick={() => onSelect(job)}><td className="job-name"><button type="button" className="job-row-trigger" aria-label={`Open ${titleCase(job.type)} job ${shortId(job.id)} (${titleCase(job.status)})`}><strong>{titleCase(job.type)}</strong><code>{shortId(job.id)}</code></button></td><td><StatusPill status={job.status} /></td><td><div className="table-progress"><i style={{ width: `${job.progress * 100}%` }} /></div><span className="progress-copy">{Math.round(job.progress * 100)}%</span></td><td className="numeric-cell">{formatDate(job.created_at)}</td><td>{job.worker_id?.split(':')[0] ?? '—'}</td></tr>)}
+          {jobs.map((job) => {
+            const progress = progressPercentage(job.progress)
+            return <tr className="clickable-row" key={job.id} onClick={() => onSelect(job)}><td className="job-name"><button type="button" className="job-row-trigger" aria-label={`Open ${titleCase(job.type)} job ${shortId(job.id)} (${titleCase(job.status)})`}><strong>{titleCase(job.type)}</strong><code>{shortId(job.id)}</code></button></td><td><StatusPill status={job.status} /></td><td><div className="table-progress" role="progressbar" aria-label={`${titleCase(job.type)} job ${shortId(job.id)} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-valuetext={`${progress}%`}><i aria-hidden="true" style={{ width: `${progress}%` }} /></div><span className="progress-copy">{progress}%</span></td><td className="numeric-cell">{formatDate(job.created_at)}</td><td>{job.worker_id?.split(':')[0] ?? '—'}</td></tr>
+          })}
         </tbody></table></div>
       )}
     </section>
@@ -1041,13 +1070,35 @@ export default function App() {
 
   useEffect(() => {
     let disposed = false
-    Promise.all([api.health(), api.capabilities(), api.research(), api.models(), api.jobTypes()])
-      .then(([nextHealth, nextCapabilities, nextResearch, nextModels, nextDefinitions]) => {
+    Promise.all([api.capabilities(), api.research(), api.models(), api.jobTypes()])
+      .then(([nextCapabilities, nextResearch, nextModels, nextDefinitions]) => {
         if (disposed) return
-        setHealth(nextHealth); setCapabilities(nextCapabilities); setResearch(nextResearch); setModels(nextModels); setDefinitions(nextDefinitions)
+        setCapabilities(nextCapabilities); setResearch(nextResearch); setModels(nextModels); setDefinitions(nextDefinitions)
       })
       .catch((caught: unknown) => { if (!disposed) setError(caught instanceof Error ? caught.message : 'Could not connect to the control API') })
     return () => { disposed = true }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    let timer: number | undefined
+    const refreshHealth = async () => {
+      try {
+        const nextHealth = await api.health()
+        if (!disposed) setHealth(nextHealth)
+      } catch {
+        if (!disposed) setHealth(null)
+      } finally {
+        if (!disposed) {
+          timer = window.setTimeout(() => void refreshHealth(), healthPollMilliseconds)
+        }
+      }
+    }
+    void refreshHealth()
+    return () => {
+      disposed = true
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
   }, [])
 
   useEffect(() => {

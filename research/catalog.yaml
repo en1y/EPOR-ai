@@ -78,10 +78,13 @@ sources:
     authors: [Anthropic Prompt Engineering Team]
     organization: Anthropic
     publication_date: '2023-09-23'
-    retrieved_at: '2026-08-25T10:41:10.253491Z'
+    retrieved_at: '2026-08-26T12:43:46.383627Z'
     media_type: text/html
-    integrity: pinned
-    sha256: 5bc49da36a209aa8bf00d93aef8d3993377c6fbb093b5bd0f9276dcac7d742d4
+    integrity: content-pinned
+    sha256: null
+    content_sha256: d6f7891a6ca6b2455cff9215d5ff2afab01869a0d9585cbf5d9ec963ac471a98
+    content_scope: article
+    content_profile: html-article-text-v1
     license_access: Public web access under Anthropic site terms; no redistribution right is assumed.
     tags: [anthropic, long-context, retrieval, prompting]
     evidence_classes: [disclosed, reported-result, EPOR-adaptation]
@@ -96,10 +99,13 @@ sources:
     authors: [Anthropic Engineering]
     organization: Anthropic
     publication_date: '2024-09-19'
-    retrieved_at: '2026-08-25T10:41:11.097445Z'
+    retrieved_at: '2026-08-26T12:43:47.010634Z'
     media_type: text/html
-    integrity: pinned
-    sha256: c117186b71ed871604221f7fdce2c8c11f9387440fb2541471524959f90c613c
+    integrity: content-pinned
+    sha256: null
+    content_sha256: 03422c71e36a33a637abba2cf4ea3b8ccb31acb8aace89f343f28a72fef90f53
+    content_scope: article
+    content_profile: html-article-text-v1
     license_access: Public web access under Anthropic site terms; no redistribution right is assumed.
     tags: [anthropic, retrieval, rag, bm25, embeddings]
     evidence_classes: [disclosed, reported-result, EPOR-adaptation]
@@ -474,10 +480,13 @@ sources:
     authors: [Gemma Team]
     organization: Google DeepMind
     publication_date: '2025-06-26'
-    retrieved_at: '2026-08-25T10:41:28.315593Z'
+    retrieved_at: '2026-08-26T12:43:47.429638Z'
     media_type: text/html
-    integrity: pinned
-    sha256: 3dd0c9fc299e242b9a32a8677af25ae18c7c4e0f20ddc9f453bb00942500c174
+    integrity: content-pinned
+    sha256: null
+    content_sha256: 7c6621a0b63a1640750b02b7afd385f9310e516057304420f8e04c18fa179f68
+    content_scope: article
+    content_profile: html-article-text-v1
     license_access: Google marks page text CC BY 4.0 and code samples Apache-2.0 unless otherwise noted; Gemma weights use separate terms.
     tags: [google, gemma-3n, matformer, ple, edge-inference]
     evidence_classes: [disclosed, reported-result, EPOR-adaptation, hypothesis]
@@ -492,10 +501,13 @@ sources:
     authors: [Omar Sanseviero, Ian Ballantyne]
     organization: Google
     publication_date: '2025-06-26'
-    retrieved_at: '2026-08-25T10:41:29.327363Z'
+    retrieved_at: '2026-08-26T12:43:48.495649Z'
     media_type: text/html
-    integrity: pinned
-    sha256: cf7f1fb20a4985d3213c55c302abbdfef76ed8c4e2aa1ed609241e71c784e481
+    integrity: content-pinned
+    sha256: null
+    content_sha256: 48e3579d4f10ef112f3656a7883be71ccc2fc6739947b2ebec7e9f110d2f730f
+    content_scope: document
+    content_profile: html-document-text-v1
     license_access: Public Google Developers Blog content; consult the page terms before redistribution or code reuse.
     tags: [google, gemma-3n, architecture, deployment, edge-inference]
     evidence_classes: [disclosed, reported-result, EPOR-adaptation]

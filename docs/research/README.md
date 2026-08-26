@@ -23,11 +23,26 @@ a disclosed mechanism from an EPOR proposal.
 
 ## Integrity states
 
-`integrity: pinned` means the tracked ledger contains a reviewed SHA-256 and a
-matching local artifact can be reported as `verified`. `integrity: unpinned`
-means the local synchronizer may record the observed digest in ignored metadata
-for idempotence, but `epor research verify` reports `unpinned` and exits nonzero.
-This prevents a mutable remote page from being mistaken for a reviewed archive.
+`integrity: pinned` means the tracked ledger contains a reviewed SHA-256 for the
+exact transfer bytes. `integrity: content-pinned` is reserved for dynamic HTML
+pages whose navigation, scripts, or recommendation shell changes independently
+of the reviewed text. It pins the normalized `document` or semantic `article`
+text under an explicit, versioned `content_profile`, while retaining each raw
+transfer digest in ignored metadata. Both states can produce `verified`; a
+content change still fails closed before atomic installation.
+`integrity: unpinned` records only an observed local digest, so `epor research
+verify` reports `unpinned` and exits nonzero.
+
+Raw-byte pins remain the default. Moving a source to content-level integrity
+requires comparing independent retrievals, selecting an explicit scope, and
+reviewing the normalization profile and digest in the catalog diff. Article
+extraction chooses the largest non-empty normalized region at the deepest
+semantic `<article>` nesting level, excluding page chrome and sibling
+recommendation cards.
+
+Normalization behavior is part of the integrity boundary. Any extractor change
+that can alter normalized bytes requires a new profile name and reviewed catalog
+digests; existing `*-v1` profiles must remain reproducible.
 
 ## Dossiers
 

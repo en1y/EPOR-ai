@@ -6,12 +6,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from epor.models.config import load_model_config, structural_parameter_count
+from epor.reference_policy import load_reference_model_config, validate_reference_steps
 
 from .loop import TrainingCancelled, evaluate, pretrain
 
 _OUTPUT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_MAX_CONTROL_MODEL_PARAMETERS = 50_000_000
 
 
 def _contained(root: Path, supplied: str | Path, *, must_exist: bool) -> Path:
@@ -47,12 +46,7 @@ def _run_train(spec: dict[str, Any], context: Any) -> dict[str, Any]:
         str(spec.get("model_config", spec.get("config_path", "configs/models/epor-tiny.yaml"))),
         must_exist=True,
     )
-    model_config = load_model_config(config_path)
-    if model_config.vocab_size != 260 or model_config.architecture != "dense-decoder":
-        raise ValueError("tiny training requires the dense 260-token debug model contract")
-    parameter_count = structural_parameter_count(model_config)
-    if parameter_count > _MAX_CONTROL_MODEL_PARAMETERS:
-        raise ValueError("tiny training model exceeds the 50,000,000-parameter control-plane limit")
+    load_reference_model_config(config_path)
     corpus_path = _contained(
         project_root,
         str(spec.get("corpus_path", "fixtures/tiny_corpus.txt")),
@@ -68,8 +62,7 @@ def _run_train(spec: dict[str, Any], context: Any) -> dict[str, Any]:
     )
     max_steps = int(spec.get("max_steps", 20))
     seed = int(spec.get("seed", 1337))
-    if not 1 <= max_steps <= 1_000:
-        raise ValueError("max_steps must be between 1 and 1000")
+    validate_reference_steps(max_steps)
     if not 0 <= seed <= 2**32 - 1:
         raise ValueError("seed must be an unsigned 32-bit integer")
 

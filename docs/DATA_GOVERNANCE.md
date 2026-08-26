@@ -83,4 +83,4 @@ A dataset card must state intended and prohibited uses, sources and rights
 categories, time range, language/domain mixture, pipeline versions, exact and
 near-duplicate rates, PII/secret findings, benchmark-overlap findings, removal
 process, known gaps, and immutable hashes. Dataset and model licenses are not
-inherited from the Apache-2.0 code license.
+inherited from the project's code terms.

@@ -7,6 +7,7 @@ import os
 import platform
 import shutil
 import socket
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -42,15 +43,20 @@ def _distribution_version(name: str) -> str | None:
 
 
 def _git_revision(root: Path) -> str | None:
-    head = root / ".git" / "HEAD"
+    """Read ``HEAD`` through Git so linked worktrees resolve correctly."""
+
     try:
-        value = head.read_text(encoding="utf-8").strip()
-        if value.startswith("ref: "):
-            ref = root / ".git" / value.removeprefix("ref: ")
-            return ref.read_text(encoding="utf-8").strip()[:40]
-        return value[:40]
-    except OSError:
+        result = subprocess.run(
+            ["git", "-C", str(root.resolve()), "rev-parse", "--verify", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
         return None
+    revision = result.stdout.strip()
+    return revision or None
 
 
 def probe_system(root: Path | None = None) -> SystemCapabilities:

@@ -1,0 +1,49 @@
+name: v0.0.1 live research integrity
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  research-integrity:
+    name: Synchronize, verify, and index allowlisted sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.19"
+          python-version: "3.11.15"
+          enable-cache: true
+          cache-python: true
+          cache-dependency-glob: uv.lock
+
+      - name: Provision frozen research environment
+        run: |
+          uv python install 3.11.15
+          uv lock --check
+          uv sync --frozen --extra research
+
+      - name: Synchronize pinned allowlist
+        timeout-minutes: 20
+        run: uv run --frozen --no-sync epor research sync
+
+      - name: Verify downloaded source hashes
+        timeout-minutes: 3
+        run: uv run --frozen --no-sync epor research verify
+
+      - name: Build local research index
+        timeout-minutes: 5
+        run: uv run --frozen --no-sync epor research index
