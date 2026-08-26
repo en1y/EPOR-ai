@@ -7,6 +7,7 @@ import pytest
 from click import unstyle
 from typer.testing import CliRunner
 
+from epor import __version__
 from epor.cli import app
 
 runner = CliRunner()
@@ -15,7 +16,7 @@ runner = CliRunner()
 def test_version_command() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "0.0.1"
+    assert result.stdout.strip() == __version__
 
 
 def test_doctor_json_is_machine_readable() -> None:

@@ -7,12 +7,7 @@ from typing import Any
 
 import pytest
 
-from epor import __version__
 from epor.system import _git_revision, probe_system, safe_environment
-
-
-def test_version_is_v001() -> None:
-    assert __version__ == "0.0.1"
 
 
 def test_probe_is_read_only_and_serializable(tmp_path: Path) -> None:
