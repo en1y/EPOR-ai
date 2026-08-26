@@ -80,3 +80,8 @@ Thumbs.db
 *.pem
 *.key
 /secrets/
+
+# Local Graphify knowledge graph and machine-specific hook
+/graphify-out/
+/.codex/hooks.json
+/.codex/hooks.json.graphify-bak

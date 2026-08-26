@@ -120,3 +120,40 @@ alone.
   redaction, and safe failure.
 - Run the relevant Python and UI validation before handing off a change, and
   report any test that could not be run.
+
+## Knowledge graph workflow
+
+Graphify is required for every codebase investigation and implementation in
+this repository. Its generated `graphify-out/` state is deliberately ignored
+by Git; that is not permission to skip it. A missing, dirty, or
+just-regenerated `graphify-out/` is the expected condition here, not a reason
+to fall back to broad file reading.
+
+Do not retitle this section `## graphify`. That exact heading is owned by the
+Graphify installer, which replaces everything from the heading to the next
+`##` with its own generic block. Under the present title an installer run
+appends its block instead of destroying this policy.
+
+- Before reading broadly, use `graphify query "<question>"` when
+  `graphify-out/graph.json` exists. Use `graphify path "<A>" "<B>"` for
+  relationships and `graphify explain "<concept>"` for focused concepts.
+- If the graph is absent, build it locally with the installed Graphify skill.
+  If it is stale, run `graphify update .` before relying on it.
+- Prefer `graphify-out/wiki/index.md` for broad navigation when it exists.
+  Read `graphify-out/GRAPH_REPORT.md` only for whole-architecture review, or
+  when query, path, and explain do not surface enough context.
+- Treat graph results as navigation leads and verify claims against the current
+  source, configuration, documentation, and working-tree diff.
+- After relevant source, configuration, or documentation changes, run
+  `graphify update .` before handoff. The incremental update is local and has
+  no API cost.
+- When the user types `/graphify`, follow the installed project skill before
+  doing anything else.
+
+Codex reads its skill from the committed `.codex/skills/graphify/` tree,
+because that install target is project-scoped rather than user-global. The
+tree is pinned by `.codex/skills/graphify/.graphify_version`. When that pin
+falls behind the installed CLI, re-run `graphify install --platform codex`
+from the repository root and commit the result; a stale skill describes a CLI
+that has moved on. The machine-specific `.codex/hooks.json` it writes stays
+untracked.
