@@ -202,6 +202,21 @@ class ResearchCatalogRead(BaseModel):
     error: str | None = None
 
 
+class DocumentSummary(BaseModel):
+    slug: str
+    title: str
+    group: str
+
+
+class DocumentList(BaseModel):
+    items: list[DocumentSummary]
+    count: int
+
+
+class DocumentRead(DocumentSummary):
+    markdown: str
+
+
 class CertifiedProfileRead(BaseModel):
     profile_id: str
     hardware: str

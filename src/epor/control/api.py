@@ -25,12 +25,16 @@ from epor.research.service import verify_catalog
 from epor.system import probe_system
 
 from .database import create_session_factory, create_sqlite_engine, initialize_database
+from .documents import DocumentTooLargeError, build_index, read_document
 from .models import JobStatus, JobType
 from .schemas import (
     JOB_SPEC_MODELS,
     ArtifactList,
     ArtifactRead,
     CapabilityRead,
+    DocumentList,
+    DocumentRead,
+    DocumentSummary,
     ErrorEnvelope,
     EventList,
     EventRead,
@@ -235,6 +239,34 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])
     async def models() -> ModelFamilyList:
         return _models_payload(settings)
+
+    @router.get("/documents", response_model=DocumentList, tags=["documents"])
+    async def documents() -> DocumentList:
+        items = [
+            DocumentSummary(slug=item.slug, title=item.title, group=item.group)
+            for item in build_index(settings.project_root).values()
+        ]
+        return DocumentList(items=items, count=len(items))
+
+    @router.get("/documents/{slug:path}", response_model=DocumentRead, tags=["documents"])
+    async def document(slug: str) -> DocumentRead:
+        # Exact lookup in the freshly built index.  An unindexed slug is simply
+        # absent, so path traversal and symlink escapes have nothing to reach.
+        found = build_index(settings.project_root).get(slug)
+        if found is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        try:
+            markdown = read_document(found)
+        except DocumentTooLargeError as exc:
+            raise HTTPException(status_code=413, detail="document exceeds the read limit") from exc
+        except OSError as exc:
+            raise HTTPException(status_code=404, detail="document not found") from exc
+        return DocumentRead(
+            slug=found.slug,
+            title=found.title,
+            group=found.group,
+            markdown=markdown,
+        )
 
     @router.post("/jobs", response_model=JobRead, status_code=201, tags=["jobs"])
     async def create_job(payload: JobCreate) -> JobRead:

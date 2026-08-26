@@ -85,6 +85,16 @@ export interface ModelFamily {
   metrics: null
 }
 
+export interface DocumentSummary {
+  slug: string
+  title: string
+  group: string
+}
+
+export interface DocumentRead extends DocumentSummary {
+  markdown: string
+}
+
 export interface Job {
   id: string
   type: JobType

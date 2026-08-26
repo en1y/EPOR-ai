@@ -141,6 +141,16 @@ allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary
 URL.
 
+The console separates its work into six pages: **Overview** for environment and
+boundary facts, **Training** for reference training and evaluation runs with
+their loss and checkpoints, **Jobs** for every other typed job, **Model
+families** for configured architecture plans, **Research ledger** for tracked
+sources and their local verification state, and **Documentation** for the
+project's own Markdown rendered in place, including Mermaid diagrams. The
+documentation reader serves tracked first-party Markdown only. Ignored
+third-party research downloads are never rendered as console content; the
+research ledger links those sources at their canonical URL instead.
+
 Version 0.0.1 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository

@@ -45,16 +45,19 @@ without the compute gates in [COMPUTE_POLICY.md](COMPUTE_POLICY.md).
 
 ## Artifact flow
 
-```text
-tracked source ledger ──sync──> ignored immutable raw files
-        │                              │
-        │                              └──extract──> ignored text + index
-        │
-data registrations ──> raw ──> normalized ──> filtered ──> token shards
-                                                        │
-model recipe + run spec + shards ──> checkpoint + manifest + metrics
-                                                        │
-                                  HF/Safetensors ──> GGUF + parity report
+```mermaid
+flowchart TD
+    ledger["tracked source ledger"] -->|sync| raw["ignored immutable raw files"]
+    raw -->|extract| extracted["ignored text + local index"]
+    registrations["data registrations"] --> source["raw"]
+    source --> normalized["normalized"]
+    normalized --> filtered["filtered"]
+    filtered --> shards["token shards"]
+    recipe["model recipe + run spec"] --> run["training run"]
+    shards --> run
+    run --> outputs["checkpoint + manifest + metrics"]
+    outputs --> export["HF / Safetensors"]
+    export --> quantized["GGUF + parity report"]
 ```
 
 The ledger, recipes, and manifests are authoritative. SQLite is a rebuildable
@@ -116,6 +119,15 @@ Jobs use compare-and-set transitions and append-only events. File manifests are
 the durable artifact truth; the loopback SQLite database uses WAL mode for local
 coordination and can be rebuilt. The server binds to `127.0.0.1`, uses explicit
 origins, redacts secrets, and resolves all artifact paths under configured roots.
+
+`/api/v1/documents` serves the project's own tracked Markdown to the console
+reader. It is not the filesystem browser the previous paragraph rules out: the
+index is built by globbing two fixed first-party locations, and a request is
+answered by exact slug lookup inside that index, so no caller-supplied value is
+ever joined onto a path. Ignored third-party research downloads are excluded on
+purpose — rendering unreviewed external text as console content would make it a
+new instruction surface. The reader escapes raw HTML and drops every link scheme
+except `http`, `https`, and `mailto`.
 
 ## Release boundaries
 

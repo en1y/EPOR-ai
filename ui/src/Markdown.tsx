@@ -1,0 +1,141 @@
+import { useEffect, useMemo, useState } from 'react'
+import { marked } from 'marked'
+
+const ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+}
+
+// Splits diagram sources out of the HTML string.  Document text cannot forge
+// this marker: the `html` renderer above escapes every raw angle bracket, so
+// an HTML comment only ever reaches the output from the `code` renderer.
+const DIAGRAM_MARKER = '<!--epor-diagram-->'
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ENTITIES[character])
+}
+
+/** Allow only http(s), mail, fragment, and relative document links. */
+export function safeHref(href: string): string | null {
+  const trimmed = href.trim()
+  if (/^(?:https?:|mailto:)/i.test(trimmed)) return trimmed
+  // Any other explicit scheme, `javascript:` above all, is dropped outright.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null
+  return trimmed
+}
+
+/** Resolve a relative Markdown link against the slug of the document holding it. */
+export function resolveSlug(fromSlug: string, href: string): string | null {
+  if (!/^[^#?:]+\.md(?:[#?].*)?$/i.test(href)) return null
+  try {
+    const resolved = new URL(href, `epor:/${fromSlug}`)
+    return resolved.pathname.replace(/^\//, '') + resolved.hash
+  } catch {
+    return null
+  }
+}
+
+// Raw HTML is escaped rather than passed through, and a fenced mermaid block is
+// lifted out of the HTML string so React can own the rendered diagram.
+marked.use({
+  gfm: true,
+  renderer: {
+    html({ raw }) {
+      return escapeHtml(raw)
+    },
+    code({ text, lang }) {
+      if (lang === 'mermaid') {
+        return `${DIAGRAM_MARKER}${encodeURIComponent(text)}${DIAGRAM_MARKER}`
+      }
+      const language = lang ? ` class="language-${escapeHtml(lang.split(/\s/)[0])}"` : ''
+      return `<pre><code${language}>${escapeHtml(text)}</code></pre>\n`
+    },
+    link({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens)
+      const safe = safeHref(href)
+      if (safe === null) return text
+      const titled = title ? ` title="${escapeHtml(title)}"` : ''
+      const external = /^https?:/i.test(safe)
+      const target = external ? ' target="_blank" rel="noreferrer noopener"' : ''
+      return `<a href="${escapeHtml(safe)}"${titled}${target}>${text}</a>`
+    },
+  },
+})
+
+function Diagram({ code }: { code: string }) {
+  const [svg, setSvg] = useState('')
+
+  useEffect(() => {
+    let active = true
+    const draw = async () => {
+      // Mermaid is a multi-megabyte dependency, so it only downloads for the
+      // documents that actually contain a diagram.
+      const { default: mermaid } = await import('mermaid')
+      if (!active) return
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'strict',
+        suppressErrorRendering: true,
+        fontFamily: 'inherit',
+      })
+      const id = `epor-diagram-${Math.random().toString(36).slice(2, 10)}`
+      const rendered = await mermaid.render(id, code)
+      if (active) setSvg(rendered.svg)
+    }
+    // A diagram that cannot be drawn falls back to its readable source.
+    draw().catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [code])
+
+  if (!svg) return <pre className="mermaid-source">{code}</pre>
+  return <figure className="diagram" dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+export function Markdown({
+  markdown,
+  slug = '',
+  onNavigate,
+}: {
+  markdown: string
+  slug?: string
+  onNavigate?: (slug: string) => void
+}) {
+  // Odd segments are diagram sources; even segments are ordinary HTML.
+  const segments = useMemo(
+    () => marked.parse(markdown, { async: false }).split(DIAGRAM_MARKER),
+    [markdown],
+  )
+
+  const followLink = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!onNavigate || event.metaKey || event.ctrlKey || event.button !== 0) return
+    const anchor = (event.target as HTMLElement).closest('a')
+    const href = anchor?.getAttribute('href')
+    if (!href) return
+    const target = resolveSlug(slug, href)
+    if (target === null) return
+    event.preventDefault()
+    onNavigate(target)
+  }
+
+  return (
+    <div className="markdown" onClick={followLink}>
+      {segments.map((segment, index) =>
+        index % 2 === 1 ? (
+          <Diagram key={index} code={decodeURIComponent(segment)} />
+        ) : (
+          <div
+            key={index}
+            className="markdown-chunk"
+            dangerouslySetInnerHTML={{ __html: segment }}
+          />
+        ),
+      )}
+    </div>
+  )
+}

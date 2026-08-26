@@ -1,6 +1,8 @@
 import type {
   Artifact,
   Capabilities,
+  DocumentRead,
+  DocumentSummary,
   ErrorEnvelope,
   Health,
   Job,
@@ -42,6 +44,10 @@ export const api = {
   models: async () => (await request<{ items: ModelFamily[] }>('/models')).items,
   jobTypes: async () =>
     (await request<{ items: JobTypeDefinition[] }>('/job-types')).items,
+  documents: async () =>
+    (await request<{ items: DocumentSummary[] }>('/documents')).items,
+  document: (slug: string) =>
+    request<DocumentRead>(`/documents/${slug.split('/').map(encodeURIComponent).join('/')}`),
   jobs: async () => (await request<{ items: Job[] }>('/jobs?limit=200')).items,
   job: (id: string) => request<Job>(`/jobs/${id}`),
   events: (id: string, after: number) =>

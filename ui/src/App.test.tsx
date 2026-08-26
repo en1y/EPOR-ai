@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App, { JobDetail, JobForm, JobsPage } from './App'
+import App, { JobDetail, JobForm, JobsPage, TrainingPage } from './App'
 import { api } from './api'
 import type {
   Capabilities,
@@ -302,7 +302,7 @@ describe('API health polling', () => {
     expect(screen.getByText('EPOR 0.0.1')).toBeInTheDocument()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
-    expect(screen.getByText('API unavailable')).toBeInTheDocument()
+    expect(screen.getByText('EPOR offline')).toBeInTheDocument()
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
     expect(screen.getByText('EPOR 0.0.1')).toBeInTheDocument()
@@ -322,5 +322,100 @@ describe('job row keyboard activation', () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
     await user.keyboard('{Enter}')
     expect(onSelect).toHaveBeenCalledTimes(2)
+  })
+})
+
+const trainDefinition: JobTypeDefinition = {
+  type: 'tiny_train',
+  title: 'Tiny pretraining',
+  description: 'Run the deterministic CPU reference trainer.',
+  schema: {
+    properties: {
+      max_steps: { type: 'integer', title: 'Max Steps', default: 20, minimum: 1, maximum: 1000 },
+    },
+  },
+}
+
+const trainRun: Job = {
+  ...job,
+  id: 'aaaaaaaa-1234-1234-1234-123456789abc',
+  type: 'tiny_train',
+  status: 'succeeded',
+  progress: 1,
+  result: {
+    run_id: 'run-1',
+    steps_completed: 20,
+    final_loss: 2.5,
+    checkpoint_path: 'aaaaaaaa/tiny-train/checkpoints/step-20.pt',
+  },
+}
+
+describe('training page', () => {
+  it('reports run metrics and hands a checkpoint to evaluation', async () => {
+    const user = userEvent.setup()
+    const onEvaluate = vi.fn()
+    const onSelect = vi.fn()
+    render(
+      <TrainingPage
+        jobs={[trainRun, { ...job, id: 'bbbbbbbb', type: 'system_probe' }]}
+        onSelect={onSelect}
+        onTrain={() => undefined}
+        onEvaluate={onEvaluate}
+      />,
+    )
+
+    const row = screen.getByRole('button', { name: /Open tiny train run/ }).closest('tr')!
+    expect(within(row).getByText('20')).toBeInTheDocument()
+    expect(within(row).getByText('2.5000')).toBeInTheDocument()
+    // Non-training work stays on the Jobs page.
+    expect(screen.queryByRole('button', { name: /system probe/i })).not.toBeInTheDocument()
+
+    await user.click(within(row).getByRole('button', { name: 'Evaluate' }))
+    expect(onEvaluate).toHaveBeenCalledWith('aaaaaaaa/tiny-train/checkpoints/step-20.pt')
+    // Evaluating must not also open the run drawer behind the form.
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
+describe('prefilled job form', () => {
+  it('seeds the requested type with supplied values and keeps schema defaults', async () => {
+    const user = userEvent.setup()
+    const createJob = vi.spyOn(api, 'createJob').mockResolvedValue({ ...job, type: 'tiny_eval' })
+
+    render(
+      <JobForm
+        definitions={[trainDefinition, evalDefinition]}
+        initialType="tiny_eval"
+        initialValues={{ checkpoint_path: 'run-1/checkpoints/step-20.pt' }}
+        onClose={() => undefined}
+        onCreated={() => undefined}
+      />,
+    )
+
+    expect(screen.getByLabelText('Checkpoint Path')).toHaveValue('run-1/checkpoints/step-20.pt')
+    await user.click(screen.getByRole('button', { name: 'Queue job' }))
+
+    await waitFor(() => {
+      expect(createJob).toHaveBeenCalledWith('tiny_eval', {
+        checkpoint_path: 'run-1/checkpoints/step-20.pt',
+      })
+    })
+  })
+
+  it('drops the seed when the operator switches to another job type', async () => {
+    const user = userEvent.setup()
+    render(
+      <JobForm
+        definitions={[evalDefinition, trainDefinition]}
+        initialType="tiny_eval"
+        initialValues={{ checkpoint_path: 'run-1/checkpoints/step-20.pt' }}
+        onClose={() => undefined}
+        onCreated={() => undefined}
+      />,
+    )
+
+    await user.selectOptions(screen.getByLabelText('Job type'), 'tiny_train')
+    expect(screen.queryByLabelText('Checkpoint Path')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Max Steps')).toHaveValue(20)
   })
 })
