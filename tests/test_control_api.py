@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 
+from epor import __version__
 from epor.control.api import create_app
 from epor.control.settings import ControlSettings
 
@@ -25,7 +26,11 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
             health = await client.get("/api/v1/health", headers={"X-Request-ID": "test-123"})
             assert health.status_code == 200
             assert health.headers["x-request-id"] == "test-123"
-            assert health.json() == {"status": "ok", "database": "ok", "version": "0.0.1"}
+            assert health.json() == {
+                "status": "ok",
+                "database": "ok",
+                "version": __version__,
+            }
 
             capabilities = (await client.get("/api/v1/capabilities")).json()
             assert capabilities["bind_host"] == "127.0.0.1"

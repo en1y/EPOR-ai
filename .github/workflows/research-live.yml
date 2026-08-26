@@ -1,4 +1,4 @@
-name: v0.0.1 live research integrity
+name: Live research integrity
 
 "on":
   workflow_dispatch:

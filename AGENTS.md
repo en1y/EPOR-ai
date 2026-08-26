@@ -105,6 +105,28 @@ alone.
   delete a worktree that contains uncommitted changes or a branch with an open
   pull request.
 
+## Project version workflow
+
+- Treat `[project].version` in `pyproject.toml` as the single source of truth
+  for the current repository version. It identifies the source tree and roadmap
+  milestone; it is not evidence of a tag, package publication, model release,
+  or other formal release action.
+- After changing the canonical version, run
+  `uv run --frozen --no-sync python scripts/sync_project_version.py`. The script
+  updates the highlighted README notice, Python runtime version, UI package
+  metadata, and lockfile copies. Do not hand-edit those generated values.
+- Run `uv run --frozen --no-sync python scripts/sync_project_version.py --check`
+  and `uv lock --check` before committing a version change. CI enforces both
+  checks so a version bump cannot silently leave the README or runtime metadata
+  behind.
+- Do not globally replace historical version strings. Compatibility limits,
+  migration contracts, roadmap history, and version-specific tests may
+  deliberately refer to an older version.
+- A roadmap version is an implementation milestone, not an automatic formal
+  release. Tags, GitHub releases, packages, and model/checkpoint publication
+  happen only at useful distribution points after their applicable gates and
+  explicit project-owner authorization.
+
 ## Repository requirements
 
 - Commit every intended source, test, documentation, configuration, and

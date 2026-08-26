@@ -15,6 +15,8 @@ from urllib.parse import urljoin
 
 import httpx
 
+from epor import __version__
+
 from .catalog import DEFAULT_CATALOG_PATH, load_catalog, select_sources
 from .extract import ExtractionError, extract_text
 from .models import (
@@ -31,7 +33,7 @@ from .models import (
 DEFAULT_MAX_BYTES = 64 * 1024 * 1024
 DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=15.0)
 MAX_REDIRECTS = 5
-USER_AGENT = "epor-research/0.0.1 (+https://github.com/epor-ai/epor-ai)"
+USER_AGENT = f"epor-research/{__version__} (+https://github.com/epor-ai/epor-ai)"
 
 
 class ResearchSyncError(RuntimeError):

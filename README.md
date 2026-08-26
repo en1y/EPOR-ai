@@ -1,5 +1,13 @@
 # EPOR AI
 
+<!-- project-version:start -->
+> [!IMPORTANT]
+> **Current project version: `v0.0.2`**
+>
+> This identifies the code in this checkout; it does not imply a formal release.
+> Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+<!-- project-version:end -->
+
 EPOR AI is a reproducible research platform for training **original-weight**
 language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 (`epor-beta`), and **EPOR-γ** (`epor-gamma`). Released weights start from an
