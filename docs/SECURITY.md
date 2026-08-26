@@ -19,6 +19,9 @@ must bind to loopback. It is not an internet-facing multi-tenant service.
   content/signature checks, atomic replacement, and checksums.
 - Filesystem paths resolve beneath configured roots; a catalog, job, or artifact
   path must never escape via `..`, an absolute path, or a symlink.
+- Standalone reference execution uses the same 50M-model, corpus, checkpoint,
+  step, evaluation, and batch-token limits as control jobs. Its inputs and
+  outputs resolve beneath `EPOR_PROJECT_ROOT` before any allocation or write.
 - The worker dispatches typed allowlisted jobs and never executes a supplied
   shell string.
 - Every job passes covenant admission before its specification is parsed, and

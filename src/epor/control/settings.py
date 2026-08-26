@@ -14,6 +14,12 @@ def _default_project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def project_root_from_environment() -> Path:
+    """Resolve the one project root shared by direct and control-plane commands."""
+
+    return Path(os.getenv("EPOR_PROJECT_ROOT", str(_default_project_root()))).expanduser().resolve()
+
+
 def _environment_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -94,7 +100,7 @@ class ControlSettings:
     def from_environment(cls) -> ControlSettings:
         """Create settings from the small, documented ``EPOR_CONTROL_*`` set."""
 
-        root = Path(os.getenv("EPOR_PROJECT_ROOT", str(_default_project_root())))
+        root = project_root_from_environment()
         database = os.getenv("EPOR_CONTROL_DATABASE")
         artifacts = os.getenv("EPOR_CONTROL_ARTIFACT_ROOT")
         catalog = os.getenv("EPOR_RESEARCH_CATALOG")

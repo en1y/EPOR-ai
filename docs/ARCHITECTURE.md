@@ -77,6 +77,13 @@ uses composable FSDP2 and distributed checkpointing, with DDP and exact RNG/data
 cursor resume tested before scale. Provider-specific CUDA, ROCm, JAX, Triton,
 and Hopper stacks live in separate locked environments.
 
+The executable v0.0.1 reference path shares one allocation-free policy across
+the CLI and control worker. It rejects non-reference or over-50M recipes before
+model construction, caps the in-memory corpus and trusted checkpoint before
+loading, and bounds steps, evaluation batches, and batch tokens. Direct CLI
+paths additionally remain under `EPOR_PROJECT_ROOT`; target-family recipes are
+metadata/meta-device planning inputs and cannot enter this runtime.
+
 The reference RX 5700 XT is an inference target through llama.cpp/Vulkan with a
 CPU fallback. It is not a required PyTorch training device.
 
@@ -95,7 +102,9 @@ permit. The worker re-resolves at dispatch so a job admitted under an earlier
 covenant cannot execute under a later one. The CLI shares that registry rather
 than keeping its own, so `research sync`, `train pretrain`, `train resume`,
 `eval run`, and `generate` are governed identically despite never touching the
-control plane. Stopping work is never gated: the second principle outranks the
+control plane. They also share the reference-runtime limits described above,
+so the declaration's resource assumptions hold on either route. Stopping work
+is never gated: the second principle outranks the
 third, so cancellation, correction, and shutdown bypass the gate by design.
 
 Jobs use compare-and-set transitions and append-only events. File manifests are
