@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from epor.cli import app
@@ -35,7 +36,7 @@ def test_future_command_fails_closed() -> None:
 def test_resume_exposes_original_corpus_option() -> None:
     result = runner.invoke(app, ["train", "resume", "--help"])
     assert result.exit_code == 0
-    assert "--corpus" in result.stdout
+    assert "--corpus" in unstyle(result.stdout)
 
 
 def test_reference_cli_rejects_paths_outside_project_root(
