@@ -55,15 +55,20 @@ alone.
   integration merge or pull request reviewed and authorized by the project owner
   may update `master` after the applicable release gates pass.
 - At the start of a roadmap version, create or reuse one integration branch from
-  `master`, named `codex/version-vX.Y.Z` (for example,
-  `codex/version-v0.0.2`), and check it out in one dedicated integration
-  worktree. Do not create duplicate integration branches for the same version.
+  `master`, named `version/vX.Y.Z` (for example, `version/v0.0.2`), and check it
+  out in one dedicated integration worktree. Do not create duplicate integration
+  branches for the same version.
 - Create a distinct task branch from the version branch for every independent or
-  parallel unit of work, named `codex/work-vX.Y.Z-<task>`, and check each task
-  branch out in its own linked worktree. Do not check out the same branch in
-  multiple worktrees or bypass this rule with `--force`; multiple worktrees for a
-  version use separate task branches, not repeated checkouts of the version
-  branch.
+  parallel unit of work, named `work/vX.Y.Z-<task>`, and check each task branch
+  out in its own linked worktree. Do not check out the same branch in multiple
+  worktrees or bypass this rule with `--force`; multiple worktrees for a version
+  use separate task branches, not repeated checkouts of the version branch.
+- Use purpose-based branch names only. Never namespace a branch with the
+  identity of the agent, coding assistant, model, provider, or development tool
+  doing the work; prefixes or path components such as `codex/`, `claude/`,
+  `chatgpt/`, `agent/`, and similar names are prohibited. A technical name may
+  appear only when it identifies the actual project feature or dependency being
+  changed, never as an ownership or authorship marker.
 - Keep each task worktree scoped to one task and one agent at a time. Test and
   review the task branch before merging it into the version branch. Periodically
   integrate the version branch into active task branches when they need current
@@ -89,6 +94,13 @@ alone.
   dependency and behavior order. Commit each batch once it is internally
   consistent and verified; avoid both a single repository-wide commit and
   microscopic formatting- or file-by-file commits.
+- Write every new commit subject and body in neutral, project-focused terms.
+  Never mention, credit, or attribute the work to the agent, coding assistant,
+  model, provider, or development tool that assisted with it, including Codex
+  or Claude, in the subject, body, or trailers. A technical name may appear only
+  when necessary to describe actual project behavior or a dependency. Do not add
+  generated-by, non-human co-author, or equivalent attribution trailers; human
+  authorship and review attribution remain allowed.
 - Review `git status` and the staged diff before every commit. Never commit
   downloaded research, datasets, checkpoints, weights, run output, local
   databases, secrets, or unrelated user changes merely to make the tree clean.
