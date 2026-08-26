@@ -19,7 +19,7 @@ until independently reproduced under EPOR manifests.
 - **`[disclosed]`** `deepseek-math` describes mathematical data selection and
   introduces Group Relative Policy Optimization in its post-training research.
 - **`[EPOR-adaptation]`** EPOR starts with supervised and preference baselines;
-  later GRPO is limited to β and primarily uses verifiable compiler, test, or
+  later GRPO is limited to α and primarily uses verifiable compiler, test, or
   SymPy rewards with human-cleaned cold starts.
 
 ## Mixture of experts and latent attention
@@ -27,14 +27,14 @@ until independently reproduced under EPOR manifests.
 - **`[disclosed]`** `deepseek-moe` separates shared experts from fine-grained
   routed experts to encourage specialization while retaining common knowledge.
 - **`[reported-result]`** The paper reports favorable quality/compute trade-offs
-  for its tested routing configurations; these do not establish EPOR-β's top-k,
+  for its tested routing configurations; these do not establish EPOR-α's top-k,
   capacity, balancing, or communication policy.
 - **`[disclosed]`** `deepseek-v2` combines a DeepSeekMoE design with Multi-head
   Latent Attention to reduce key/value-cache cost in its architecture.
 - **`[hypothesis]`** MLA may improve EPOR long-context memory efficiency, but its
   implementation complexity and PyTorch/HF/GGUF parity must beat GQA and cache
   quantization controls before adoption.
-- **`[EPOR-adaptation]`** EPOR-β targets approximately 30B total and 6–8B measured
+- **`[EPOR-adaptation]`** EPOR-α targets approximately 30B total and 6–8B measured
   active parameters per token. Proxy ablations must show no dead experts, no
   silent token drops, balanced routing, acceptable communication, and a win over
   a compute-matched dense control.
@@ -89,7 +89,7 @@ until independently reproduced under EPOR manifests.
   reported benchmark scores are not EPOR results.
 - **`[EPOR-adaptation]`** EPOR builds verified math/code traces, samples both
   successes and failures for audit, limits GRPO scope, and distills only licensed
-  teacher outputs into independently initialized α and γ students.
+  teacher outputs into independently initialized β and γ students.
 - **`[disclosed]`** `deepseek-v3-2` describes a sparse-attention mechanism and a
   scaled reasoning/agent post-training program.
 - **`[disclosed]`** The mechanism pairs a lightweight scoring component, using a

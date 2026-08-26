@@ -5,9 +5,9 @@ or benchmark claims:
 
 - `epor-tiny.yaml`: roughly 115K parameters for fast CI only.
 - `epor-reference.yaml`: canonical 10.4M-parameter pure-PyTorch reference.
-- `epor-gamma.yaml`: planned EPOR-γ target configuration.
 - `epor-alpha.yaml`: planned EPOR-α target configuration.
 - `epor-beta.yaml`: planned EPOR-β target configuration.
+- `epor-gamma.yaml`: planned EPOR-γ target configuration.
 
 The four context fields have deliberately different meanings:
 

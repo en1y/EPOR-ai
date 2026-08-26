@@ -2,13 +2,13 @@ schema_version: "1"
 display_name: EPOR-α
 slug: epor-alpha
 family: alpha
-architecture: dense-decoder
+architecture: moe-decoder
 vocab_size: 65536
-d_model: 5120
+d_model: 4096
 n_layers: 40
-n_heads: 40
+n_heads: 32
 n_kv_heads: 8
-d_ff: 13824
+d_ff: 6144
 rope_theta: 1000000.0
 rms_norm_eps: 1.0e-5
 initializer_range: 0.02
@@ -21,16 +21,20 @@ configured_max_context: 262144
 trained_max_context: 0
 validated_max_context: 0
 operational_default_context: 0
-total_parameters: 11346007040
-active_parameters: 11346007040
-core_parameters: 11346007040
+n_routed_experts: 8
+n_shared_experts: 1
+experts_per_token: 1
+total_parameters: 29126889472
+active_parameters: 7987597312
+core_parameters: 7987597312
 research_features:
-  - local-global-attention-research
-  - long-context-progression
+  - shared-and-routed-experts
+  - fine-grained-routing
+  - reasoning-specialization
 certified_profiles:
-  - profile_id: reference-pc-16k
+  - profile_id: reference-pc-8k
     hardware: Ryzen 5-class CPU, RX 5700 XT 8 GiB, 32 GiB RAM
-    max_context: 16384
+    max_context: 8192
     precision: GGUF Q4 target
     status: planned
     ram_gib: 28

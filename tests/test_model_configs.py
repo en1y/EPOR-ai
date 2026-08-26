@@ -16,15 +16,17 @@ CONFIG_ROOT = Path("configs/models")
 
 
 def test_public_family_names_and_context_contracts() -> None:
+    # Capability descends with the alphabet: α is the highest-capability family.
     expected = {
-        "epor-gamma.yaml": ("EPOR-γ", "epor-gamma", 131_072),
-        "epor-alpha.yaml": ("EPOR-α", "epor-alpha", 262_144),
-        "epor-beta.yaml": ("EPOR-β", "epor-beta", 262_144),
+        "epor-alpha.yaml": ("EPOR-α", "epor-alpha", "moe-decoder", 262_144),
+        "epor-beta.yaml": ("EPOR-β", "epor-beta", "dense-decoder", 262_144),
+        "epor-gamma.yaml": ("EPOR-γ", "epor-gamma", "dense-decoder", 131_072),
     }
-    for filename, (display_name, slug, context) in expected.items():
+    for filename, (display_name, slug, architecture, context) in expected.items():
         config = validate_config(CONFIG_ROOT / filename)
         assert config.display_name == display_name
         assert config.slug == slug
+        assert config.architecture == architecture
         assert config.configured_max_context == context
         assert config.validated_max_context == 0
         assert all(profile.status == "planned" for profile in config.certified_profiles)
@@ -42,9 +44,9 @@ def test_meta_parameter_counts_match_declared_targets() -> None:
     for filename in (
         "epor-tiny.yaml",
         "epor-reference.yaml",
-        "epor-gamma.yaml",
         "epor-alpha.yaml",
         "epor-beta.yaml",
+        "epor-gamma.yaml",
     ):
         config = load_model_config(CONFIG_ROOT / filename)
         report = parameter_report(config)

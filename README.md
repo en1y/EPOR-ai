@@ -1,22 +1,25 @@
 # EPOR AI
 
 EPOR AI is a reproducible research platform for training **original-weight**
-language models. Its public families are **EPOR-γ** (`epor-gamma`), **EPOR-α**
-(`epor-alpha`), and **EPOR-β** (`epor-beta`). Released weights start from an
+language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
+(`epor-beta`), and **EPOR-γ** (`epor-gamma`). Released weights start from an
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
 Version 0.0.1 is intentionally small. It validates provenance, configuration,
 training correctness, exact resume, and local job-control semantics with tiny
-CPU models before any target-size run is considered. The 8B/12B/30B family
+CPU models before any target-size run is considered. The 30B/12B/8B family
 descriptions are gated research destinations, not bundled checkpoints or
 fabricated performance claims.
 
+Families are listed alphabetically, and intended capability descends in the same
+order: α is the flagship, γ the compact local model.
+
 | Family | Machine ID | Planned architecture | Configured context target | v1 local goal |
 |---|---|---|---:|---:|
+| EPOR-α | `epor-alpha` | ≈30B MoE, measured 6–8B active/token | 256K | 8K |
+| EPOR-β | `epor-beta` | 10–12B dense decoder | 256K | 16K |
 | EPOR-γ | `epor-gamma` | ≈8B elastic model with ≈4B core | 128K | 32K |
-| EPOR-α | `epor-alpha` | 10–12B dense decoder | 256K | 16K |
-| EPOR-β | `epor-beta` | ≈30B MoE, measured 6–8B active/token | 256K | 8K |
 
 Configured context is only an architectural ceiling. Trained, validated, and
 hardware-certified limits are separate fields and remain zero/planned for the

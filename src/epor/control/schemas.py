@@ -210,7 +210,7 @@ class CertifiedProfileRead(BaseModel):
 class ModelFamilyRead(BaseModel):
     display_name: str
     slug: str
-    family: Literal["gamma", "alpha", "beta"]
+    family: Literal["alpha", "beta", "gamma"]
     architecture: str
     total_parameters: int | None
     active_parameters: int | None
