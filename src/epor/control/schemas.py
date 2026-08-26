@@ -74,8 +74,163 @@ JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
 
 
 class JobCreate(StrictSchema):
-    type: JobType
+    # A bounded string, not a JobType. An action EPOR does not declare must
+    # reach the covenant and be turned away by it; rejecting it here as a
+    # schema violation would decide the case before the covenant saw it.
+    type: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionCreate(StrictSchema):
+    """Exchange a credential for a short browser session. Never stored."""
+
+    token: str = Field(min_length=16, max_length=512)
+
+
+class OperatorCreate(StrictSchema):
+    label: str = Field(min_length=1, max_length=120)
+    scopes: list[str] = Field(min_length=1, max_length=64)
+    expires_at: datetime
+
+
+class EscalationDecide(StrictSchema):
+    approve: bool
+    rationale: str = Field(min_length=1, max_length=2_000)
+
+
+class OperatorRead(BaseModel):
+    """A delegation as anyone may see it. No credential value, no digest."""
+
+    id: str
+    role: str
+    label: str
+    scopes: list[str]
+    active: bool
+    created_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    rotated_at: datetime | None
+
+
+class OperatorList(BaseModel):
+    items: list[OperatorRead]
+    count: int
+
+
+class IssuedCredentialRead(BaseModel):
+    """The one and only response that ever carries a credential value.
+
+    It goes to the owner who just minted it and is never retrievable again;
+    only its digest is stored.
+    """
+
+    operator: OperatorRead
+    token: str
+    shown_once: Literal[True] = True
+
+
+class IdentityRead(BaseModel):
+    role: Literal["owner", "delegated_operator", "anonymous"]
+    principal_id: str | None = None
+    label: str = ""
+    scopes: list[str] = Field(default_factory=list)
+    authenticated: bool = False
+    expires_at: datetime | None = None
+
+
+class ObligationRead(BaseModel):
+    key: str
+    statement: str
+
+
+class PrincipleRead(BaseModel):
+    priority: int
+    key: str
+    title: str
+    origin: str
+    law: str
+    obligations: list[ObligationRead]
+
+
+class RatificationRead(BaseModel):
+    present: bool
+    matches_covenant: bool
+    ratified_on: str | None = None
+    reviewer_role: str | None = None
+    roadmap_version: str | None = None
+    rationale: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+
+
+class EnforcementCheckpointRead(BaseModel):
+    name: str
+    description: str
+
+
+class CovenantRead(BaseModel):
+    covenant_id: str
+    covenant_version: int
+    roadmap_version: str
+    effective_date: str
+    status: Literal["draft", "ratified"]
+    sha256: str
+    escalation_confidence_floor: float
+    principles: list[PrincipleRead]
+    limitations: str
+    ratification: RatificationRead
+    enforcement_checkpoints: list[EnforcementCheckpointRead]
+
+
+class AssessmentRead(BaseModel):
+    priority: int
+    status: str
+    confidence: float
+    rationale: str
+    obligation: str | None = None
+
+
+class ActionRead(BaseModel):
+    action_id: str
+    summary: str
+    outcome: Literal["allow", "refuse", "escalate"]
+    job_type: bool
+    cli_commands: list[str]
+    assessments: list[AssessmentRead]
+
+
+class ActionList(BaseModel):
+    items: list[ActionRead]
+    count: int
+    undeclared_behavior: str = (
+        "An action with no reviewed declaration is assessed as uncertain against "
+        "every principle, so it escalates to a human rather than running."
+    )
+
+
+class EscalationRead(BaseModel):
+    """A sanitized escalation. The submitted specification is never included."""
+
+    id: str
+    actor_id: str
+    actor_role: str
+    action_id: str
+    request_digest: str
+    covenant_sha256: str
+    binding_priority: int | None
+    reasons: list[str]
+    state: Literal["open", "approved", "refused", "consumed", "expired"]
+    decided_by: str | None
+    rationale: str | None
+    created_at: datetime
+    decided_at: datetime | None
+    approval_expires_at: datetime | None
+    consumed_at: datetime | None
+    consumed_job_id: str | None
+
+
+class EscalationList(BaseModel):
+    items: list[EscalationRead]
+    count: int
 
 
 class ErrorEnvelope(BaseModel):
@@ -98,6 +253,11 @@ class JobRead(BaseModel):
     error_message: str | None
     worker_id: str | None
     retry_of_id: str | None
+    # Null on jobs admitted before v0.0.2 introduced identity.
+    submitted_by_id: str | None = None
+    submitted_by_role: str | None = None
+    admission_covenant_sha256: str | None = None
+    escalation_id: str | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None

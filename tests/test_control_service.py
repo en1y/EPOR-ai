@@ -5,16 +5,18 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, timedelta
 from pathlib import Path
 from threading import Barrier, Event, Lock, Thread
+from typing import Any
 
 import pytest
 from sqlalchemy import text
 
+from epor.control.authority import Actor, AuthorityStore
 from epor.control.database import (
     create_session_factory,
     create_sqlite_engine,
     initialize_database,
 )
-from epor.control.models import JobStatus, JobType, utc_now
+from epor.control.models import Job, JobStatus, JobType, utc_now
 from epor.control.schemas import TINY_CONTROL_CORPUS_MAX_BYTES
 from epor.control.security import (
     PathOutsideRootError,
@@ -23,7 +25,7 @@ from epor.control.security import (
 )
 from epor.control.service import (
     ArtifactPathError,
-    CovenantBlockedError,
+    CovenantEscalatedError,
     InvalidJobSpecError,
     JobService,
 )
@@ -42,6 +44,9 @@ def make_service(
         project_root=root,
         database_path=runtime / "control.sqlite3",
         artifact_root=runtime / "artifacts",
+        # Never the project root's own .epor: a fixture must not read or write
+        # the developer's real owner credential.
+        safety_root=runtime / "safety",
         research_catalog_path=root / "research" / "catalog.yaml",
         stale_after_seconds=stale_after_seconds,
         poll_interval_seconds=0.005,
@@ -50,7 +55,24 @@ def make_service(
     assert settings.database_path is not None
     engine = create_sqlite_engine(settings.database_path)
     initialize_database(engine)
-    return settings, JobService(create_session_factory(engine), settings)
+    service = JobService(create_session_factory(engine), settings)
+    assert settings.safety_root is not None
+    AuthorityStore(settings.safety_root).bootstrap_owner()
+    return settings, service
+
+
+def owner_of(service: JobService) -> Actor:
+    """The bootstrapped owner every fixture submits work as."""
+
+    owner = service.authority.owner()
+    assert owner is not None
+    return owner.actor()
+
+
+def submit(service: JobService, action: Any, spec: Any = None, **kwargs: Any) -> Job:
+    """Queue work as the owner, since admission now requires an identity."""
+
+    return service.create_job(action, spec, actor=owner_of(service), **kwargs)
 
 
 def test_loopback_settings_path_containment_and_redaction(tmp_path: Path) -> None:
@@ -83,7 +105,7 @@ def test_sqlite_wal_and_transactional_lifecycle(tmp_path: Path) -> None:
         assert connection.scalar(text("PRAGMA journal_mode")) == "wal"
         assert connection.scalar(text("PRAGMA foreign_keys")) == 1
 
-    queued = service.create_job(JobType.SYSTEM_PROBE, {})
+    queued = submit(service, JobType.SYSTEM_PROBE, {})
     assert queued.status is JobStatus.QUEUED
     persisted_queued = service.get_job(queued.id)
     assert persisted_queued.created_at.tzinfo is UTC
@@ -107,7 +129,7 @@ def test_sqlite_wal_and_transactional_lifecycle(tmp_path: Path) -> None:
     finished = service.complete_success(queued.id, "worker-a", {"ignored": True})
     assert finished.status is JobStatus.CANCELLED
 
-    retried = service.retry(queued.id)
+    retried = service.retry(queued.id, actor=owner_of(service))
     assert retried.status is JobStatus.QUEUED
     assert retried.retry_of_id == queued.id
     events = service.list_events(queued.id)
@@ -124,7 +146,7 @@ def test_concurrent_cancel_and_progress_event_sequences_are_serialized(
     _, service = make_service(tmp_path)
 
     def running_job() -> str:
-        job = service.create_job(JobType.SYSTEM_PROBE, {})
+        job = submit(service, JobType.SYSTEM_PROBE, {})
         claimed = service.claim_next("race-worker")
         assert claimed is not None and claimed.id == job.id
         service.mark_running(job.id, "race-worker")
@@ -202,7 +224,7 @@ def test_simultaneous_workers_claim_and_execute_a_queued_job_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings, service = make_service(tmp_path)
-    queued = service.create_job(JobType.SYSTEM_PROBE, {})
+    queued = submit(service, JobType.SYSTEM_PROBE, {})
     claim_barrier = Barrier(3)
     original_claim_next = service.claim_next
 
@@ -263,7 +285,7 @@ def test_simultaneous_workers_claim_and_execute_a_queued_job_once(
 
 def test_stale_reconciliation_and_artifact_checksums(tmp_path: Path) -> None:
     settings, service = make_service(tmp_path, stale_after_seconds=0.1)
-    job = service.create_job(JobType.SYSTEM_PROBE, {})
+    job = submit(service, JobType.SYSTEM_PROBE, {})
     service.claim_next("worker-a")
     service.mark_running(job.id, "worker-a")
     now = utc_now()
@@ -287,7 +309,7 @@ def test_stale_reconciliation_and_artifact_checksums(tmp_path: Path) -> None:
 
 def test_file_truth_rebuilds_a_fresh_sqlite_index_deterministically(tmp_path: Path) -> None:
     settings, service = make_service(tmp_path)
-    job = service.create_job(JobType.SYSTEM_PROBE, {})
+    job = submit(service, JobType.SYSTEM_PROBE, {})
     service.claim_next("truth-worker")
     service.mark_running(job.id, "truth-worker")
     service.update_progress(job.id, "truth-worker", 0.75, {"message": "three quarters"})
@@ -297,9 +319,9 @@ def test_file_truth_rebuilds_a_fresh_sqlite_index_deterministically(tmp_path: Pa
     report.parent.mkdir(parents=True)
     report.write_text('{"probe": "complete"}\n', encoding="utf-8")
     service.register_artifact(job.id, report, kind="probe-report")
-    cancelled_source = service.create_job(JobType.SYSTEM_PROBE, {})
+    cancelled_source = submit(service, JobType.SYSTEM_PROBE, {})
     service.cancel(cancelled_source.id)
-    retried = service.retry(cancelled_source.id)
+    retried = service.retry(cancelled_source.id, actor=owner_of(service))
 
     truth_dir = settings.artifact_root / "_control" / "jobs" / job.id
     manifest_before = (truth_dir / "manifest.json").read_bytes()
@@ -333,7 +355,7 @@ def test_file_truth_rebuilds_a_fresh_sqlite_index_deterministically(tmp_path: Pa
 
 def test_truth_reconciliation_preserves_newer_unlogged_heartbeat(tmp_path: Path) -> None:
     settings, service = make_service(tmp_path)
-    job = service.create_job(JobType.SYSTEM_PROBE, {})
+    job = submit(service, JobType.SYSTEM_PROBE, {})
     service.claim_next("heartbeat-worker")
     service.mark_running(job.id, "heartbeat-worker")
     time.sleep(0.002)
@@ -360,7 +382,7 @@ def test_worker_cooperatively_cancels_active_handler(tmp_path: Path) -> None:
     handlers = dict(DEFAULT_HANDLERS)
     handlers[JobType.SYSTEM_PROBE] = wait_for_cancel  # type: ignore[assignment]
     worker = JobWorker(settings, service=service, handlers=handlers, worker_id="worker-a")
-    job = service.create_job(JobType.SYSTEM_PROBE, {})
+    job = submit(service, JobType.SYSTEM_PROBE, {})
     thread = Thread(target=worker.run_once)
     thread.start()
     assert started.wait(timeout=2)
@@ -383,7 +405,7 @@ def test_tiny_control_corpus_cap_boundary_and_worker_recheck(
     if job_type is JobType.TINY_EVAL:
         spec["checkpoint_path"] = "queued-checkpoint.pt"
 
-    queued = service.create_job(job_type, spec)
+    queued = submit(service, job_type, spec)
     assert queued.status is JobStatus.QUEUED
 
     # Grow the file after queue-time validation. The worker must reject it
@@ -397,7 +419,7 @@ def test_tiny_control_corpus_cap_boundary_and_worker_recheck(
     assert failed.error_message == "tiny control corpus exceeds the 1 MiB v0.0.1 limit"
 
     with pytest.raises(InvalidJobSpecError, match="exceeds the 1 MiB"):
-        service.create_job(job_type, spec)
+        submit(service, job_type, spec)
 
 
 def test_worker_runs_tiny_train_and_eval_through_allowlisted_adapter(tmp_path: Path) -> None:
@@ -405,7 +427,8 @@ def test_worker_runs_tiny_train_and_eval_through_allowlisted_adapter(tmp_path: P
     project_root = Path(__file__).resolve().parents[1]
     settings, service = make_service(tmp_path, project_root=project_root)
     worker = JobWorker(settings, service=service, worker_id="worker-train")
-    train_job = service.create_job(
+    train_job = submit(
+        service,
         JobType.TINY_TRAIN,
         {"max_steps": 1, "seed": 7, "output_name": "integration"},
     )
@@ -419,7 +442,8 @@ def test_worker_runs_tiny_train_and_eval_through_allowlisted_adapter(tmp_path: P
         "training-metrics",
     }
 
-    eval_job = service.create_job(
+    eval_job = submit(
+        service,
         JobType.TINY_EVAL,
         {"checkpoint_path": checkpoint_path, "max_batches": 1},
     )
@@ -430,7 +454,7 @@ def test_worker_runs_tiny_train_and_eval_through_allowlisted_adapter(tmp_path: P
 
 def test_no_job_is_queued_without_a_recorded_covenant_resolution(tmp_path: Path) -> None:
     _settings, service = make_service(tmp_path)
-    job = service.create_job(JobType.SYSTEM_PROBE)
+    job = submit(service, JobType.SYSTEM_PROBE)
 
     queued = [event for event in service.list_events(job.id) if event.kind == "job.queued"]
     assert len(queued) == 1
@@ -449,21 +473,31 @@ def test_work_the_covenant_does_not_permit_never_reaches_the_queue(tmp_path: Pat
     _settings, service = make_service(tmp_path)
     before = len(service.list_jobs())
 
-    with pytest.raises(CovenantBlockedError) as raised:
-        service.create_job("model_serve")  # type: ignore[arg-type]
+    with pytest.raises(CovenantEscalatedError) as raised:
+        submit(service, "model_serve")
 
-    assert raised.value.status_code == 403
-    assert raised.value.code == "covenant_blocked"
+    # Undeclared work escalates: it stops and reaches a human queue rather than
+    # being refused outright or, worse, quietly admitted.
+    assert raised.value.status_code == 409
+    assert raised.value.code == "covenant_escalated"
     assert raised.value.details["outcome"] == "escalate"
     assert raised.value.details["binding_priority"] == 1
     assert len(service.list_jobs()) == before
+
+    escalation_id = raised.value.escalation_id
+    assert escalation_id is not None
+    opened = service.authority.escalation(escalation_id)
+    assert opened.action_id == "model_serve"
+    assert opened.state.value == "open"
+    # The submitted specification is never persisted with the escalation.
+    assert len(opened.request_digest) == 64
 
 
 def test_cancellation_is_never_gated_by_the_covenant(tmp_path: Path) -> None:
     # Principle 2 outranks principle 3: stopping work is always accepted, so the
     # admission gate must sit only on starting work.
     _settings, service = make_service(tmp_path)
-    job = service.create_job(JobType.SYSTEM_PROBE)
+    job = submit(service, JobType.SYSTEM_PROBE)
     cancelled = service.cancel(job.id)
     assert cancelled.status is JobStatus.CANCELLED
     assert service.cancel(job.id).status is JobStatus.CANCELLED
@@ -471,7 +505,7 @@ def test_cancellation_is_never_gated_by_the_covenant(tmp_path: Path) -> None:
 
 def test_worker_refuses_to_execute_work_the_covenant_no_longer_permits(tmp_path: Path) -> None:
     settings, service = make_service(tmp_path)
-    job = service.create_job(JobType.SYSTEM_PROBE)
+    job = submit(service, JobType.SYSTEM_PROBE)
     worker = JobWorker(settings, service=service, worker_id="worker-covenant")
 
     # Withdraw the declaration after admission; the worker must re-resolve.
@@ -485,4 +519,4 @@ def test_worker_refuses_to_execute_work_the_covenant_no_longer_permits(tmp_path:
 
     assert executed is not None and executed.id == job.id
     assert executed.status is JobStatus.FAILED
-    assert executed.error_code == "covenant_blocked"
+    assert executed.error_code == "covenant_escalated"

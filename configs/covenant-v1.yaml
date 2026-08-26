@@ -109,7 +109,14 @@ limitations: >-
   resolver enforces priority ordering, obligation citation, justification, and
   fail-closed escalation over assessments supplied to it; it does not produce
   those assessments and cannot tell whether one is correct. In v0.0.2 the
-  assessments come from reviewed per-job-type declarations over a closed
+  assessments come from reviewed per-action declarations over a closed
   allowlist, which is only sound because that action space is small and fixed.
-  Classifiers, model-behavior evaluations, red teaming, and a real
-  authorization model are separate work tracked from v0.0.3 onward.
+  Authorization is enforced from v0.0.2: an owner and expiring, scoped
+  delegated operators are verified before the second principle is assessed, and
+  work the covenant will not admit reaches a durable human escalation queue
+  instead of running. That model is local and single-machine. It authenticates
+  a bearer credential held on this machine; it is not multi-tenant, has no
+  transport security, and cannot defend against a compromised local account,
+  which can read the credential from disk. Classifiers, model-behavior
+  evaluations, and red teaming remain separate work tracked from v0.0.3
+  onward.

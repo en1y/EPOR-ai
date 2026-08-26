@@ -29,6 +29,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # part of the tracked code contract, not per-run configuration, and there is
 # deliberately no setting that points the resolver at a different file.
 DEFAULT_COVENANT_PATH = Path(__file__).resolve().parents[2] / "configs" / "covenant-v1.yaml"
+DEFAULT_RATIFICATION_PATH = (
+    Path(__file__).resolve().parents[2] / "configs" / "covenant-v1-ratification.yaml"
+)
 
 Priority = Literal[1, 2, 3]
 AssessmentStatus = Literal["satisfied", "conflicted", "uncertain"]
@@ -120,13 +123,71 @@ class Covenant(BaseModel):
         return hashlib.sha256(self.canonical_json().encode("utf-8")).hexdigest()
 
 
-def load_covenant(path: str | Path = DEFAULT_COVENANT_PATH) -> Covenant:
-    """Load and strictly validate the covenant from YAML."""
+class Ratification(BaseModel):
+    """The recorded human act of adopting one exact covenant text.
+
+    Ratification is not a flag inside the covenant.  It is a separate tracked
+    attestation naming the bytes it attests to, so that flipping ``status`` in
+    the covenant without a matching review record stops the service instead of
+    silently claiming an approval nobody gave.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1"] = "1"
+    covenant_id: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
+    covenant_version: int = Field(ge=1)
+    covenant_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    roadmap_version: str = Field(pattern=r"^v\d+\.\d+\.\d+$")
+    ratified_on: date
+    reviewer_role: str = Field(min_length=1)
+    rationale: str = Field(min_length=1)
+    evidence: tuple[str, ...] = Field(min_length=1)
+
+
+def load_ratification(path: str | Path = DEFAULT_RATIFICATION_PATH) -> Ratification | None:
+    """Load the ratification manifest, or ``None`` when it is absent."""
+
+    location = Path(path)
+    if not location.is_file():
+        return None
+    data = yaml.safe_load(location.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise CovenantError(f"ratification manifest {location} must contain a mapping")
+    return Ratification.model_validate(data)
+
+
+def load_covenant(
+    path: str | Path = DEFAULT_COVENANT_PATH,
+    *,
+    ratification_path: str | Path = DEFAULT_RATIFICATION_PATH,
+) -> Covenant:
+    """Load and strictly validate the covenant, enforcing ratification.
+
+    A covenant that claims ``ratified`` status must be accompanied by a
+    manifest attesting to its exact hash.  A missing manifest, or one pinning
+    different bytes, raises here — so the API, the worker, and the CLI all
+    refuse to start rather than run under a covenant whose claimed approval
+    cannot be shown.
+    """
 
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"covenant {path} must contain a mapping")
-    return Covenant.model_validate(data)
+    covenant = Covenant.model_validate(data)
+    if covenant.status == "ratified":
+        ratification = load_ratification(ratification_path)
+        if ratification is None:
+            raise CovenantError(
+                "the covenant claims ratified status but no ratification manifest exists"
+            )
+        if (
+            ratification.covenant_id != covenant.covenant_id
+            or ratification.covenant_version != covenant.covenant_version
+            or ratification.covenant_sha256 != covenant.sha256
+        ):
+            raise CovenantError("the ratification manifest does not attest to this covenant text")
+    return covenant
 
 
 class PrincipleAssessment(BaseModel):
@@ -181,6 +242,9 @@ class Resolution(BaseModel):
 
     outcome: Outcome
     binding_priority: Priority | None
+    # The obligation key the binding assessment cited, so a caller can act on
+    # which duty decided without parsing the human-readable reasons.
+    binding_obligation: str | None = None
     reasons: tuple[str, ...]
     covenant_id: str
     covenant_version: int
@@ -242,6 +306,7 @@ def resolve(action: ProposedAction, covenant: Covenant) -> Resolution:
         return Resolution(
             outcome=outcome,
             binding_priority=binding,
+            binding_obligation=(None if binding is None else action.assessment(binding).obligation),
             reasons=reasons,
             covenant_id=covenant.covenant_id,
             covenant_version=covenant.covenant_version,

@@ -24,21 +24,39 @@ from epor.research.models import CatalogError, IntegrityStatus
 from epor.research.service import verify_catalog
 from epor.system import probe_system
 
+from .authority import (
+    ANONYMOUS,
+    SESSION_TTL,
+    Actor,
+    AuthorityStore,
+    Escalation,
+    EscalationState,
+    Principal,
+)
 from .database import create_session_factory, create_sqlite_engine, initialize_database
 from .documents import DocumentTooLargeError, build_index, read_document
+from .errors import AuthenticationRequiredError, AuthorizationDeniedError, ControlError
 from .models import JobStatus, JobType
+from .safety_view import covenant_payload, declared_action_payload
 from .schemas import (
     JOB_SPEC_MODELS,
+    ActionList,
     ArtifactList,
     ArtifactRead,
     CapabilityRead,
+    CovenantRead,
     DocumentList,
     DocumentRead,
     DocumentSummary,
     ErrorEnvelope,
+    EscalationDecide,
+    EscalationList,
+    EscalationRead,
     EventList,
     EventRead,
     HealthRead,
+    IdentityRead,
+    IssuedCredentialRead,
     JobCreate,
     JobList,
     JobRead,
@@ -46,13 +64,18 @@ from .schemas import (
     JobTypeRead,
     ModelFamilyList,
     ModelFamilyRead,
+    OperatorCreate,
+    OperatorList,
+    OperatorRead,
     ResearchCatalogRead,
     ResearchSourceRead,
+    SessionCreate,
 )
 from .security import redact, redact_text
-from .service import ControlError, JobService
+from .service import JobService
 from .settings import ControlSettings
 
+SESSION_COOKIE = "epor_session"
 API_PREFIX = "/api/v1"
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$")
 JobTypeQuery = Annotated[JobType | None, Query(alias="type")]
@@ -197,8 +220,111 @@ def _models_payload(settings: ControlSettings) -> ModelFamilyList:
     return ModelFamilyList(items=items, count=len(items))
 
 
+def _bearer_token(request: Request) -> str | None:
+    header = request.headers.get("Authorization", "")
+    scheme, _, value = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return None
+    token = value.strip()
+    # Oversized credentials are dropped before hashing, so a large header
+    # cannot be used to make authentication do work.
+    return token if 0 < len(token) <= 512 else None
+
+
+def _resolve_actor(request: Request, authority: AuthorityStore) -> tuple[Actor, bool]:
+    """Identify the caller, and report whether a cookie carried the identity.
+
+    Bearer beats cookie: a CLI or scripted call that presents a credential
+    explicitly must not be silently reinterpreted as whatever browser session
+    happens to be open in the same profile.
+    """
+
+    token = _bearer_token(request)
+    if token is not None:
+        principal = authority.authenticate(token)
+        return (principal.actor() if principal else ANONYMOUS), False
+    cookie_actor = authority.session_actor(request.cookies.get(SESSION_COOKIE))
+    if cookie_actor is not None:
+        return cookie_actor, True
+    return ANONYMOUS, False
+
+
+def _require_actor(request: Request, authority: AuthorityStore, settings: ControlSettings) -> Actor:
+    """Authenticate a mutation and enforce the browser origin boundary.
+
+    A cookie is ambient: the browser attaches it to whatever page asks. So a
+    cookie-authenticated mutation must also prove it came from the one origin
+    the console is served on. A bearer credential is not ambient and carries no
+    such requirement, which is what lets the CLI and scripts work with no
+    Origin header at all.
+    """
+
+    actor, via_cookie = _resolve_actor(request, authority)
+    if not actor.is_authenticated:
+        raise AuthenticationRequiredError("this request requires a verified operator identity")
+    if via_cookie and request.headers.get("Origin") != settings.allowed_origin:
+        raise AuthorizationDeniedError(
+            "a session-authenticated request must come from the configured console origin"
+        )
+    return actor
+
+
+def _identity_payload(actor: Actor, authority: AuthorityStore) -> IdentityRead:
+    if not actor.is_authenticated:
+        return IdentityRead(role="anonymous")
+    try:
+        expires_at = authority.principal(actor.id).expires_at
+    except ControlError:
+        # A CLI actor has no stored principal, and no expiry either.
+        expires_at = None
+    return IdentityRead(
+        role=actor.role.value,  # type: ignore[arg-type]
+        principal_id=actor.id,
+        label=actor.label,
+        scopes=sorted(actor.scopes),
+        authenticated=True,
+        expires_at=expires_at,
+    )
+
+
+def _operator_payload(principal: Principal) -> OperatorRead:
+    return OperatorRead(
+        id=principal.id,
+        role=principal.role.value,
+        label=principal.label,
+        scopes=sorted(principal.scopes),
+        active=principal.active(),
+        created_at=principal.created_at,
+        expires_at=principal.expires_at,
+        revoked_at=principal.revoked_at,
+        rotated_at=principal.rotated_at,
+    )
+
+
+def _escalation_payload(escalation: Escalation) -> EscalationRead:
+    return EscalationRead(
+        id=escalation.id,
+        actor_id=escalation.actor_id,
+        actor_role=escalation.actor_role.value,
+        action_id=escalation.action_id,
+        request_digest=escalation.request_digest,
+        covenant_sha256=escalation.covenant_sha256,
+        binding_priority=escalation.binding_priority,
+        reasons=list(escalation.reasons),
+        state=escalation.effective_state().value,  # type: ignore[arg-type]
+        decided_by=escalation.decided_by,
+        rationale=escalation.rationale,
+        created_at=escalation.created_at,
+        decided_at=escalation.decided_at,
+        approval_expires_at=escalation.approval_expires_at,
+        consumed_at=escalation.consumed_at,
+        consumed_job_id=escalation.consumed_job_id,
+    )
+
+
 def _router(service: JobService, settings: ControlSettings) -> APIRouter:
     router = APIRouter(prefix=API_PREFIX)
+    authority = service.authority
 
     @router.get("/health", response_model=HealthRead, tags=["system"])
     async def health() -> HealthRead:
@@ -268,9 +394,155 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
             markdown=markdown,
         )
 
+    # ---- identity -----------------------------------------------------
+
+    @router.get("/auth/me", response_model=IdentityRead, tags=["auth"])
+    async def whoami(request: Request) -> IdentityRead:
+        actor, _ = _resolve_actor(request, authority)
+        return _identity_payload(actor, authority)
+
+    @router.post("/auth/session", response_model=IdentityRead, tags=["auth"])
+    async def open_session(request: Request, payload: SessionCreate) -> Response:
+        principal = authority.authenticate(payload.token)
+        if principal is None:
+            # One message for an unknown, expired, and revoked credential
+            # alike: which of the three it was is not the caller's business.
+            raise AuthenticationRequiredError("the supplied credential is not valid")
+        origin = request.headers.get("Origin")
+        if origin is not None and origin != settings.allowed_origin:
+            raise AuthorizationDeniedError(
+                "a session may only be opened from the configured console origin"
+            )
+        session = authority.open_session(principal)
+        body = _identity_payload(principal.actor(), authority)
+        response = JSONResponse(
+            content=jsonable_encoder(body),
+            headers={"X-Request-ID": _get_request_id(request), "Cache-Control": "no-store"},
+        )
+        response.set_cookie(
+            SESSION_COOKIE,
+            session.id,
+            max_age=int(SESSION_TTL.total_seconds()),
+            httponly=True,
+            samesite="strict",
+            secure=False,  # loopback HTTP; the console has no TLS origin to use
+            path=API_PREFIX,
+        )
+        return response
+
+    @router.delete("/auth/session", status_code=204, tags=["auth"])
+    async def close_session(request: Request) -> Response:
+        # Ending a session is a form of stopping and is never gated; an
+        # anonymous caller simply has nothing to end.
+        authority.close_session(request.cookies.get(SESSION_COOKIE))
+        response = Response(status_code=204)
+        response.delete_cookie(SESSION_COOKIE, path=API_PREFIX)
+        return response
+
+    @router.get("/auth/operators", response_model=OperatorList, tags=["auth"])
+    async def list_operators() -> OperatorList:
+        items = [_operator_payload(item) for item in authority.principals()]
+        return OperatorList(items=items, count=len(items))
+
+    @router.post(
+        "/auth/operators",
+        response_model=IssuedCredentialRead,
+        status_code=201,
+        tags=["auth"],
+    )
+    async def create_operator(request: Request, payload: OperatorCreate) -> IssuedCredentialRead:
+        actor = _require_actor(request, authority, settings)
+        issued = authority.create_delegation(
+            label=payload.label,
+            scopes=payload.scopes,
+            expires_at=payload.expires_at,
+            by=actor,
+        )
+        return IssuedCredentialRead(
+            operator=_operator_payload(issued.principal), token=issued.token
+        )
+
+    @router.post(
+        "/auth/operators/{principal_id}/rotate",
+        response_model=IssuedCredentialRead,
+        tags=["auth"],
+    )
+    async def rotate_operator(request: Request, principal_id: str) -> IssuedCredentialRead:
+        actor = _require_actor(request, authority, settings)
+        issued = authority.rotate(principal_id, by=actor)
+        return IssuedCredentialRead(
+            operator=_operator_payload(issued.principal), token=issued.token
+        )
+
+    @router.post(
+        "/auth/operators/{principal_id}/revoke",
+        response_model=OperatorRead,
+        tags=["auth"],
+    )
+    async def revoke_operator(request: Request, principal_id: str) -> OperatorRead:
+        actor = _require_actor(request, authority, settings)
+        return _operator_payload(authority.revoke(principal_id, by=actor))
+
+    @router.post("/auth/owner/rotate", response_model=IssuedCredentialRead, tags=["auth"])
+    async def rotate_owner(request: Request) -> IssuedCredentialRead:
+        actor = _require_actor(request, authority, settings)
+        owner = authority.owner()
+        if owner is None or not actor.is_owner:
+            raise AuthorizationDeniedError("only the project owner may rotate the owner credential")
+        issued = authority.rotate(owner.id, by=actor)
+        return IssuedCredentialRead(
+            operator=_operator_payload(issued.principal), token=issued.token
+        )
+
+    # ---- safety -------------------------------------------------------
+
+    @router.get("/safety/covenant", response_model=CovenantRead, tags=["safety"])
+    async def safety_covenant() -> CovenantRead:
+        # Re-read rather than serve a copy cached at startup: the page exists to
+        # show what is being enforced right now.
+        return covenant_payload(service.reload_covenant())
+
+    @router.get("/safety/actions", response_model=ActionList, tags=["safety"])
+    async def safety_actions() -> ActionList:
+        return declared_action_payload(service.reload_covenant())
+
+    @router.get("/safety/escalations", response_model=EscalationList, tags=["safety"])
+    async def list_escalations(state: EscalationState | None = None) -> EscalationList:
+        items = [_escalation_payload(item) for item in authority.escalations(state=state)]
+        return EscalationList(items=items, count=len(items))
+
+    @router.get(
+        "/safety/escalations/{escalation_id}",
+        response_model=EscalationRead,
+        tags=["safety"],
+    )
+    async def get_escalation(escalation_id: str) -> EscalationRead:
+        return _escalation_payload(authority.escalation(escalation_id))
+
+    @router.post(
+        "/safety/escalations/{escalation_id}/decision",
+        response_model=EscalationRead,
+        tags=["safety"],
+    )
+    async def decide_escalation(
+        request: Request, escalation_id: str, payload: EscalationDecide
+    ) -> EscalationRead:
+        actor = _require_actor(request, authority, settings)
+        return _escalation_payload(
+            authority.decide_escalation(
+                escalation_id,
+                approve=payload.approve,
+                by=actor,
+                rationale=payload.rationale,
+            )
+        )
+
+    # ---- jobs ---------------------------------------------------------
+
     @router.post("/jobs", response_model=JobRead, status_code=201, tags=["jobs"])
-    async def create_job(payload: JobCreate) -> JobRead:
-        return JobRead.model_validate(service.create_job(payload.type, payload.spec))
+    async def create_job(request: Request, payload: JobCreate) -> JobRead:
+        actor = _require_actor(request, authority, settings)
+        return JobRead.model_validate(service.create_job(payload.type, payload.spec, actor=actor))
 
     @router.get("/jobs", response_model=JobList, tags=["jobs"])
     async def list_jobs(
@@ -286,7 +558,12 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
         return JobRead.model_validate(service.get_job(job_id))
 
     @router.post("/jobs/{job_id}/cancel", response_model=JobRead, tags=["jobs"])
-    async def cancel_job(job_id: str) -> JobRead:
+    async def cancel_job(request: Request, job_id: str) -> JobRead:
+        # Stopping is never weighed against the covenant. Any verified operator
+        # may cancel any job; requiring a matching delegation would let the
+        # third principle's self-preservation argument gate the second
+        # principle's duty to accept correction, which the ordering forbids.
+        _require_actor(request, authority, settings)
         return JobRead.model_validate(service.cancel(job_id))
 
     @router.post(
@@ -295,8 +572,9 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
         status_code=201,
         tags=["jobs"],
     )
-    async def retry_job(job_id: str) -> JobRead:
-        return JobRead.model_validate(service.retry(job_id))
+    async def retry_job(request: Request, job_id: str) -> JobRead:
+        actor = _require_actor(request, authority, settings)
+        return JobRead.model_validate(service.retry(job_id, actor=actor))
 
     @router.get("/jobs/{job_id}/events", response_model=EventList, tags=["jobs"])
     async def job_events(
@@ -361,9 +639,12 @@ def create_app(settings: ControlSettings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[active_settings.allowed_origin],
-        allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Accept", "Content-Type", "X-Request-ID"],
+        # The console authenticates with a cookie, so credentialed requests are
+        # permitted — from exactly one exact origin, which is why the wildcard
+        # that would make this dangerous is unavailable here by construction.
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
         expose_headers=["X-Request-ID"],
         max_age=600,
     )
