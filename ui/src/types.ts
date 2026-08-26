@@ -36,8 +36,13 @@ export interface ResearchSource {
   canonical_url: string
   tags: string[]
   evidence_classes: string[]
+  integrity: 'pinned' | 'content-pinned' | 'unpinned'
   sync_status: 'verified' | 'missing' | 'error' | 'unknown'
-  sha256: string | null
+  raw_sha256: string | null
+  tracked_raw_sha256: string | null
+  tracked_content_sha256: string | null
+  content_scope: 'document' | 'article' | null
+  content_profile: 'html-document-text-v1' | 'html-article-text-v1' | null
   size_bytes: number | null
   status_message: string
 }

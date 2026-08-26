@@ -182,8 +182,13 @@ class ResearchSourceRead(BaseModel):
     canonical_url: str
     tags: list[str]
     evidence_classes: list[str]
+    integrity: Literal["pinned", "content-pinned", "unpinned"]
     sync_status: Literal["verified", "missing", "error", "unknown"]
-    sha256: str | None = None
+    raw_sha256: str | None = None
+    tracked_raw_sha256: str | None = None
+    tracked_content_sha256: str | None = None
+    content_scope: Literal["document", "article"] | None = None
+    content_profile: Literal["html-document-text-v1", "html-article-text-v1"] | None = None
     size_bytes: int | None = None
     status_message: str = ""
 

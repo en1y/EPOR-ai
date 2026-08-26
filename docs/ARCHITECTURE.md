@@ -66,9 +66,14 @@ an explicit release process creates independently licensed artifacts.
 The research synchronizer accepts only URLs already present in the validated
 catalog. It enforces HTTPS, exact allowlisted hosts, bounded redirects,
 content-type and byte limits, transfer-byte hashing, file signatures, atomic
-replacement, path containment, and optional offline operation. A digest observed
-only during local synchronization is explicitly `unpinned`; only a digest in the
-reviewed tracked ledger can produce `verified` status.
+replacement, path containment, and optional offline operation. Immutable
+artifacts use raw-byte pins. Explicitly reviewed dynamic HTML sources instead
+pin normalized document or semantic-article text under a versioned profile while
+recording every raw transfer digest in ignored metadata. The control API keeps
+observed raw, tracked raw, and tracked content digests distinct. A digest
+observed only during local synchronization is `unpinned`; only a raw or
+normalized-content digest in the reviewed tracked ledger can produce `verified`
+status.
 
 ## Training and scale-out
 
