@@ -10,6 +10,8 @@ from typing import Any
 
 import torch
 
+from epor.reference_policy import validate_reference_checkpoint
+
 from .data import sha256_file
 
 CHECKPOINT_SCHEMA_VERSION = "1"
@@ -51,7 +53,7 @@ def save_checkpoint(path: str | Path, payload: dict[str, Any]) -> Path:
 def load_checkpoint(path: str | Path) -> dict[str, Any]:
     """Load an EPOR checkpoint with PyTorch's restricted weights-only loader."""
 
-    checkpoint_path = Path(path).resolve()
+    checkpoint_path = validate_reference_checkpoint(path)
     payload = torch.load(
         checkpoint_path,
         map_location=torch.device("cpu"),

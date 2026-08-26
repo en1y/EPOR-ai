@@ -12,6 +12,7 @@ import torch
 from torch import Tensor
 
 from epor.models.tokenizer import DebugByteTokenizer
+from epor.reference_policy import validate_reference_corpus
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FIXTURE_CORPUS = PROJECT_ROOT / "fixtures" / "tiny_corpus.txt"
@@ -51,7 +52,7 @@ def load_token_corpus(
 ) -> TokenCorpus:
     """Load bytes through the reversible debug tokenizer, entirely offline."""
 
-    corpus_path = Path(path).resolve()
+    corpus_path = validate_reference_corpus(path)
     data = corpus_path.read_bytes()
     active_tokenizer = tokenizer or DebugByteTokenizer()
     ids = active_tokenizer.encode(data, add_bos=True, add_eos=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -35,6 +36,73 @@ def test_resume_exposes_original_corpus_option() -> None:
     result = runner.invoke(app, ["train", "resume", "--help"])
     assert result.exit_code == 0
     assert "--corpus" in result.stdout
+
+
+def test_reference_cli_rejects_paths_outside_project_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    monkeypatch.setenv("EPOR_PROJECT_ROOT", str(project_root))
+    outside_config = tmp_path / "outside.yaml"
+    outside_config.write_text("not: loaded\n", encoding="utf-8")
+    result = runner.invoke(
+        app,
+        ["train", "pretrain", str(outside_config), "--output", "runs/blocked"],
+    )
+
+    assert result.exit_code == 2
+    assert "reference command refused" in result.stdout
+    assert "path must remain beneath" in result.stdout
+    assert not (project_root / "runs/blocked").exists()
+
+
+def test_reference_cli_rejects_output_outside_project_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "project"
+    config = project_root / "configs/models/epor-tiny.yaml"
+    corpus = project_root / "fixtures/tiny_corpus.txt"
+    config.parent.mkdir(parents=True)
+    corpus.parent.mkdir(parents=True)
+    config.write_bytes(Path("configs/models/epor-tiny.yaml").read_bytes())
+    corpus.write_bytes(Path("fixtures/tiny_corpus.txt").read_bytes())
+    monkeypatch.setenv("EPOR_PROJECT_ROOT", str(project_root))
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "pretrain",
+            "configs/models/epor-tiny.yaml",
+            "--output",
+            str(tmp_path / "outside-run"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "reference command refused" in result.stdout
+    assert "output path" in result.stdout
+    assert not (tmp_path / "outside-run").exists()
+
+
+def test_reference_cli_exposes_the_shared_step_limit() -> None:
+    result = runner.invoke(
+        app,
+        [
+            "train",
+            "pretrain",
+            "configs/models/epor-tiny.yaml",
+            "--output",
+            "runs/blocked",
+            "--max-steps",
+            "1001",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "1000" in f"{result.stdout}{result.stderr}"
 
 
 def test_cli_execution_is_gated_by_the_safety_covenant() -> None:

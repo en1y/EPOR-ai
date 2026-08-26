@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from epor.reference_policy import REFERENCE_CORPUS_MAX_BYTES
+
 from .models import JobStatus, JobType
 
 
@@ -28,9 +30,8 @@ TinyModelConfigPath = Literal[
     "configs/models/epor-reference.yaml",
 ]
 
-# Control jobs are deliberately fixture-scale. The standalone training CLI is
-# not governed by this local-console guardrail and has its own explicit inputs.
-TINY_CONTROL_CORPUS_MAX_BYTES = 1 * 1024 * 1024
+# Control and standalone commands share the same v0.0.1 reference-runtime cap.
+TINY_CONTROL_CORPUS_MAX_BYTES = REFERENCE_CORPUS_MAX_BYTES
 
 
 class TinyTrainSpec(StrictSchema):
