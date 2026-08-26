@@ -24,6 +24,7 @@ app = typer.Typer(
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
 )
+auth_app = typer.Typer(help="Manage the local owner credential and delegations.")
 config_app = typer.Typer(help="Validate versioned model and run configuration.")
 data_app = typer.Typer(help="Provenance-first data pipeline (post-v0.0.1).")
 tokenizer_app = typer.Typer(help="Original tokenizer laboratory (post-v0.0.1).")
@@ -32,6 +33,7 @@ eval_app = typer.Typer(help="Evaluate reference checkpoints and compare reports.
 export_app = typer.Typer(help="Export release artifacts (post-v0.0.1).")
 
 app.add_typer(research_app, name="research")
+app.add_typer(auth_app, name="auth")
 app.add_typer(config_app, name="config")
 app.add_typer(data_app, name="data")
 app.add_typer(tokenizer_app, name="tokenizer")
@@ -67,13 +69,32 @@ def authorize(action_id: str) -> None:
 
     The CLI runs work that never passes through the control plane, so it
     carries the same gate.  An action the covenant does not permit exits
-    non-zero having done nothing.
+    non-zero having done nothing, and every resolution — permitted or not — is
+    written to durable safety truth, because a gate that records only its
+    refusals cannot be audited for what it let through.
+
+    The shell on this machine is the owner's own shell, so the actor is the
+    owner.  Nothing here defends against an already compromised local account;
+    that limitation is documented rather than papered over.
     """
 
     from epor.actions import resolve_action
+    from epor.control.authority import LOCAL_CLI, AuthorityStore
+    from epor.control.settings import ControlSettings
     from epor.safety import load_covenant
 
-    resolution = resolve_action(action_id, load_covenant())
+    settings = ControlSettings.from_environment()
+    assert settings.safety_root is not None
+    resolution = resolve_action(action_id, load_covenant(), actor=LOCAL_CLI)
+    AuthorityStore(settings.safety_root).record_decision(
+        actor=LOCAL_CLI,
+        action_id=action_id,
+        surface="cli",
+        outcome=resolution.outcome,
+        binding_priority=resolution.binding_priority,
+        reasons=resolution.reasons,
+        covenant_sha256=resolution.covenant_sha256,
+    )
     if resolution.outcome == "allow":
         return
     console.print(
@@ -83,6 +104,19 @@ def authorize(action_id: str) -> None:
     for reason in resolution.reasons:
         console.print(f"  - {reason}")
     raise typer.Exit(code=3)
+
+
+def authorize_command(command: str) -> None:
+    """Gate one CLI command through the shared command-to-action registry.
+
+    An unregistered command is passed through under its own name, which has no
+    declaration and therefore escalates.  Adding an executing command without
+    declaring its covenant standing fails closed rather than running.
+    """
+
+    from epor.actions import CLI_ACTIONS
+
+    authorize(CLI_ACTIONS.get(command, command))
 
 
 def _reference_path(
@@ -127,6 +161,7 @@ def doctor(
 ) -> None:
     """Inspect local capabilities without network or accelerator side effects."""
 
+    authorize_command("doctor")
     capabilities = probe_system(root)
     payload = capabilities.to_dict()
     if json_output:
@@ -163,6 +198,7 @@ def config_validate(
 ) -> None:
     """Strictly validate a model recipe without allocating its weights."""
 
+    authorize_command("config validate")
     from epor.models.config import validate_config
 
     config = validate_config(path)
@@ -204,7 +240,7 @@ def train_pretrain(
 ) -> None:
     """Run the bounded, single-process CPU reference pretrainer."""
 
-    authorize("tiny_train")
+    authorize_command("train pretrain")
     from epor.training import pretrain
 
     project_root, config = _reference_path(config, label="config path", must_exist=True)
@@ -246,7 +282,7 @@ def train_resume(
 ) -> None:
     """Resume an exact deterministic trajectory from a trusted EPOR checkpoint."""
 
-    authorize("tiny_train")
+    authorize_command("train resume")
     from epor.training import pretrain
 
     project_root, config = _reference_path(config, label="config path", must_exist=True)
@@ -278,7 +314,7 @@ def eval_run(
 ) -> None:
     """Evaluate a tiny reference checkpoint on deterministic fixture windows."""
 
-    authorize("tiny_eval")
+    authorize_command("eval run")
     from epor.training import evaluate
 
     _, checkpoint = _reference_path(checkpoint, label="checkpoint path", must_exist=True)
@@ -298,7 +334,7 @@ def generate_command(
 ) -> None:
     """Greedily generate from a tiny reference checkpoint."""
 
-    authorize("generate")
+    authorize_command("generate")
     from epor.training import generate
 
     _, checkpoint = _reference_path(checkpoint, label="checkpoint path", must_exist=True)
@@ -313,7 +349,7 @@ def api_command(
 ) -> None:
     """Run the loopback-only control API."""
 
-    authorize("control_api_start")
+    authorize_command("api")
     import uvicorn
 
     from epor.control.api import create_app
@@ -337,7 +373,7 @@ def worker_command(
 ) -> None:
     """Run the separate allowlisted local worker."""
 
-    authorize("job_worker_start")
+    authorize_command("worker")
     from epor.control.worker import JobWorker
 
     with JobWorker() as worker:
@@ -352,7 +388,7 @@ def worker_command(
 def ui_command() -> None:
     """Start the React development console on its fixed loopback origin."""
 
-    authorize("local_ui_start")
+    authorize_command("ui")
     npm = shutil.which("npm")
     ui_root = Path(__file__).resolve().parents[2] / "ui"
     if npm is None:
@@ -367,6 +403,72 @@ def ui_command() -> None:
         check=False,
     )
     raise typer.Exit(code=completed.returncode)
+
+
+@auth_app.command("bootstrap")
+def auth_bootstrap() -> None:
+    """Mint the single local owner credential. First run only.
+
+    Deliberately CLI-only: the first credential can only legitimately come from
+    the shell of the machine owner, and an HTTP endpoint that minted it would
+    be reachable by anything able to open a socket on loopback.
+    """
+
+    authorize_command("auth bootstrap")
+    from epor.control.authority import AuthorityStore
+    from epor.control.errors import ControlError
+    from epor.control.settings import ControlSettings
+
+    settings = ControlSettings.from_environment()
+    settings.prepare_directories()
+    assert settings.safety_root is not None
+    store = AuthorityStore(settings.safety_root)
+    try:
+        issued = store.bootstrap_owner()
+    except ControlError as exc:
+        console.print(f"[red]{exc.message}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print("[green]owner credential created[/green]")
+    console.print(f"  stored at: {store.owner_token_path}")
+    console.print("  Shown once here; only a SHA-256 digest is kept in safety truth.")
+    typer.echo(issued.token)
+
+
+@auth_app.command("status")
+def auth_status() -> None:
+    """List local principals. Prints no credential value.
+
+    Read-only and outside the execution gate, like ``version``: it starts
+    nothing and changes nothing.
+    """
+
+    from epor.control.authority import AuthorityStore
+    from epor.control.settings import ControlSettings
+
+    settings = ControlSettings.from_environment()
+    assert settings.safety_root is not None
+    store = AuthorityStore(settings.safety_root)
+    if store.owner() is None:
+        console.print("[yellow]no owner credential; run `epor auth bootstrap`[/yellow]")
+        raise typer.Exit(code=1)
+    table = Table(title="EPOR local authority")
+    table.add_column("Principal", style="cyan")
+    table.add_column("Role")
+    table.add_column("Scopes")
+    table.add_column("Status")
+    for principal in store.principals():
+        scopes = (
+            "every declared action"
+            if principal.role.value == "owner"
+            else ", ".join(sorted(principal.scopes)) or "-"
+        )
+        table.add_row(
+            principal.label,
+            principal.role.value,
+            scopes,
+            "active" if principal.active() else "inactive",
+        )
+    console.print(table)
 
 
 @app.command("serve")

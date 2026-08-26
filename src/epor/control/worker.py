@@ -21,10 +21,16 @@ from epor.research.service import sync_catalog
 from epor.system import probe_system, safe_environment
 
 from .database import create_session_factory, create_sqlite_engine, initialize_database
+from .errors import (
+    AuthenticationRequiredError,
+    AuthorizationDeniedError,
+    CovenantBlockedError,
+    CovenantEscalatedError,
+)
 from .models import Job, JobStatus, JobType
 from .schemas import TINY_CONTROL_CORPUS_MAX_BYTES
 from .security import PathOutsideRootError, contained_path
-from .service import CovenantBlockedError, InvalidTransitionError, JobService
+from .service import InvalidTransitionError, JobService
 from .settings import ControlSettings
 
 
@@ -249,11 +255,28 @@ class JobWorker:
             raise
 
         # Re-resolve at dispatch rather than trusting admission. A queued job may
-        # have been admitted under an earlier covenant, and the worker is the
-        # last point before the work actually runs.
+        # have been admitted under an earlier covenant or by a delegation that
+        # has since been revoked, and the worker is the last point before the
+        # work actually runs.
         try:
-            self.service.admit(active.type)
-        except CovenantBlockedError as exc:
+            self.service.admit(
+                active.type.value,
+                spec=dict(active.spec),
+                actor=self.service.actor_for(active),
+                surface="worker",
+            )
+        except CovenantEscalatedError as exc:
+            # An escalation already approved and spent at admission still
+            # authorizes this dispatch, provided the covenant that granted it is
+            # the covenant now in force. Anything else stops the job.
+            if not self.service.approved_at_dispatch(active, exc.resolution):
+                return self.service.complete_failure(
+                    active.id,
+                    self.worker_id,
+                    code=exc.code,
+                    message=exc.message,
+                )
+        except (CovenantBlockedError, AuthorizationDeniedError, AuthenticationRequiredError) as exc:
             return self.service.complete_failure(
                 active.id,
                 self.worker_id,

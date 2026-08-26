@@ -95,6 +95,122 @@ export interface DocumentRead extends DocumentSummary {
   markdown: string
 }
 
+export type Role = 'owner' | 'delegated_operator' | 'anonymous'
+export type EscalationState = 'open' | 'approved' | 'refused' | 'consumed' | 'expired'
+
+export interface Identity {
+  role: Role
+  principal_id: string | null
+  label: string
+  scopes: string[]
+  authenticated: boolean
+  expires_at: string | null
+}
+
+export interface Operator {
+  id: string
+  role: Role
+  label: string
+  scopes: string[]
+  active: boolean
+  created_at: string
+  expires_at: string | null
+  revoked_at: string | null
+  rotated_at: string | null
+}
+
+/** The only shape that ever carries a credential value, and only once. */
+export interface IssuedCredential {
+  operator: Operator
+  token: string
+  shown_once: true
+}
+
+export interface Obligation {
+  key: string
+  statement: string
+}
+
+export interface Principle {
+  priority: number
+  key: string
+  title: string
+  origin: string
+  law: string
+  obligations: Obligation[]
+}
+
+export interface Ratification {
+  present: boolean
+  matches_covenant: boolean
+  ratified_on: string | null
+  reviewer_role: string | null
+  roadmap_version: string | null
+  rationale: string | null
+  evidence: string[]
+}
+
+export interface EnforcementCheckpoint {
+  name: string
+  description: string
+}
+
+export interface Covenant {
+  covenant_id: string
+  covenant_version: number
+  roadmap_version: string
+  effective_date: string
+  status: 'draft' | 'ratified'
+  sha256: string
+  escalation_confidence_floor: number
+  principles: Principle[]
+  limitations: string
+  ratification: Ratification
+  enforcement_checkpoints: EnforcementCheckpoint[]
+}
+
+export interface Assessment {
+  priority: number
+  status: string
+  confidence: number
+  rationale: string
+  obligation: string | null
+}
+
+export interface DeclaredAction {
+  action_id: string
+  summary: string
+  outcome: 'allow' | 'refuse' | 'escalate'
+  job_type: boolean
+  cli_commands: string[]
+  assessments: Assessment[]
+}
+
+export interface ActionRegistry {
+  items: DeclaredAction[]
+  count: number
+  undeclared_behavior: string
+}
+
+export interface Escalation {
+  id: string
+  actor_id: string
+  actor_role: Role
+  action_id: string
+  request_digest: string
+  covenant_sha256: string
+  binding_priority: number | null
+  reasons: string[]
+  state: EscalationState
+  decided_by: string | null
+  rationale: string | null
+  created_at: string
+  decided_at: string | null
+  approval_expires_at: string | null
+  consumed_at: string | null
+  consumed_job_id: string | null
+}
+
 export interface Job {
   id: string
   type: JobType
@@ -106,6 +222,10 @@ export interface Job {
   error_message: string | null
   worker_id: string | null
   retry_of_id: string | null
+  submitted_by_id: string | null
+  submitted_by_role: string | null
+  admission_covenant_sha256: string | null
+  escalation_id: string | null
   created_at: string
   updated_at: string
   started_at: string | null

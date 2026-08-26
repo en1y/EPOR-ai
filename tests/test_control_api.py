@@ -7,6 +7,7 @@ import httpx
 
 from epor import __version__
 from epor.control.api import create_app
+from epor.control.authority import AuthorityStore
 from epor.control.settings import ControlSettings
 
 
@@ -16,13 +17,21 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
         project_root=project_root,
         database_path=tmp_path / "api.sqlite3",
         artifact_root=tmp_path / "artifacts",
+        safety_root=tmp_path / "safety",
         research_catalog_path=project_root / "research" / "catalog.yaml",
     )
+    settings.prepare_directories()
+    assert settings.safety_root is not None
+    owner = AuthorityStore(settings.safety_root).bootstrap_owner()
     app = create_app(settings)
 
     async def scenario() -> None:
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://control.test") as client:
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://control.test",
+            headers={"Authorization": f"Bearer {owner.token}"},
+        ) as client:
             health = await client.get("/api/v1/health", headers={"X-Request-ID": "test-123"})
             assert health.status_code == 200
             assert health.headers["x-request-id"] == "test-123"
@@ -86,6 +95,15 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
             assert tiny_schema["schema"]["properties"]["model_config"]["default"] == (
                 "configs/models/epor-tiny.yaml"
             )
+
+            # Reading is public; every mutation requires a verified identity.
+            anonymous = await client.post(
+                "/api/v1/jobs",
+                json={"type": "system_probe", "spec": {}},
+                headers={"Authorization": ""},
+            )
+            assert anonymous.status_code == 401
+            assert anonymous.json()["code"] == "authentication_required"
 
             created = await client.post(
                 "/api/v1/jobs",
@@ -158,5 +176,6 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 },
             )
             assert "access-control-allow-origin" not in denied.headers
+            assert allowed.headers["access-control-allow-credentials"] == "true"
 
     asyncio.run(scenario())

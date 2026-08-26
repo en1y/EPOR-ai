@@ -129,6 +129,12 @@ class Job(Base):
     retry_of_id: Mapped[str | None] = mapped_column(
         ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
     )
+    # Admission provenance. Nullable because v0.0.1 jobs predate identity and
+    # must stay readable exactly as they were recorded.
+    submitted_by_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    submitted_by_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    admission_covenant_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    escalation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), nullable=False, default=utc_now, onupdate=utc_now
@@ -164,6 +170,76 @@ class JobEvent(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
 
     job: Mapped[Job] = relationship("Job", back_populates="events")
+
+
+class Principal(Base):
+    """Rebuildable projection of one identity from hash-chained safety truth.
+
+    Nothing authorizes anything from this table.  It exists so the console can
+    list delegations without replaying the log per request; the log decides.
+    """
+
+    __tablename__ = "principals"
+    __table_args__ = (Index("ix_principals_role_created_at", "role", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # The digest only. A credential value never reaches SQLite, a serializer,
+    # a log line, or an error envelope.
+    credential_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    rotated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+
+class Escalation(Base):
+    """Rebuildable projection of one human safety decision."""
+
+    __tablename__ = "escalations"
+    __table_args__ = (Index("ix_escalations_state_created_at", "state", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    actor_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    action_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    covenant_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_priority: Mapped[int | None] = mapped_column(Integer)
+    reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    decided_by: Mapped[str | None] = mapped_column(String(36))
+    rationale: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    approval_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    consumed_job_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class AuthorityEvent(Base):
+    """One indexed record of the authority chain: credential, decision, review.
+
+    ``sequence`` mirrors the chain position, so a rebuilt index that disagrees
+    with the file log is detectable rather than quietly authoritative.
+    """
+
+    __tablename__ = "authority_events"
+    __table_args__ = (
+        UniqueConstraint("sequence", name="uq_authority_events_sequence"),
+        Index("ix_authority_events_kind_sequence", "kind", "sequence"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(48), nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(36))
+    subject_id: Mapped[str | None] = mapped_column(String(36))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    record_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
 
 
 class JobArtifact(Base):

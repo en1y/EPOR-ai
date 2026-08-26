@@ -36,9 +36,9 @@ def sync_command(
         typer.Option("--source", help="Limit work to a catalog source ID."),
     ] = None,
 ) -> None:
-    from epor.cli import authorize
+    from epor.cli import authorize_command
 
-    authorize("research_sync")
+    authorize_command("research sync")
     results = sync_catalog(catalog, offline=offline, source_ids=source)
     _emit(results)
     if any(item.status in {SyncStatus.ERROR, SyncStatus.MISSING} for item in results):
@@ -53,6 +53,9 @@ def verify_command(
         typer.Option("--source", help="Limit work to a catalog source ID."),
     ] = None,
 ) -> None:
+    from epor.cli import authorize_command
+
+    authorize_command("research verify")
     results = verify_catalog(catalog, source_ids=source)
     _emit(results)
     if any(item.status is not SyncStatus.VERIFIED for item in results):
@@ -67,6 +70,9 @@ def index_command(
         typer.Option("--source", help="Limit work to a catalog source ID."),
     ] = None,
 ) -> None:
+    from epor.cli import authorize_command
+
+    authorize_command("research index")
     results = index_catalog(catalog, source_ids=source)
     _emit(results)
     if any(item.status in {IndexStatus.ERROR, IndexStatus.MISSING} for item in results):
