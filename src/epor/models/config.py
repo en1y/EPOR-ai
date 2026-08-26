@@ -47,7 +47,7 @@ class ModelConfig(BaseModel):
     schema_version: Literal["1"] = "1"
     display_name: str = Field(min_length=1)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    family: Literal["gamma", "alpha", "beta", "reference"]
+    family: Literal["alpha", "beta", "gamma", "reference"]
     architecture: Literal["dense-decoder", "moe-decoder"] = "dense-decoder"
 
     vocab_size: PositiveInt

@@ -6,14 +6,17 @@ random initialization. Licensed teacher logits, synthetic examples, filtering
 judgments, and verified reasoning traces may inform training; external weights
 must never seed or be merged into an EPOR checkpoint.
 
-Public names are always **EPOR-γ**, **EPOR-α**, and **EPOR-β**. Machine-safe IDs
-are `epor-gamma`, `epor-alpha`, and `epor-beta`.
+Public names are always **EPOR-α**, **EPOR-β**, and **EPOR-γ**. Machine-safe IDs
+are `epor-alpha`, `epor-beta`, and `epor-gamma`. Families are always listed
+alphabetically, and intended capability descends in the same order: α is the
+flagship, γ the compact local model. Training order is the reverse, because the
+gated program promotes the smallest design first.
 
 | Model      | Purpose                                            | Architecture destination                                                                                                                                                               | Configured context target | Local v1 certification goal |
 |------------|----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------:|----------------------------:|
+| **EPOR-α** | Highest-capability reasoning, code, and math model | About 30B total MoE parameters, 6–8B measured active per token, shared plus fine-grained routed experts, bias-based load balancing, and bounded routing fan-out                        |                      256K |                          8K |
+| **EPOR-β** | Balanced general, code, and reasoning model        | 10–12B dense decoder with RMSNorm, SwiGLU, GQA, RoPE, QK-norm, and interleaved bounded-window local/global attention                                                                   |                      256K |                         16K |
 | **EPOR-γ** | Compact, knowledge-efficient local model           | About 8B total parameters; nested ≈4B accelerator-resident core; optional ≈2B slice; MatFormer-style elasticity, multi-teacher distillation, and gated PLE/conditional-memory research |                      128K |                         32K |
-| **EPOR-α** | Balanced general, code, and reasoning model        | 10–12B dense decoder with RMSNorm, SwiGLU, GQA, RoPE, QK-norm, and interleaved bounded-window local/global attention                                                                   |                      256K |                         16K |
-| **EPOR-β** | Highest-capability reasoning, code, and math model | About 30B total MoE parameters, 6–8B measured active per token, shared plus fine-grained routed experts, bias-based load balancing, and bounded routing fan-out                        |                      256K |                          8K |
 
 Every architectural mechanism named in this roadmap is a candidate with a
 deciding gate, not a settled choice. The [technique adoption
@@ -283,7 +286,7 @@ The initial archive covers:
   generation API, chat playground, registries for models/datasets/tokenizers/
   evaluations, a cost estimator, and artifact comparison.
 - **v0.0.10 — Three-family proxy release:** Train and publish tiny/proxy
-  EPOR-γ, EPOR-α, and EPOR-β checkpoints with separate model cards, scaling
+  EPOR-α, EPOR-β, and EPOR-γ checkpoints with separate model cards, scaling
   results, local benchmarks, and architecture-ablation reports.
 - **v0.1.0 — First reproducible research preview:** Release stable
   tokenizer/data/config/run-manifest formats, proxy weights, GGUF artifacts,
@@ -311,10 +314,10 @@ The initial archive covers:
   split against compute-matched dense and MatFormer controls; deterministic
   addressing is a prerequisite, since a lookup that cannot be prefetched defeats
   the accelerator-residency goal that motivates γ at all.
-- **v0.3.0 — EPOR-α:** Train the 10–12B dense model with the selected data
+- **v0.3.0 — EPOR-β:** Train the 10–12B dense model with the selected data
   mixture and scaling-law hyperparameters. Target a practical Q4 Vulkan
   artifact, 256K cloud validation, and a 16K local profile.
-- **v0.4.0 — EPOR-β:** Train the ≈30B-total MoE with shared and fine-grained
+- **v0.4.0 — EPOR-α:** Train the ≈30B-total MoE with shared and fine-grained
   routed experts. Proxy ablations select top-k routing and balancing policy.
   Require 6–8B measured active parameters, no dead experts, acceptable routing
   communication, GGUF parity, 256K cloud validation, and an 8K local profile.
@@ -326,13 +329,13 @@ The initial archive covers:
   auxiliary-loss control at proxy scale on expert utilization, dead-expert count,
   and quality — not adopted because it is newer. **`[unknown]`** The published
   update speed, node cap, and MTP weight schedule come from a cluster run three
-  orders of magnitude larger than β; they seed a sweep and are never copied as
+  orders of magnitude larger than α; they seed a sweep and are never copied as
   settings. **`[EPOR-adaptation]`** Any balancing or routing policy that cannot
   be expressed in a GGUF export is rejected at this gate regardless of measured
-  quality, because a β that only runs in PyTorch fails the local-first premise.
+  quality, because an α that only runs in PyTorch fails the local-first premise.
 - **v0.5.0 — Reasoning specialization:** Build human-cleaned cold starts,
   verified math/code traces, rejection sampling, compiler/test/SymPy rewards,
-  and limited GRPO for β. Distill verified β reasoning into α and γ. Do not use
+  and limited GRPO for α. Distill verified α reasoning into β and γ. Do not use
   unverifiable free-form rewards as the primary RL signal. **`[reported-result]`**
   [DeepSeek-R1](https://arxiv.org/abs/2501.12948) reports that an RL-first
   variant developed readability and language-mixing problems, which is why it
@@ -341,7 +344,7 @@ The initial archive covers:
   cold starts come first, and readability and language consistency are scored
   gates on every RL checkpoint, not post-hoc observations. **`[disclosed]`**
   GRPO originates in [DeepSeek-Math](https://arxiv.org/abs/2402.03300).
-  **`[EPOR-adaptation]`** Its scope stays limited to β with verifiable rewards;
+  **`[EPOR-adaptation]`** Its scope stays limited to α with verifiable rewards;
   reward-model-only signals are monitored for overoptimization and never become
   the primary objective.
 - **v0.6.0 — Safety and interpretability:** Revise the ratified covenant under
@@ -350,7 +353,7 @@ The initial archive covers:
   and causal interventions. Treat interpretability as evidence, not a
   correctness certificate.
 - **v0.7.0 — Context certification:** Complete position-wise and task-level
-  validation for γ at 128K and α/β at 256K on cloud hardware. Certify lower
+  validation for α/β at 256K and γ at 128K on cloud hardware. Certify lower
   operational profiles on the exact Ryzen/RX 5700 XT/32 GiB reference system.
 - **v0.8.0 — Advanced efficiency:** Carry forward whatever the earlier gates
   left undecided — MLA against GQA plus cache quantization, sparse attention as
@@ -508,7 +511,7 @@ YAML/JSON. UI forms consume generated JSON Schema.
   jailbreak/prompt-injection resistance, TTFT, RAM/VRAM, and OOM behavior. Merely
   accepting 128K/256K tokens never raises `validated_max_context`.
 - **G7 — MoE/runtime:** No dead experts or silent token drops; routing remains
-  balanced; β matches or beats its compute-matched dense control; PyTorch/HF/GGUF
+  balanced; α matches or beats its compute-matched dense control; PyTorch/HF/GGUF
   outputs have bounded parity drift; local profiles remain below 28 GiB RAM and
   7.5 GiB VRAM.
 - **G8 — UI/security:** Validate transitions, idempotent cancellation, restart
@@ -534,7 +537,7 @@ YAML/JSON. UI forms consume generated JSON Schema.
   GGUF/llama.cpp Vulkan with CPU fallback.
 - The reference machine is a Ryzen 5-class CPU, RX 5700 XT with approximately
   8 GiB VRAM, and 32 GiB RAM.
-- γ/α/β are three independently versioned public model families.
+- α/β/γ are three independently versioned public model families.
 - EPOR-γ's “≈4B” means its intended core accelerator-memory path; it is not a
   claim that an 8B checkpoint becomes a 4B-active MoE.
 - 128K/256K values are configured and cloud-validation targets, not promised

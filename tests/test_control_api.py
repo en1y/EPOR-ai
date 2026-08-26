@@ -45,9 +45,9 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
 
             models = (await client.get("/api/v1/models")).json()["items"]
             assert [item["slug"] for item in models] == [
-                "epor-gamma",
                 "epor-alpha",
                 "epor-beta",
+                "epor-gamma",
             ]
             assert all(item["metrics"] is None and item["status"] == "planned" for item in models)
             assert all(

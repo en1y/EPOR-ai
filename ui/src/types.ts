@@ -65,7 +65,7 @@ export interface CertifiedProfile {
 export interface ModelFamily {
   display_name: string
   slug: string
-  family: 'gamma' | 'alpha' | 'beta'
+  family: 'alpha' | 'beta' | 'gamma'
   architecture: string
   total_parameters: number | null
   active_parameters: number | null

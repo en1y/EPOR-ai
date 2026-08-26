@@ -31,7 +31,7 @@ EPOR can actually perform.
 - **`[reported-result]`** Google's quality and context measurements apply to its
   released models, data, training, and evaluation setup; EPOR has not reproduced
   them.
-- **`[EPOR-adaptation]`** EPOR-α tests backend-supported local/global attention
+- **`[EPOR-adaptation]`** EPOR-β tests backend-supported local/global attention
   against a full-attention reference and records position-wise quality, TTFT,
   throughput, KV-cache memory, and short-context regression before adoption. The
   ratio, window size, dual RoPE base, and QK-norm are each separate proxy-scale
