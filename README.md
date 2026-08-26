@@ -161,6 +161,6 @@ public evaluation command works without another profile.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.
 
-Project code is Apache-2.0. Data and model-weight licenses are assigned only
-after separate provenance audits; this code license does not grant rights to
-third-party research, datasets, or future weights.
+Project code is proprietary and all rights are reserved. Model-weight terms
+are assigned only after separate provenance audits, and nothing here grants
+any rights to third-party research, datasets, or future weights.
