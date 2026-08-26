@@ -51,9 +51,9 @@ alone.
 ## Branch and worktree workflow
 
 - Treat `master` as a protected, releasable branch. Do not make working-tree
-  edits or direct development commits while `master` is checked out. Only an
-  integration merge or pull request reviewed and authorized by the project owner
-  may update `master` after the applicable release gates pass.
+  edits, direct development commits, or local merges while `master` is checked
+  out. Changes may reach `master` only through a pull request reviewed and
+  authorized by the project owner after the applicable release gates pass.
 - At the start of a roadmap version, create or reuse one integration branch from
   `master`, named `version/vX.Y.Z` (for example, `version/v0.0.2`), and check it
   out in one dedicated integration worktree. Do not create duplicate integration
@@ -63,6 +63,16 @@ alone.
   out in its own linked worktree. Do not check out the same branch in multiple
   worktrees or bypass this rule with `--force`; multiple worktrees for a version
   use separate task branches, not repeated checkouts of the version branch.
+- After a task branch is committed and verified, push it and create or update a
+  pull request targeting its `version/vX.Y.Z` branch. Do not merge the task
+  branch directly into the version branch. Leave the pull request open for later
+  review and integration unless the project owner explicitly instructs you to
+  merge it.
+- When all work for a roadmap version satisfies its release gates, push the
+  version branch and create or update a pull request targeting `master`. Never
+  replace the version pull request with a local merge or direct push to
+  `master`, and do not merge the pull request without explicit project-owner
+  direction.
 - Use purpose-based branch names only. Never namespace a branch with the
   identity of the agent, coding assistant, model, provider, or development tool
   doing the work; prefixes or path components such as `codex/`, `claude/`,
@@ -70,19 +80,30 @@ alone.
   appear only when it identifies the actual project feature or dependency being
   changed, never as an ownership or authorship marker.
 - Keep each task worktree scoped to one task and one agent at a time. Test and
-  review the task branch before merging it into the version branch. Periodically
-  integrate the version branch into active task branches when they need current
-  shared changes.
+  review the task branch before opening or updating its pull request.
+  Periodically integrate the version branch into active task branches when they
+  need current shared changes.
 - For maintenance that is not part of the active roadmap version, create a
-  short-lived maintenance branch and worktree from `master`; never use the
-  protected checkout as the working directory.
+  short-lived maintenance branch and worktree from `master`, then open a pull
+  request targeting `master`; never use the protected checkout as the working
+  directory or merge the maintenance branch locally.
+- Search for an existing pull request from the branch before creating one, and
+  update it instead of opening a duplicate. Use a draft pull request while the
+  branch is incomplete and mark it ready only after its required validation
+  passes. Write the pull-request title and body in the same neutral,
+  project-focused terms required for commits, without attribution to an agent,
+  coding assistant, model provider, or development tool.
+- If the Git remote, hosting integration, authentication, or permission needed
+  to push and create a pull request is unavailable, keep the verified branch
+  intact and report the blocker. Never fall back to a local merge.
 - Before creating a branch or worktree, inspect `git status`, existing branches,
   and `git worktree list`. Leave unrelated or uncommitted user changes in their
   original worktree, and create the new worktree from the intended clean branch
   or commit instead of moving, stashing, or committing those changes.
-- Remove a task worktree and branch only after its changes are integrated and
-  its working tree is clean. Never delete a worktree that contains uncommitted
-  changes.
+- Remove a task worktree and branch only after its pull request is merged or
+  explicitly closed without integration and its working tree is clean. Never
+  delete a worktree that contains uncommitted changes or a branch with an open
+  pull request.
 
 ## Repository requirements
 
