@@ -62,6 +62,7 @@ def harness(tmp_path: Path) -> Harness:
         database_path=tmp_path / "control.sqlite3",
         artifact_root=tmp_path / "artifacts",
         safety_root=tmp_path / "safety",
+        data_root=tmp_path / "data",
         research_catalog_path=PROJECT_ROOT / "research" / "catalog.yaml",
         poll_interval_seconds=0.005,
     )

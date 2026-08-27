@@ -6,9 +6,10 @@ import json
 import shutil
 import subprocess
 from dataclasses import replace
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
@@ -45,9 +46,6 @@ console = Console()
 
 
 class FutureCommand(StrEnum):
-    data_ingest = "data ingest"
-    data_build = "data build"
-    data_audit = "data audit"
     tokenizer_train = "tokenizer train"
     tokenizer_evaluate = "tokenizer evaluate"
     train_sft = "train sft"
@@ -479,18 +477,136 @@ def serve_command() -> None:
 
 
 @data_app.command("ingest")
-def data_ingest() -> None:
-    _planned(FutureCommand.data_ingest, "v0.0.3")
+def data_ingest(
+    registration: Annotated[Path, typer.Argument(dir_okay=False)],
+    inputs: Annotated[list[Path], typer.Argument(dir_okay=False)],
+    max_input_bytes: Annotated[
+        int,
+        typer.Option(min=1, max=256 * 1024 * 1024),
+    ] = 256 * 1024 * 1024,
+) -> None:
+    """Register and stream reviewed local files into immutable data layers."""
+
+    authorize_command("data ingest")
+    from epor.control.settings import ControlSettings
+    from epor.data.service import DataEngine, load_registration
+
+    _, registration_path = _reference_path(
+        registration,
+        label="data registration path",
+        must_exist=True,
+    )
+    resolved_inputs = [
+        _reference_path(path, label="data input path", must_exist=True)[1] for path in inputs
+    ]
+    settings = ControlSettings.from_environment()
+    settings.prepare_directories()
+    assert settings.data_root is not None
+    result = DataEngine(settings.data_root).ingest(
+        load_registration(registration_path),
+        resolved_inputs,
+        max_input_bytes=max_input_bytes,
+    )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 @data_app.command("build")
-def data_build() -> None:
-    _planned(FutureCommand.data_build, "v0.0.3")
+def data_build(
+    dataset_id: Annotated[str, typer.Argument()],
+    source_ids: Annotated[
+        list[str] | None,
+        typer.Option("--source-id", help="Include a registered source; repeat as needed."),
+    ] = None,
+    train_percent: Annotated[int, typer.Option(min=1, max=100)] = 98,
+    validation_percent: Annotated[int, typer.Option(min=0, max=100)] = 1,
+    test_percent: Annotated[int, typer.Option(min=0, max=100)] = 1,
+    near_duplicate_distance: Annotated[int, typer.Option(min=0, max=8)] = 3,
+) -> None:
+    """Build deterministic deduplicated splits and an immutable dataset card."""
+
+    authorize_command("data build")
+    from epor.control.settings import ControlSettings
+    from epor.data.models import BuildRequest, SplitRatios
+    from epor.data.service import DataEngine
+
+    settings = ControlSettings.from_environment()
+    settings.prepare_directories()
+    assert settings.data_root is not None
+    request = BuildRequest(
+        dataset_id=dataset_id,
+        source_ids=source_ids,
+        split_ratios=SplitRatios(
+            train=train_percent,
+            validation=validation_percent,
+            test=test_percent,
+        ),
+        near_duplicate_hamming_distance=near_duplicate_distance,
+        intended_uses=["offline original-weight language-model training"],
+        prohibited_uses=["identity inference", "unreviewed redistribution"],
+    )
+    manifest, manifest_path = DataEngine(settings.data_root).build(request)
+    typer.echo(
+        json.dumps(
+            {
+                "dataset_id": manifest.dataset_id,
+                "build_id": manifest.build_id,
+                "manifest_path": str(manifest_path),
+                "counts": manifest.counts,
+                "split_counts": manifest.split_counts,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 @data_app.command("audit")
 def data_audit() -> None:
-    _planned(FutureCommand.data_audit, "v0.0.3")
+    """Verify content hashes and summarize the local provenance store."""
+
+    authorize_command("data audit")
+    from epor.control.settings import ControlSettings
+    from epor.data.service import DataEngine
+
+    settings = ControlSettings.from_environment()
+    settings.prepare_directories()
+    assert settings.data_root is not None
+    audit = DataEngine(settings.data_root).audit()
+    typer.echo(audit.model_dump_json(indent=2))
+    if audit.integrity_errors:
+        raise typer.Exit(code=1)
+
+
+@data_app.command("remove")
+def data_remove(
+    target_kind: Annotated[
+        Literal["source_id", "document_id", "raw_sha256"],
+        typer.Argument(help="One of: source_id, document_id, raw_sha256."),
+    ],
+    target: Annotated[str, typer.Argument()],
+    reason: Annotated[str, typer.Option(prompt=True)],
+    requested_at: Annotated[datetime | None, typer.Option()] = None,
+    removal_contact: Annotated[str | None, typer.Option()] = None,
+) -> None:
+    """Create a removal tombstone applied by every future dataset build."""
+
+    authorize_command("data remove")
+    from epor.control.settings import ControlSettings
+    from epor.data.service import DataEngine
+
+    settings = ControlSettings.from_environment()
+    settings.prepare_directories()
+    assert settings.data_root is not None
+    tombstone = DataEngine(settings.data_root).remove(
+        target_kind=target_kind,
+        target=target,
+        reason=reason,
+        requested_by="local-cli-owner",
+        requested_at=requested_at,
+        removal_contact=removal_contact,
+    )
+    typer.echo(tombstone.model_dump_json(indent=2))
 
 
 @tokenizer_app.command("train")

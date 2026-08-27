@@ -45,6 +45,7 @@ from .schemas import (
     ArtifactRead,
     CapabilityRead,
     CovenantRead,
+    DataSummaryRead,
     DocumentList,
     DocumentRead,
     DocumentSummary,
@@ -90,6 +91,22 @@ _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
     JobType.RESEARCH_SYNC: (
         "Research sync",
         "Verify the local paper archive or synchronize only catalog-allowlisted sources.",
+    ),
+    JobType.DATA_INGEST: (
+        "Data ingestion",
+        "Register and stream reviewed local text into immutable provenance layers.",
+    ),
+    JobType.DATA_BUILD: (
+        "Dataset build",
+        "Apply tombstones, redaction, quarantine, global deduplication, and stable splits.",
+    ),
+    JobType.DATA_REMOVE: (
+        "Data removal",
+        "Record an immutable tombstone that excludes a source or document from future builds.",
+    ),
+    JobType.DATA_AUDIT: (
+        "Data audit",
+        "Verify content hashes and summarize registrations, layers, builds, and removals.",
     ),
     JobType.TINY_TRAIN: (
         "Tiny pretraining",
@@ -361,6 +378,13 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
     @router.get("/research", response_model=ResearchCatalogRead, tags=["research"])
     async def research() -> ResearchCatalogRead:
         return _research_payload(settings)
+
+    @router.get("/data", response_model=DataSummaryRead, tags=["data"])
+    async def data_summary() -> DataSummaryRead:
+        from epor.data.service import DataEngine
+
+        assert settings.data_root is not None
+        return DataSummaryRead.model_validate(DataEngine(settings.data_root).dataset_summary())
 
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])
     async def models() -> ModelFamilyList:

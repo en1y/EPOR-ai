@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from epor.reference_policy import REFERENCE_CORPUS_MAX_BYTES
 
@@ -23,6 +23,50 @@ class SystemProbeSpec(StrictSchema):
 class ResearchSyncSpec(StrictSchema):
     offline: bool = True
     source_ids: list[str] | None = Field(default=None, max_length=100)
+
+
+class DataIngestSpec(StrictSchema):
+    registration_path: str = Field(max_length=512)
+    input_paths: list[str] = Field(min_length=1, max_length=100)
+    max_input_bytes: int = Field(default=256 * 1024 * 1024, ge=1, le=256 * 1024 * 1024)
+
+
+class DataBuildSpec(StrictSchema):
+    dataset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,95}$")
+    source_ids: list[str] | None = Field(default=None, max_length=1_000)
+    train_percent: int = Field(default=98, ge=1, le=100)
+    validation_percent: int = Field(default=1, ge=0, le=100)
+    test_percent: int = Field(default=1, ge=0, le=100)
+    split_salt: str = Field(default="epor-data-split-v1", min_length=1, max_length=200)
+    near_duplicate_hamming_distance: int = Field(default=3, ge=0, le=8)
+    intended_uses: list[str] = Field(
+        default_factory=lambda: ["offline original-weight language-model training"],
+        min_length=1,
+        max_length=32,
+    )
+    prohibited_uses: list[str] = Field(
+        default_factory=lambda: ["identity inference", "unreviewed redistribution"],
+        min_length=1,
+        max_length=32,
+    )
+
+    @model_validator(mode="after")
+    def split_total(self) -> DataBuildSpec:
+        if self.train_percent + self.validation_percent + self.test_percent != 100:
+            raise ValueError("data split percentages must total 100")
+        return self
+
+
+class DataRemoveSpec(StrictSchema):
+    target_kind: Literal["source_id", "document_id", "raw_sha256"]
+    target: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=2_000)
+    requested_at: datetime | None = None
+    removal_contact: str | None = Field(default=None, max_length=500)
+
+
+class DataAuditSpec(StrictSchema):
+    pass
 
 
 TinyModelConfigPath = Literal[
@@ -68,6 +112,10 @@ class TinyEvalSpec(StrictSchema):
 JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.SYSTEM_PROBE: SystemProbeSpec,
     JobType.RESEARCH_SYNC: ResearchSyncSpec,
+    JobType.DATA_INGEST: DataIngestSpec,
+    JobType.DATA_BUILD: DataBuildSpec,
+    JobType.DATA_REMOVE: DataRemoveSpec,
+    JobType.DATA_AUDIT: DataAuditSpec,
     JobType.TINY_TRAIN: TinyTrainSpec,
     JobType.TINY_EVAL: TinyEvalSpec,
 }
@@ -360,6 +408,28 @@ class ResearchCatalogRead(BaseModel):
     sources: list[ResearchSourceRead]
     count: int
     error: str | None = None
+
+
+class DataSourceRead(BaseModel):
+    id: str
+    title: str
+    owner_or_steward: str
+    license_id: str
+    allowed_uses: list[str]
+    sensitive_content_risk: str
+
+
+class DataSummaryRead(BaseModel):
+    schema_version: int
+    registrations: int
+    documents: int
+    admitted: int
+    quarantined: int
+    tombstones: int
+    builds: int
+    integrity_errors: list[str]
+    latest_builds: dict[str, str]
+    sources: list[DataSourceRead]
 
 
 class DocumentSummary(BaseModel):

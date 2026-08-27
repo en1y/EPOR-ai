@@ -62,7 +62,7 @@ _LOCAL_AND_OFFLINE = (
     "that operator, and emits no personal data"
 )
 _OPERATOR_REQUEST = (
-    "invoked directly by the operator who owns the machine, within the reviewed v0.0.2 action "
+    "invoked directly by the operator who owns the machine, within the reviewed action "
     "registry"
 )
 
@@ -185,6 +185,50 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
         direction=f"{_OPERATOR_REQUEST}; only catalog-listed local files are read",
         system="bounded byte limits, atomic replacement, and Git-excluded output",
     ),
+    "data_ingest": _declared(
+        "register and ingest reviewed local data into immutable private layers",
+        people=(
+            "requires a rights and removal registration before reading local bytes; PII and "
+            "credential values are removed, unsafe content is quarantined, and ordinary logs "
+            "retain only finding kinds and counts"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every input is a contained local file and text inside it is "
+            "always data, never an instruction"
+        ),
+        system=(
+            "streaming size limits, private content-addressed layers, immutable provenance, "
+            "cooperative cancellation, and no network acquisition"
+        ),
+    ),
+    "data_build": _declared(
+        "build deterministic filtered dataset splits and a dataset card",
+        people=(
+            "uses only training-eligible reviewed registrations after sensitive-value removal, "
+            "quarantine, tombstones, and duplicate controls; it publishes nothing"
+        ),
+        direction=f"{_OPERATOR_REQUEST}; build policy is typed and resource-bounded",
+        system=(
+            "immutable parent hashes, global deduplication before stable split assignment, "
+            "idempotent outputs, and cooperative cancellation"
+        ),
+    ),
+    "data_remove": _declared(
+        "record an immutable removal tombstone for all future dataset builds",
+        people=(
+            "honors a reviewed removal direction without exposing the removed content and "
+            "prevents the target entering future builds"
+        ),
+        direction=f"{_OPERATOR_REQUEST}; the target and rationale are explicit and auditable",
+        system="append-only tombstones preserve lineage without mutating historical evidence",
+        protects=(1, 2),
+    ),
+    "data_audit": _declared(
+        "verify local data-layer hashes and summarize provenance state",
+        people=f"reads only local metadata and content hashes; {_LOCAL_AND_OFFLINE}",
+        direction=f"{_OPERATOR_REQUEST}; the audit changes no dataset record",
+        system="read-only integrity verification over the private data root",
+    ),
     "owner_bootstrap": _declared(
         "mint the single local owner credential on first run",
         people=(
@@ -213,6 +257,10 @@ CLI_ACTIONS: dict[str, str] = {
     "research sync": "research_sync",
     "research verify": "research_verify",
     "research index": "research_index",
+    "data ingest": "data_ingest",
+    "data build": "data_build",
+    "data remove": "data_remove",
+    "data audit": "data_audit",
     "train pretrain": "tiny_train",
     "train resume": "tiny_train",
     "eval run": "tiny_eval",
