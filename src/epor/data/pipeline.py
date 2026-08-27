@@ -31,9 +31,7 @@ _ASSIGNED_SECRET = re.compile(
     r"(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd)"
     r"\s*[:=]\s*['\"]?[^\s'\";,]{8,}"
 )
-_BENCHMARK_MARKERS = re.compile(
-    r"(?i)\b(?:HumanEval|MBPP|GSM8K|MMLU|ARC[- ]Challenge|HellaSwag)\b"
-)
+_BENCHMARK_MARKERS = re.compile(r"(?i)\b(?:HumanEval|MBPP|GSM8K|MMLU|ARC[- ]Challenge|HellaSwag)\b")
 _UNSAFE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("eicar_test_signature", re.compile(r"EICAR-STANDARD-ANTIVIRUS-TEST-FILE")),
     ("credential_theft_payload", re.compile(r"(?i)\b(?:mimikatz|lsass dump|credential dumping)\b")),
@@ -171,9 +169,7 @@ def unsafe_findings(raw_path: Path, text: str) -> list[Finding]:
             findings.append(Finding(kind=kind, count=count, action="quarantined"))
     benchmark_count = len(_BENCHMARK_MARKERS.findall(text))
     if benchmark_count:
-        findings.append(
-            Finding(kind="benchmark_marker", count=benchmark_count, action="reported")
-        )
+        findings.append(Finding(kind="benchmark_marker", count=benchmark_count, action="reported"))
     return findings
 
 
@@ -185,6 +181,7 @@ def make_document_record(
     raw_sha256: str,
     raw_size_bytes: int,
     relative_input_name: str,
+    source_order: int,
 ) -> DocumentRecord:
     normalized = normalize_text(raw_path)
     redacted, findings = redact_sensitive_text(normalized)
@@ -202,9 +199,7 @@ def make_document_record(
     if not redacted.strip():
         reasons.append("empty_after_normalization")
     disposition = "quarantined" if reasons else "admitted"
-    document_id = sha256_bytes(
-        f"{registration.id}\0{relative_input_name}\0{raw_sha256}".encode()
-    )
+    document_id = sha256_bytes(f"{registration.id}\0{relative_input_name}\0{raw_sha256}".encode())
     group_id = (
         registration.group_id
         or registration.repository_family
@@ -215,6 +210,7 @@ def make_document_record(
         document_id=document_id,
         source_id=registration.id,
         relative_input_name=relative_input_name,
+        source_order=source_order,
         media_type=registration.media_type,
         acquired_at=registration.acquired_at,
         raw_sha256=raw_sha256,

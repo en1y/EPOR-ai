@@ -165,11 +165,15 @@ def _write_data_artifact(
     assert root is not None
     target = root / context.job_id / name
     target.parent.mkdir(parents=True, exist_ok=True)
-    content = payload if isinstance(payload, str) else json.dumps(
-        payload,
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=True,
+    content = (
+        payload
+        if isinstance(payload, str)
+        else json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
     )
     descriptor, temporary_name = tempfile.mkstemp(prefix=".data-", dir=target.parent)
     temporary = Path(temporary_name)
@@ -207,6 +211,7 @@ def _data_ingest(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]
     result = engine.ingest(
         load_registration(registration_path),
         inputs,
+        relative_names=[path.relative_to(settings.project_root).as_posix() for path in inputs],
         max_input_bytes=int(spec["max_input_bytes"]),
         check_cancelled=context.raise_if_cancelled,
         progress=report,

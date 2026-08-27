@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from epor.data.models import BuildRequest, EvidenceSnapshot, SourceRegistration
-from epor.data.service import DataEngine
+from epor.data.service import DataEngine, load_registration
 from epor.data.store import DataStoreError
 
 STAMP = datetime(2026, 8, 27, 8, 0, tzinfo=UTC)
@@ -50,6 +50,13 @@ def build_request(dataset_id: str = "fixture-v1") -> BuildRequest:
 def write(path: Path, text: str) -> Path:
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def test_example_registration_is_strictly_loadable() -> None:
+    example = Path(__file__).parents[1] / "configs/data/source-registration.example.yaml"
+    loaded = load_registration(example)
+    assert loaded.id == "replace-with-source-id"
+    assert loaded.allowed_uses == ["research", "train"]
 
 
 def test_network_registration_requires_hash_pinned_robots_and_terms() -> None:
@@ -117,8 +124,7 @@ def test_registration_is_immutable_and_unknown_rights_are_not_permission(tmp_pat
 def test_global_dedup_splits_and_dataset_card_are_deterministic(tmp_path: Path) -> None:
     engine = DataEngine(tmp_path / "data")
     duplicate_text = (
-        "The deterministic corpus document explains a technical protocol and database system. "
-        * 12
+        "The deterministic corpus document explains a technical protocol and database system. " * 12
     )
     unique_text = (
         "A separate scientific experiment records a theorem equation and hypothesis result. " * 12
@@ -145,6 +151,35 @@ def test_global_dedup_splits_and_dataset_card_are_deterministic(tmp_path: Path) 
     assert "Removal process" in card
     rows = (first_path.parent / f"splits/{first_build.documents[0].split}.jsonl").read_text()
     assert all(json.loads(line)["text"] for line in rows.splitlines())
+
+
+def test_repository_relative_topology_and_input_order_reach_split_rows(tmp_path: Path) -> None:
+    engine = DataEngine(tmp_path / "data")
+    dependency = write(
+        tmp_path / "dependency.py",
+        "def dependency():\n    return 'dependency'\n" * 8,
+    )
+    consumer = write(tmp_path / "consumer.py", "from package.dependency import dependency\n" * 12)
+    code_registration = registration("code-source", group_id="repository-family").model_copy(
+        update={"media_type": "text/x-python", "repository_family": "repository-family"}
+    )
+    engine.ingest(
+        code_registration,
+        [dependency, consumer],
+        relative_names=["package/dependency.py", "package/consumer.py"],
+    )
+
+    build, manifest_path = engine.build(build_request("code-v1"))
+    split = build.documents[0].split
+    rows = [
+        json.loads(line)
+        for line in (manifest_path.parent / f"splits/{split}.jsonl").read_text().splitlines()
+    ]
+    assert [row["relative_input_name"] for row in rows] == [
+        "package/dependency.py",
+        "package/consumer.py",
+    ]
+    assert [row["source_order"] for row in rows] == [0, 1]
 
 
 def test_tombstones_propagate_to_future_builds_and_audit_verifies_hashes(

@@ -6,6 +6,8 @@
   local-control boundaries.
 - [Data governance](DATA_GOVERNANCE.md) — rights, lineage, privacy, filtering,
   removals, teacher data, and release requirements.
+- [Provenance-first data engine](DATA_ENGINE.md) — v0.0.3 registration,
+  immutable layers, policy sequence, commands, evidence, and limitations.
 - [Compute policy](COMPUTE_POLICY.md) — cheap-first experiments, approval gates,
   abort rules, and hardware profiles.
 - [Contributing](CONTRIBUTING.md) — environment, tests, claim discipline, and
@@ -19,6 +21,6 @@ The tracked research ledger is [`research/catalog.yaml`](../research/catalog.yam
 Downloaded bytes, extracted text, and local indexes live under ignored
 `research/raw/`, `research/extracted/`, and `research/cache/` directories.
 
-No target-size model has been trained or released by v0.0.1. Parameter counts,
+No target-size model has been trained or released by v0.0.3. Parameter counts,
 context lengths, and architecture descriptions are plans until their named gates
 produce measured artifacts.

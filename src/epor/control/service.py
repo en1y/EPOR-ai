@@ -168,9 +168,7 @@ class JobService:
                         must_exist=True,
                     )
                     if not input_path.is_file() or input_path.is_symlink():
-                        raise InvalidJobSpecError(
-                            "data inputs must be regular non-symlink files"
-                        )
+                        raise InvalidJobSpecError("data inputs must be regular non-symlink files")
         except (FileNotFoundError, OSError, PathOutsideRootError) as exc:
             raise InvalidJobSpecError(str(exc)) from exc
         return value

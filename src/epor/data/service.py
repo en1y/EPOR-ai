@@ -6,7 +6,7 @@ import json
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -60,6 +60,7 @@ class DataEngine:
         registration: SourceRegistration,
         inputs: Iterable[Path],
         *,
+        relative_names: Iterable[str] | None = None,
         max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
         check_cancelled: Callable[[], None] | None = None,
         progress: Progress | None = None,
@@ -67,10 +68,20 @@ class DataEngine:
         paths = list(inputs)
         if not paths:
             raise ValueError("at least one local input is required")
+        names = (
+            list(relative_names) if relative_names is not None else [path.name for path in paths]
+        )
+        if len(names) != len(paths):
+            raise ValueError("every data input requires exactly one stable relative name")
+        for name in names:
+            parsed = PurePosixPath(name)
+            if parsed.is_absolute() or ".." in parsed.parts or not name.strip():
+                raise ValueError("data input names must be non-empty relative paths")
         registration_sha256 = self.store.register(registration)
         documents: list[DocumentRecord] = []
         total = len(paths)
-        for index, input_path in enumerate(paths, start=1):
+        paired_inputs = zip(paths, names, strict=True)
+        for index, (input_path, relative_name) in enumerate(paired_inputs, start=1):
             if check_cancelled is not None:
                 check_cancelled()
             raw_path, raw_sha256, raw_size = self.store.stream_raw(
@@ -84,7 +95,8 @@ class DataEngine:
                 raw_path=raw_path,
                 raw_sha256=raw_sha256,
                 raw_size_bytes=raw_size,
-                relative_input_name=input_path.name,
+                relative_input_name=relative_name,
+                source_order=index - 1,
             )
             self.store.write_document(record)
             documents.append(record)
@@ -105,9 +117,7 @@ class DataEngine:
             "counts": dict(Counter(item.disposition for item in documents)),
             "finding_counts": dict(
                 sorted(
-                    Counter(
-                        finding.kind for item in documents for finding in item.findings
-                    ).items()
+                    Counter(finding.kind for item in documents for finding in item.findings).items()
                 )
             ),
         }
@@ -230,9 +240,7 @@ class DataEngine:
         missing = requested_sources.difference(registrations)
         if missing:
             raise ValueError(f"unregistered data source(s): {', '.join(sorted(missing))}")
-        documents = [
-            item for item in self.store.documents() if item.source_id in requested_sources
-        ]
+        documents = [item for item in self.store.documents() if item.source_id in requested_sources]
         tombstones = self.store.tombstones()
         tombstoned = [item for item in documents if self._tombstoned(item, tombstones)]
         candidates = [
@@ -265,6 +273,8 @@ class DataEngine:
                 DatasetDocument(
                     document_id=record.document_id,
                     source_id=record.source_id,
+                    relative_input_name=record.relative_input_name,
+                    source_order=record.source_order,
                     normalized_sha256=record.normalized_sha256,
                     split=split,  # type: ignore[arg-type]
                     group_id=record.group_id,
@@ -344,12 +354,17 @@ class DataEngine:
         split_payloads: dict[str, bytes] = {}
         for name, records in by_split.items():
             rows = []
-            for record in sorted(records, key=lambda item: item.document_id):
+            for record in sorted(
+                records,
+                key=lambda item: (item.source_id, item.source_order, item.relative_input_name),
+            ):
                 rows.append(
                     canonical_json_bytes(
                         {
                             "document_id": record.document_id,
                             "source_id": record.source_id,
+                            "relative_input_name": record.relative_input_name,
+                            "source_order": record.source_order,
                             "text": record.text,
                             "language": record.language.model_dump(mode="json"),
                             "domain": record.domain.model_dump(mode="json"),
@@ -497,7 +512,7 @@ training and released derivatives require a separate documented impact decision.
 
 ## Immutable parents
 
-{bullets(f'`{item}`' for item in parent_hashes)}
+{bullets(f"`{item}`" for item in parent_hashes)}
 """
 
     def audit(self) -> DataAudit:

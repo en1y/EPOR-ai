@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 from collections.abc import Callable, Iterator
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -226,9 +227,12 @@ class DataStore:
             if sha256_bytes(record.text.encode("utf-8")) != record.normalized_sha256:
                 errors.append(f"{record.document_id}: normalized content hash mismatch")
 
-        latest: dict[str, str] = {}
+        latest_entries: dict[str, tuple[datetime, str]] = {}
         for manifest_path, build in builds:
-            latest[build.dataset_id] = max(latest.get(build.dataset_id, ""), build.build_id)
+            candidate = (build.deterministic_timestamp, build.build_id)
+            latest_entries[build.dataset_id] = max(
+                latest_entries.get(build.dataset_id, candidate), candidate
+            )
             for name, expected in build.artifacts.items():
                 artifact = manifest_path.parent / name
                 if not artifact.exists() or sha256_file(artifact) != expected:
@@ -242,5 +246,5 @@ class DataStore:
             tombstones=len(tombstones),
             builds=len(builds),
             integrity_errors=errors,
-            latest_builds=latest,
+            latest_builds={dataset_id: item[1] for dataset_id, item in latest_entries.items()},
         )

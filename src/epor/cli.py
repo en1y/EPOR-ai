@@ -505,6 +505,9 @@ def data_ingest(
     result = DataEngine(settings.data_root).ingest(
         load_registration(registration_path),
         resolved_inputs,
+        relative_names=[
+            path.relative_to(settings.project_root).as_posix() for path in resolved_inputs
+        ],
         max_input_bytes=max_input_bytes,
     )
     typer.echo(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))

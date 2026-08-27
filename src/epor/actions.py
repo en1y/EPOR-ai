@@ -62,8 +62,7 @@ _LOCAL_AND_OFFLINE = (
     "that operator, and emits no personal data"
 )
 _OPERATOR_REQUEST = (
-    "invoked directly by the operator who owns the machine, within the reviewed action "
-    "registry"
+    "invoked directly by the operator who owns the machine, within the reviewed action registry"
 )
 
 DECLARED_ACTIONS: dict[str, ProposedAction] = {

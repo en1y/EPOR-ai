@@ -118,6 +118,7 @@ class DocumentRecord(FrozenSchema):
     document_id: Sha256
     source_id: Identifier
     relative_input_name: str = Field(min_length=1, max_length=1_024)
+    source_order: int = Field(ge=0)
     media_type: str = Field(min_length=1, max_length=160)
     acquired_at: datetime
     raw_sha256: Sha256
@@ -197,6 +198,8 @@ class BuildRequest(FrozenSchema):
 class DatasetDocument(FrozenSchema):
     document_id: Sha256
     source_id: Identifier
+    relative_input_name: str
+    source_order: int
     normalized_sha256: Sha256
     split: Literal["train", "validation", "test"]
     group_id: str

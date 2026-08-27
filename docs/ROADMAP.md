@@ -239,11 +239,29 @@ The initial archive covers:
   that point startup fails if the manifest is missing or attests to different
   bytes. No later version may weaken a principle without a version bump and a
   recorded rationale.
-- **v0.0.3 — Provenance-first data engine:** Add rights-aware registration,
-  streaming ingestion, a normalized document schema, exact and global
-  near-deduplication, language/domain/quality classification, PII and credential
-  removal, malware/unsafe-content quarantine, robots/terms records, removal
-  tombstones, content-hash splits, and dataset cards.
+- **v0.0.3 — Provenance-first data engine (implementation complete; formal
+  release pending):** Rights-aware registrations now bind stewardship, origin,
+  acquisition, permission, allowed uses, constraints, robots/terms evidence,
+  sensitive-content risk, stable families, and removal contacts before local
+  acquisition. The private data root streams raw files into immutable SHA-256
+  objects, writes a versioned normalized document record, classifies language,
+  domain, and quality, removes common PII/credential shapes without logging
+  matched values, reports benchmark markers, and quarantines rights-ineligible,
+  executable, or explicit malware/exploit material. Dataset builds apply
+  immutable source/document/raw-hash tombstones, then exact and global
+  four-gram SimHash near-deduplication before salted content-family split
+  assignment; their manifests, JSONL splits, filtered indexes, and dataset
+  cards are deterministic and content-addressed. Direct CLI commands and typed
+  control jobs share covenant declarations, actor scope, path containment,
+  worker dispatch rechecks, cancellation, audit, and sanitized artifacts; the
+  console exposes registrations, counts, removals, builds, and integrity state.
+  G2 fixtures cover deterministic rebuilds, cross-source dedup, redaction,
+  quarantine, split grouping, and tombstone propagation; G8/G10 coverage traces
+  the same work through migration-backed admission and the worker without
+  letting content become instruction. The offline detectors and SimHash are
+  proxy-scale heuristics requiring sampled human review and target-scale
+  revalidation. v0.0.3 performs no crawl, tokenization, training, paid API call,
+  dataset publication, or claim of complete PII/malware/contamination detection.
 - **v0.0.4 — Tokenizer and dataset v0:** Train an original 65,536-ID byte-level
   BPE with 256 reserved IDs for roles, tools, FIM, documents, retrieval, and
   future extensions. Preserve whitespace/code exactly, guarantee byte fallback,
