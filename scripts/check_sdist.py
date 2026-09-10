@@ -1,6 +1,6 @@
-"""Validate the v0.0.1 source-archive resource contract.
+"""Validate the source-checkout archive resource contract.
 
-The v0.0.1 wheel intentionally contains only the Python package and is not a
+The wheel intentionally contains only the Python package and is not a
 standalone console distribution.  This check applies only to the source
 distribution, which must retain the repository resources used by the launcher.
 """
@@ -20,6 +20,7 @@ REQUIRED_PATHS = frozenset(
         "README.md",
         "configs/covenant-v1.yaml",
         "configs/covenant-v1-ratification.yaml",
+        "configs/data/source-registration.example.yaml",
         "configs/models/README.md",
         "configs/models/epor-alpha.yaml",
         "configs/models/epor-beta.yaml",
@@ -32,10 +33,12 @@ REQUIRED_PATHS = frozenset(
         "migrations/script.py.mako",
         "migrations/versions/0001_control_plane.py",
         "migrations/versions/0002_safety_identity.py",
+        "migrations/versions/0003_data_jobs.py",
         "pyproject.toml",
         "research/catalog.yaml",
         "src/epor/__init__.py",
         "src/epor/cli.py",
+        "src/epor/data/service.py",
         "src/epor/safety.py",
         "start-epor.sh",
         "ui/index.html",
@@ -64,7 +67,7 @@ def validate_sdist(archive_path: Path) -> tuple[str, int]:
 
     if not archive_path.name.endswith(".tar.gz"):
         raise DistributionContractError(
-            "expected a .tar.gz source distribution; wheels are not standalone in v0.0.1"
+            "expected a .tar.gz source distribution; wheels are not standalone"
         )
 
     try:

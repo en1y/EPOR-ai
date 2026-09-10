@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "epor-ai"
-version = "0.0.2"
+version = "0.0.3"
 description = "Reproducible, paper-backed research infrastructure for original-weight EPOR language models"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"

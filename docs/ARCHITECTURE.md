@@ -60,9 +60,24 @@ flowchart TD
     export --> quantized["GGUF + parity report"]
 ```
 
-The ledger, recipes, and manifests are authoritative. SQLite is a rebuildable
+The ledger, registrations, recipes, and manifests are authoritative. SQLite is a rebuildable
 query index. Raw research, datasets, run outputs, and weights stay ignored until
 an explicit release process creates independently licensed artifacts.
+
+## Provenance-first data engine
+
+`epor.data` implements v0.0.3 as an offline, immutable pipeline under a private
+data root. A strict source registration is written before acquisition. Raw files
+are copied and hashed incrementally; normalized records retain parent and policy
+hashes; rights failures and unsafe findings route to quarantine. Builds apply
+removal tombstones and global exact/SimHash deduplication before a salted stable
+family hash assigns splits. Filtered indexes, JSONL splits, manifests, and
+dataset cards are immutable children rather than mutable views of a corpus.
+
+Detectors retain finding kinds and counts, never the matched PII or credential
+value in job events or reports. The rules are explicit proxy-scale heuristics
+with human-audit and scale-revalidation requirements, not learned classifier or
+malware-sandbox claims. Tokenized shards begin in v0.0.4.
 
 ## Research archive safety
 
@@ -97,10 +112,10 @@ CPU fallback. It is not a required PyTorch training device.
 
 ## Local control plane
 
-The API, worker, and UI are separate processes. Only typed job specifications
-for `system_probe`, `research_sync`, `tiny_train`, and `tiny_eval` are accepted
-in v0.0.1. The API never evaluates a client command, fetches an arbitrary URL,
-or exposes a general filesystem browser.
+The API, worker, and UI are separate processes. Typed job specifications include
+the original probe/research/reference-training jobs and v0.0.3's `data_ingest`,
+`data_build`, `data_remove`, and `data_audit`. The API never evaluates a client
+command, fetches an arbitrary data URL, or exposes a general filesystem browser.
 
 Admission is the covenant chokepoint. `JobService.create_job` resolves the
 requested action — still a plain string at that point — against
@@ -110,7 +125,8 @@ append-only event stream, and raises rather than queueing anything the covenant
 does not permit. The worker re-resolves at dispatch so a job admitted under an
 earlier covenant cannot execute under a later one. The CLI shares that registry
 rather than keeping its own, through a single command-to-action table, so
-`doctor`, `config validate`, `research sync|verify|index`, `train
+`doctor`, `config validate`, `research sync|verify|index`, `data
+ingest|build|remove|audit`, `train
 pretrain|resume`, `eval run`, and `generate` are governed identically despite
 never touching the control plane. They also share the reference-runtime limits
 described above, so the declaration's resource assumptions hold on either

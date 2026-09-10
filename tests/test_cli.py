@@ -29,9 +29,16 @@ def test_doctor_json_is_machine_readable() -> None:
 
 
 def test_future_command_fails_closed() -> None:
-    result = runner.invoke(app, ["data", "ingest"])
+    result = runner.invoke(app, ["tokenizer", "train"])
     assert result.exit_code == 2
-    assert "v0.0.3" in result.stdout
+    assert "v0.0.4" in result.stdout
+
+
+def test_data_commands_are_executable_typed_surfaces() -> None:
+    result = runner.invoke(app, ["data", "--help"])
+    assert result.exit_code == 0
+    output = unstyle(result.stdout)
+    assert all(command in output for command in ("ingest", "build", "remove", "audit"))
 
 
 def test_resume_exposes_original_corpus_option() -> None:

@@ -12,8 +12,10 @@ geographic or contractual constraints, robots/terms snapshot where applicable,
 expected sensitive-content risk, and a removal contact. `unknown` is valid as a
 temporary finding, but an unknown right is not permission to train or release.
 
-No autonomous crawl occurs in v0.0.1. Later collection must operate from reviewed
-registrations, bounded scopes, rate limits, and immutable request/audit logs.
+No autonomous crawl occurs in v0.0.3. Acquisition is limited to contained local
+files named by a reviewed registration, with a 256 MiB per-file streaming cap
+and immutable request/audit records. A future crawler must add bounded scopes,
+rate limits, and separate covenant review before it becomes executable.
 
 ## Layer contract
 
@@ -28,6 +30,11 @@ Data moves through immutable, content-addressed layers:
 A derived build records all parent hashes, tool versions, policy/config hashes,
 timestamps, counts, and reason-coded removals. Rebuilding creates a new manifest;
 it never overwrites a parent.
+
+The implemented v0.0.3 root is private `.epor/data` by default. Registrations,
+raw objects, normalized records, quarantines, tombstones, filtered indexes,
+split JSONL, manifests, and cards are ignored runtime data. Only schemas,
+examples, tests, and aggregate documentation belong in Git.
 
 ## Required controls
 
@@ -48,6 +55,11 @@ it never overwrites a parent.
   automated scores are not treated as rights judgments.
 - Removal requests create tombstones keyed by stable identifiers. Tombstones
   propagate to all future builds and continued-pretraining lineages.
+
+The v0.0.3 classifiers and detectors are deterministic offline heuristics. They
+record versions, confidence, finding kinds, and aggregate counts without
+claiming complete language, PII, malware, or benchmark-contamination coverage.
+Their accepted and rejected samples still require human audit.
 
 ## Initial proxy mixture
 

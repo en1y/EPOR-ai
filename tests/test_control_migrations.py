@@ -23,6 +23,7 @@ def test_default_bootstrap_is_alembic_current_and_has_no_schema_drift(
         project_root=project_root,
         database_path=tmp_path / "bootstrap.sqlite3",
         artifact_root=tmp_path / "artifacts",
+        data_root=tmp_path / "data",
         research_catalog_path=project_root / "research" / "catalog.yaml",
     )
     app = create_app(settings)
@@ -30,7 +31,7 @@ def test_default_bootstrap_is_alembic_current_and_has_no_schema_drift(
 
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0002_safety_identity"
+            "0003_data_jobs"
         )
         assert {
             "jobs",
@@ -87,7 +88,7 @@ def test_pre_alembic_create_all_schema_is_safely_adopted(tmp_path: Path) -> None
     initialize_database(engine)
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0002_safety_identity"
+            "0003_data_jobs"
         )
         assert {"principals", "escalations", "authority_events"} <= set(
             inspect(connection).get_table_names()

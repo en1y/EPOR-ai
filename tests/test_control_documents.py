@@ -22,6 +22,7 @@ def _settings(tmp_path: Path) -> ControlSettings:
         project_root=project_root,
         database_path=tmp_path / "documents.sqlite3",
         artifact_root=tmp_path / "artifacts",
+        data_root=tmp_path / "data",
         research_catalog_path=project_root / "research" / "catalog.yaml",
     )
 

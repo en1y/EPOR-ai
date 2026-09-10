@@ -39,6 +39,7 @@ class ControlSettings:
     database_path: Path | None = None
     artifact_root: Path | None = None
     safety_root: Path | None = None
+    data_root: Path | None = None
     research_catalog_path: Path | None = None
     host: str = "127.0.0.1"
     port: int = 8742
@@ -52,6 +53,7 @@ class ControlSettings:
         database_path = self.database_path or project_root / ".epor" / "control.sqlite3"
         artifact_root = self.artifact_root or project_root / ".epor" / "artifacts"
         safety_root = self.safety_root or project_root / ".epor" / "control"
+        data_root = self.data_root or project_root / ".epor" / "data"
         research_catalog_path = (
             self.research_catalog_path or project_root / "research" / "catalog.yaml"
         )
@@ -93,6 +95,7 @@ class ControlSettings:
         object.__setattr__(self, "database_path", database_path.expanduser().resolve())
         object.__setattr__(self, "artifact_root", artifact_root.expanduser().resolve())
         object.__setattr__(self, "safety_root", safety_root.expanduser().resolve())
+        object.__setattr__(self, "data_root", data_root.expanduser().resolve())
         object.__setattr__(
             self,
             "research_catalog_path",
@@ -107,12 +110,14 @@ class ControlSettings:
         database = os.getenv("EPOR_CONTROL_DATABASE")
         artifacts = os.getenv("EPOR_CONTROL_ARTIFACT_ROOT")
         safety = os.getenv("EPOR_CONTROL_SAFETY_ROOT")
+        data = os.getenv("EPOR_DATA_ROOT")
         catalog = os.getenv("EPOR_RESEARCH_CATALOG")
         return cls(
             project_root=root,
             database_path=Path(database) if database else None,
             artifact_root=Path(artifacts) if artifacts else None,
             safety_root=Path(safety) if safety else None,
+            data_root=Path(data) if data else None,
             research_catalog_path=Path(catalog) if catalog else None,
             host=os.getenv("EPOR_CONTROL_HOST", "127.0.0.1"),
             port=int(os.getenv("EPOR_CONTROL_PORT", "8742")),
@@ -128,11 +133,15 @@ class ControlSettings:
         assert self.database_path is not None
         assert self.artifact_root is not None
         assert self.safety_root is not None
+        assert self.data_root is not None
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         # Identity truth and the owner credential are private to this account.
         self.safety_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.safety_root.chmod(0o700)
+        # Raw and quarantined documents may contain secrets or personal data.
+        self.data_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.data_root.chmod(0o700)
 
     @property
     def uvicorn_kwargs(self) -> dict[str, object]:

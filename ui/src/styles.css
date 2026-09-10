@@ -160,6 +160,14 @@ main { min-width: 0; }
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
   border-bottom: 1px solid var(--line);
 }
+
+.button-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
 .panel-heading h2 { margin: 0; font-size: 16px; }
 .panel-heading p { margin: 4px 0 0; max-width: 70ch; color: var(--text-dim); font-size: 13px; }
 .panel-footer { padding: 15px 20px; border-top: 1px solid var(--line); }
@@ -660,7 +668,7 @@ code.hash {
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   }
   .sidebar nav { display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 2px; }
-  .nav-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+  .nav-group { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
   .nav-item { min-height: 48px; font-size: 10px; }
 }
 

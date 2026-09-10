@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App, { JobDetail, JobForm, JobsPage, TrainingPage } from './App'
+import App, { DataPage, JobDetail, JobForm, JobsPage, TrainingPage } from './App'
 import { api } from './api'
 import type {
   Capabilities,
+  DataSummary,
   Health,
   Job,
   JobEvent,
@@ -288,6 +289,18 @@ describe('API health polling', () => {
     count: 0,
     error: null,
   }
+  const dataSummary: DataSummary = {
+    schema_version: 1,
+    registrations: 0,
+    documents: 0,
+    admitted: 0,
+    quarantined: 0,
+    tombstones: 0,
+    builds: 0,
+    integrity_errors: [],
+    latest_builds: {},
+    sources: [],
+  }
 
   it('marks the API unavailable after a failed refresh and recovers later', async () => {
     vi.useFakeTimers()
@@ -297,6 +310,7 @@ describe('API health polling', () => {
       .mockResolvedValue(health)
     vi.spyOn(api, 'capabilities').mockResolvedValue(capabilities)
     vi.spyOn(api, 'research').mockResolvedValue(research)
+    vi.spyOn(api, 'data').mockResolvedValue(dataSummary)
     vi.spyOn(api, 'models').mockResolvedValue([])
     vi.spyOn(api, 'jobTypes').mockResolvedValue([])
     vi.spyOn(api, 'jobs').mockResolvedValue([])
@@ -316,6 +330,40 @@ describe('API health polling', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
     expect(screen.getByText('EPOR 0.0.1')).toBeInTheDocument()
     expect(healthRequest).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('Data provenance page', () => {
+  it('surfaces rights state and queues typed data jobs', async () => {
+    const user = userEvent.setup()
+    const onNew = vi.fn()
+    const summary: DataSummary = {
+      schema_version: 1,
+      registrations: 1,
+      documents: 3,
+      admitted: 2,
+      quarantined: 1,
+      tombstones: 1,
+      builds: 1,
+      integrity_errors: [],
+      latest_builds: { 'fixture-v1': 'a'.repeat(64) },
+      sources: [{
+        id: 'fixture',
+        title: 'Fixture corpus',
+        owner_or_steward: 'Fixture steward',
+        license_id: 'fixture-only',
+        allowed_uses: ['research', 'train'],
+        sensitive_content_risk: 'low',
+      }],
+    }
+    render(<DataPage summary={summary} onNew={onNew} />)
+
+    expect(screen.getByText('Fixture corpus')).toBeInTheDocument()
+    expect(screen.getByText('fixture-only')).toBeInTheDocument()
+    expect(screen.getByText('Quarantined')).toBeInTheDocument()
+    expect(screen.getAllByText('1', { selector: '.metric-card strong' }).length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: 'Ingest' }))
+    expect(onNew).toHaveBeenCalledWith('data_ingest')
   })
 })
 

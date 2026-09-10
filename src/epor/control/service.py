@@ -151,6 +151,24 @@ class JobService:
                 self._validate_tiny_corpus(value["corpus_path"])
                 if value.get("model_config"):
                     contained_path(self.settings.project_root, value["model_config"])
+            elif job_type is JobType.DATA_INGEST:
+                registration = contained_path(
+                    self.settings.project_root,
+                    value["registration_path"],
+                    must_exist=True,
+                )
+                if not registration.is_file() or registration.is_symlink():
+                    raise InvalidJobSpecError(
+                        "data registration must be a regular non-symlink file"
+                    )
+                for supplied in value["input_paths"]:
+                    input_path = contained_path(
+                        self.settings.project_root,
+                        supplied,
+                        must_exist=True,
+                    )
+                    if not input_path.is_file() or input_path.is_symlink():
+                        raise InvalidJobSpecError("data inputs must be regular non-symlink files")
         except (FileNotFoundError, OSError, PathOutsideRootError) as exc:
             raise InvalidJobSpecError(str(exc)) from exc
         return value

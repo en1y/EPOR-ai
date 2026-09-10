@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
+import tempfile
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -152,6 +154,193 @@ def _research_sync(context: WorkerContext, spec: dict[str, Any]) -> dict[str, An
     return {"sources": results, "count": len(results)}
 
 
+def _write_data_artifact(
+    context: WorkerContext,
+    name: str,
+    payload: dict[str, Any] | str,
+    *,
+    media_type: str,
+) -> Path:
+    root = context.service.settings.artifact_root
+    assert root is not None
+    target = root / context.job_id / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = (
+        payload
+        if isinstance(payload, str)
+        else json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".data-", dir=target.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    context.register_artifact(target, kind="data-report", media_type=media_type)
+    return target
+
+
+def _data_ingest(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]:
+    from epor.data.service import DataEngine, load_registration
+
+    settings = context.service.settings
+    assert settings.data_root is not None
+    registration_path = contained_path(
+        settings.project_root,
+        str(spec["registration_path"]),
+        must_exist=True,
+    )
+    inputs = [
+        contained_path(settings.project_root, str(path), must_exist=True)
+        for path in spec["input_paths"]
+    ]
+    engine = DataEngine(settings.data_root)
+
+    def report(value: float, message: str, details: dict[str, Any] | None) -> None:
+        context.progress(value, message=message, details=details)
+
+    result = engine.ingest(
+        load_registration(registration_path),
+        inputs,
+        relative_names=[path.relative_to(settings.project_root).as_posix() for path in inputs],
+        max_input_bytes=int(spec["max_input_bytes"]),
+        check_cancelled=context.raise_if_cancelled,
+        progress=report,
+    )
+    summary = {key: value for key, value in result.items() if key != "audit_path"}
+    artifact = _write_data_artifact(
+        context,
+        "data-ingest.json",
+        summary,
+        media_type="application/json",
+    )
+    return {**summary, "report_artifact": str(artifact)}
+
+
+def _data_build(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]:
+    from epor.data.models import BuildRequest, SplitRatios
+    from epor.data.service import DataEngine
+
+    settings = context.service.settings
+    assert settings.data_root is not None
+    request = BuildRequest(
+        dataset_id=str(spec["dataset_id"]),
+        source_ids=spec.get("source_ids"),
+        split_ratios=SplitRatios(
+            train=int(spec["train_percent"]),
+            validation=int(spec["validation_percent"]),
+            test=int(spec["test_percent"]),
+        ),
+        split_salt=str(spec["split_salt"]),
+        near_duplicate_hamming_distance=int(spec["near_duplicate_hamming_distance"]),
+        intended_uses=list(spec["intended_uses"]),
+        prohibited_uses=list(spec["prohibited_uses"]),
+    )
+
+    def report(value: float, message: str, details: dict[str, Any] | None) -> None:
+        context.progress(value, message=message, details=details)
+
+    manifest, manifest_path = DataEngine(settings.data_root).build(
+        request,
+        check_cancelled=context.raise_if_cancelled,
+        progress=report,
+    )
+    summary = {
+        "dataset_id": manifest.dataset_id,
+        "build_id": manifest.build_id,
+        "manifest_sha256": _file_sha256(manifest_path),
+        "counts": manifest.counts,
+        "split_counts": manifest.split_counts,
+        "language_counts": manifest.language_counts,
+        "domain_counts": manifest.domain_counts,
+        "rights_counts": manifest.rights_counts,
+        "finding_counts": manifest.finding_counts,
+    }
+    report_artifact = _write_data_artifact(
+        context,
+        "dataset-build.json",
+        summary,
+        media_type="application/json",
+    )
+    card_artifact = _write_data_artifact(
+        context,
+        "dataset-card.md",
+        (manifest_path.parent / "dataset-card.md").read_text(encoding="utf-8"),
+        media_type="text/markdown",
+    )
+    return {
+        **summary,
+        "report_artifact": str(report_artifact),
+        "dataset_card_artifact": str(card_artifact),
+    }
+
+
+def _data_remove(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]:
+    from datetime import datetime
+
+    from epor.data.service import DataEngine
+
+    settings = context.service.settings
+    assert settings.data_root is not None
+    job = context.service.get_job(context.job_id)
+    requested_at = spec.get("requested_at")
+    tombstone = DataEngine(settings.data_root).remove(
+        target_kind=str(spec["target_kind"]),
+        target=str(spec["target"]),
+        reason=str(spec["reason"]),
+        requested_by=job.submitted_by_id or "authenticated-local-operator",
+        requested_at=datetime.fromisoformat(requested_at) if requested_at else None,
+        removal_contact=spec.get("removal_contact"),
+    )
+    result = tombstone.model_dump(mode="json")
+    artifact = _write_data_artifact(
+        context,
+        "data-removal.json",
+        result,
+        media_type="application/json",
+    )
+    context.progress(1.0, message="Removal tombstone recorded")
+    return {**result, "report_artifact": str(artifact)}
+
+
+def _data_audit(context: WorkerContext, _spec: dict[str, Any]) -> dict[str, Any]:
+    from epor.data.service import DataEngine
+
+    settings = context.service.settings
+    assert settings.data_root is not None
+    context.progress(0.1, message="Verifying immutable data layers")
+    result = DataEngine(settings.data_root).audit().model_dump(mode="json")
+    artifact = _write_data_artifact(
+        context,
+        "data-audit.json",
+        result,
+        media_type="application/json",
+    )
+    context.progress(1.0, message="Data audit complete")
+    if result["integrity_errors"]:
+        raise RuntimeError("data audit found immutable-layer integrity errors")
+    return {**result, "report_artifact": str(artifact)}
+
+
+def _file_sha256(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _training_handler(name: str) -> JobHandler:
     """Load reference training lazily so the default control environment stays CPU-safe."""
 
@@ -187,13 +376,17 @@ def _training_handler(name: str) -> JobHandler:
 DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.SYSTEM_PROBE: _system_probe,
     JobType.RESEARCH_SYNC: _research_sync,
+    JobType.DATA_INGEST: _data_ingest,
+    JobType.DATA_BUILD: _data_build,
+    JobType.DATA_REMOVE: _data_remove,
+    JobType.DATA_AUDIT: _data_audit,
     JobType.TINY_TRAIN: _training_handler("tiny_train"),
     JobType.TINY_EVAL: _training_handler("tiny_eval"),
 }
 
 
 class JobWorker:
-    """Claim and execute only the four v0.0.1 job types.
+    """Claim and execute only the closed typed local job registry.
 
     No client-provided command, executable, URL, or environment value is ever
     evaluated.  Long handlers receive a cooperative context while the owner
