@@ -47,6 +47,7 @@ def make_service(
         # Never the project root's own .epor: a fixture must not read or write
         # the developer's real owner credential.
         safety_root=runtime / "safety",
+        data_root=runtime / "data",
         research_catalog_path=root / "research" / "catalog.yaml",
         stale_after_seconds=stale_after_seconds,
         poll_interval_seconds=0.005,
@@ -332,6 +333,7 @@ def test_file_truth_rebuilds_a_fresh_sqlite_index_deterministically(tmp_path: Pa
         project_root=tmp_path,
         database_path=tmp_path / "rebuilt.sqlite3",
         artifact_root=settings.artifact_root,
+        data_root=tmp_path / "rebuilt-data",
         research_catalog_path=tmp_path / "research" / "catalog.yaml",
     )
     assert rebuilt_settings.database_path is not None

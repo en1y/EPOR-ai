@@ -1,4 +1,12 @@
-export type JobType = 'system_probe' | 'research_sync' | 'tiny_train' | 'tiny_eval'
+export type JobType =
+  | 'system_probe'
+  | 'research_sync'
+  | 'data_ingest'
+  | 'data_build'
+  | 'data_remove'
+  | 'data_audit'
+  | 'tiny_train'
+  | 'tiny_eval'
 export type JobStatus =
   | 'queued'
   | 'starting'
@@ -54,6 +62,28 @@ export interface ResearchCatalog {
   sources: ResearchSource[]
   count: number
   error: string | null
+}
+
+export interface DataSource {
+  id: string
+  title: string
+  owner_or_steward: string
+  license_id: string
+  allowed_uses: string[]
+  sensitive_content_risk: string
+}
+
+export interface DataSummary {
+  schema_version: number
+  registrations: number
+  documents: number
+  admitted: number
+  quarantined: number
+  tombstones: number
+  builds: number
+  integrity_errors: string[]
+  latest_builds: Record<string, string>
+  sources: DataSource[]
 }
 
 export interface CertifiedProfile {

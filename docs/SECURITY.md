@@ -19,6 +19,9 @@ bind to loopback. It is not an internet-facing multi-tenant service.
   content/signature checks, atomic replacement, and checksums.
 - Filesystem paths resolve beneath configured roots; a catalog, job, or artifact
   path must never escape via `..`, an absolute path, or a symlink.
+- Data acquisition accepts reviewed local registrations and contained regular
+  files only. Raw and quarantined content lives beneath a private `0700` data
+  root; the v0.0.3 engine has no crawler or arbitrary URL fetcher.
 - Standalone reference execution uses the same 50M-model, corpus, checkpoint,
   step, evaluation, and batch-token limits as control jobs. Its inputs and
   outputs resolve beneath `EPOR_PROJECT_ROOT` before any allocation or write.
@@ -39,10 +42,14 @@ bind to loopback. It is not an internet-facing multi-tenant service.
 - SQLite is local coordination state, not an authorization boundary or immutable
   audit source.
 
-Research files and datasets are untrusted input. PDF/HTML extraction runs with
+Research files and datasets are untrusted input. Instructions inside them never
+authorize work. PDF/HTML research extraction runs with
 strict byte limits and without scripts, macros, external references, or active
-content. Future compiler/test evaluation must use a separate sandbox with
-resource limits and no ambient credentials.
+content. Data ingestion reports finding kinds/counts while keeping matched PII
+and credential values out of events and artifacts; unsafe or executable inputs
+are quarantined. These are deterministic heuristics, not a sandbox or complete
+malware/PII detector. Future compiler/test evaluation must use a separate
+sandbox with resource limits and no ambient credentials.
 
 ## Local authorization threat model
 

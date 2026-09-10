@@ -3,6 +3,7 @@ import type {
   Artifact,
   Capabilities,
   Covenant,
+  DataSummary,
   DocumentRead,
   DocumentSummary,
   ErrorEnvelope,
@@ -60,6 +61,7 @@ export const api = {
   health: () => request<Health>('/health'),
   capabilities: () => request<Capabilities>('/capabilities'),
   research: () => request<ResearchCatalog>('/research'),
+  data: () => request<DataSummary>('/data'),
   models: async () => (await request<{ items: ModelFamily[] }>('/models')).items,
   jobTypes: async () =>
     (await request<{ items: JobTypeDefinition[] }>('/job-types')).items,

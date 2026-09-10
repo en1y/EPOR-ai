@@ -18,6 +18,7 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
         database_path=tmp_path / "api.sqlite3",
         artifact_root=tmp_path / "artifacts",
         safety_root=tmp_path / "safety",
+        data_root=tmp_path / "data",
         research_catalog_path=project_root / "research" / "catalog.yaml",
     )
     settings.prepare_directories()
@@ -88,6 +89,10 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
             assert {item["type"] for item in definitions} == {
                 "system_probe",
                 "research_sync",
+                "data_ingest",
+                "data_build",
+                "data_remove",
+                "data_audit",
                 "tiny_train",
                 "tiny_eval",
             }
@@ -95,6 +100,19 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
             assert tiny_schema["schema"]["properties"]["model_config"]["default"] == (
                 "configs/models/epor-tiny.yaml"
             )
+            data = (await client.get("/api/v1/data")).json()
+            assert data == {
+                "schema_version": 1,
+                "registrations": 0,
+                "documents": 0,
+                "admitted": 0,
+                "quarantined": 0,
+                "tombstones": 0,
+                "builds": 0,
+                "integrity_errors": [],
+                "latest_builds": {},
+                "sources": [],
+            }
 
             # Reading is public; every mutation requires a verified identity.
             anonymous = await client.post(

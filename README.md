@@ -2,7 +2,7 @@
 
 <!-- project-version:start -->
 > [!IMPORTANT]
-> **Current project version: `v0.0.2`**
+> **Current project version: `v0.0.3`**
 >
 > This identifies the code in this checkout; it does not imply a formal release.
 > Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -14,11 +14,12 @@ language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
-Version 0.0.1 is intentionally small. It validates provenance, configuration,
-training correctness, exact resume, and local job-control semantics with tiny
-CPU models before any target-size run is considered. The 30B/12B/8B family
-descriptions are gated research destinations, not bundled checkpoints or
-fabricated performance claims.
+The v0.0.x program is intentionally small. Through v0.0.3 it validates research
+provenance, the executable safety covenant and local authorization boundary,
+configuration, tiny-model correctness and exact resume, and a provenance-first
+offline data engine before any target-size run is considered. The 30B/12B/8B
+family descriptions are gated research destinations, not bundled checkpoints
+or fabricated performance claims.
 
 Families are listed alphabetically, and intended capability descends in the same
 order: α is the flagship, γ the compact local model.
@@ -79,9 +80,10 @@ digest, and one covenant hash, expires in fifteen minutes, and is spent exactly
 once. A refusal is never approvable.
 
 What this is not: a harm detector. The resolver enforces ordering, citation,
-justification, and fail-closed escalation over assessments supplied to it. In
-v0.0.2 those assessments are reviewed per-action declarations over a closed
-allowlist, which is only sound because that action space is small and fixed.
+justification, and fail-closed escalation over assessments supplied to it.
+Through v0.0.3, those assessments are reviewed per-action declarations over a
+closed allowlist, which is only sound because that action space is small and
+fixed.
 The authorization model is local and single-machine: it verifies a bearer
 credential held on this machine, and cannot defend against a compromised local
 account that can read that credential from disk. Classifiers, model-behavior
@@ -151,6 +153,22 @@ uv run --frozen --no-sync epor ui
 
 Stop each manually started process with `Ctrl+C` in its terminal.
 
+The v0.0.3 data path begins with a reviewed registration and a contained local
+file. It never crawls or fetches an arbitrary URL:
+
+```bash
+mkdir -p .epor/import
+cp configs/data/source-registration.example.yaml .epor/import/source-registration.yaml
+# Replace every fixture value with reviewed evidence before ingestion.
+uv run --frozen --no-sync epor data ingest \
+  .epor/import/source-registration.yaml data/raw/source.txt
+uv run --frozen --no-sync epor data build my-dataset-v1
+uv run --frozen --no-sync epor data audit
+```
+
+See [`docs/DATA_ENGINE.md`](docs/DATA_ENGINE.md) for immutable layers, removal
+tombstones, detector limitations, dataset cards, and control-job equivalents.
+
 The tiny reference path can be checked independently:
 
 ```bash
@@ -172,17 +190,16 @@ allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary
 URL.
 
-The console separates its work into six pages: **Overview** for environment and
-boundary facts, **Training** for reference training and evaluation runs with
-their loss and checkpoints, **Jobs** for every other typed job, **Model
-families** for configured architecture plans, **Research ledger** for tracked
-sources and their local verification state, and **Documentation** for the
-project's own Markdown rendered in place, including Mermaid diagrams. The
-documentation reader serves tracked first-party Markdown only. Ignored
+The console separates its work into nine pages: **Overview**, **Training**,
+**Data engine**, **Jobs**, **Safety covenant**, **Access**, **Model families**,
+**Research ledger**, and **Documentation**. The data page shows reviewed source
+registrations, immutable-layer counts, quarantines, removals, builds, and audit
+state without exposing document content. The documentation reader serves
+tracked first-party Markdown only. Ignored
 third-party research downloads are never rendered as console content; the
 research ledger links those sources at their canonical URL instead.
 
-Version 0.0.1 is operated from a source checkout. The wheel and source archive
+Version 0.0.3 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository
 resources until the v0.1.0 packaging contract is finalized.
@@ -205,6 +222,7 @@ public evaluation command works without another profile.
 - [`docs/README.md`](docs/README.md) — documentation index.
 - [`research/catalog.yaml`](research/catalog.yaml) — canonical source ledger;
   downloaded and extracted content remains ignored.
+- `src/epor/data/` — rights registration, immutable layers, policy, builds, and audit.
 - `src/epor/models/` and `src/epor/training/` — canonical PyTorch reference.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.

@@ -1,0 +1,27 @@
+# Copy this file, replace every fixture value with reviewed evidence, and keep
+# the reviewed registration in an ignored private workspace. HTTP(S) origins additionally
+# require one hash-pinned `robots` and one hash-pinned `terms` evidence entry.
+schema_version: 1
+id: replace-with-source-id
+title: Replace with the reviewed source title
+owner_or_steward: Replace with the rights owner or responsible steward
+canonical_origin: fixture://replace-with-reviewed-origin
+acquisition_method: manual_local
+acquired_at: 2026-08-27T00:00:00Z
+media_type: text/plain
+license_id: replace-with-license-or-permission-id
+permission_basis: Replace with the concrete license, contract, or written permission basis.
+allowed_uses:
+  - research
+  - train
+geographic_constraints: []
+contractual_constraints: []
+evidence: []
+sensitive_content_risk: unknown
+removal_contact: Replace with the private removal contact or process.
+language_hint: null
+domain_hint: null
+repository_family: null
+benchmark_family: null
+group_id: replace-with-stable-content-family
+notes: This example is not itself permission to ingest any third-party data.

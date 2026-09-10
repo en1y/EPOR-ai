@@ -14,6 +14,7 @@ import {
 import type {
   Artifact,
   Capabilities,
+  DataSummary,
   DeclaredAction,
   Health,
   Identity,
@@ -36,7 +37,16 @@ const anonymousIdentity: Identity = {
   expires_at: null,
 }
 
-type Page = 'overview' | 'training' | 'jobs' | 'safety' | 'access' | 'models' | 'research' | 'docs'
+type Page =
+  | 'overview'
+  | 'training'
+  | 'data'
+  | 'jobs'
+  | 'safety'
+  | 'access'
+  | 'models'
+  | 'research'
+  | 'docs'
 
 const pageCopy: Record<Page, { title: string; summary: string }> = {
   overview: {
@@ -46,6 +56,10 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   training: {
     title: 'Training',
     summary: 'Reference training and evaluation runs, their loss, and the checkpoints they wrote.',
+  },
+  data: {
+    title: 'Data engine',
+    summary: 'Rights registrations, immutable layers, removals, dataset builds, and integrity.',
   },
   jobs: {
     title: 'Jobs',
@@ -74,7 +88,7 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
 }
 
 const navGroups: { label: string; pages: Page[] }[] = [
-  { label: 'Workspace', pages: ['overview', 'training', 'jobs'] },
+  { label: 'Workspace', pages: ['overview', 'training', 'data', 'jobs'] },
   { label: 'Governance', pages: ['safety', 'access'] },
   { label: 'Reference', pages: ['models', 'research', 'docs'] },
 ]
@@ -209,6 +223,9 @@ function Icon({ name }: { name: Page }) {
   }
   if (name === 'jobs') {
     return <path d="M5 5h14v14H5zM9 9h6M9 13h6M9 17h3" />
+  }
+  if (name === 'data') {
+    return <path d="M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3Zm-8 3v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
   }
   if (name === 'safety') {
     return <path d="M12 3l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6l7-3ZM9 12l2 2 4-4" />
@@ -368,7 +385,7 @@ function OverviewPage({
               <span aria-hidden="true">✓</span>Accepts requests from one exact UI origin
             </li>
             <li>
-              <span aria-hidden="true">✓</span>Runs four typed job definitions and nothing else
+              <span aria-hidden="true">✓</span>Runs {capabilities?.job_types.length ?? 0} typed job definitions and nothing else
             </li>
             <li>
               <span aria-hidden="true">✓</span>No shell, no URL fetcher, no filesystem browser
@@ -469,6 +486,76 @@ function ResearchPage({ catalog }: { catalog: ResearchCatalog | null }) {
         </div>
       )}
     </section>
+  )
+}
+
+export function DataPage({
+  summary,
+  onNew,
+}: {
+  summary: DataSummary | null
+  onNew: (type: JobType) => void
+}) {
+  const metrics = [
+    ['Registrations', summary?.registrations ?? 0],
+    ['Documents', summary?.documents ?? 0],
+    ['Admitted', summary?.admitted ?? 0],
+    ['Quarantined', summary?.quarantined ?? 0],
+    ['Tombstones', summary?.tombstones ?? 0],
+    ['Builds', summary?.builds ?? 0],
+  ] as const
+  return (
+    <div className="page-stack">
+      <section className="metric-grid" aria-label="Data provenance summary">
+        {metrics.map(([label, value]) => (
+          <article className="metric-card" key={label}>
+            <span>{label}</span>
+            <strong>{value.toLocaleString()}</strong>
+            <small>Private local provenance store</small>
+          </article>
+        ))}
+      </section>
+      <section className="panel table-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>{summary?.sources.length ?? 0} rights-reviewed sources</h2>
+            <p>
+              Registration is immutable. Unknown rights never imply permission to train or release.
+            </p>
+          </div>
+          <div className="button-row">
+            <button className="ghost-button" type="button" onClick={() => onNew('data_audit')}>Audit</button>
+            <button className="ghost-button" type="button" onClick={() => onNew('data_build')}>Build</button>
+            <button className="primary-button" type="button" onClick={() => onNew('data_ingest')}>Ingest</button>
+          </div>
+        </div>
+        {(summary?.integrity_errors.length ?? 0) > 0 && (
+          <div className="error-banner" role="alert">
+            {summary?.integrity_errors.length} integrity error(s) require operator review.
+          </div>
+        )}
+        {!summary || summary.sources.length === 0 ? (
+          <EmptyState>No source is registered. Queue a data-ingestion job with a reviewed registration file.</EmptyState>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Source</th><th>Steward</th><th>License</th><th>Allowed uses</th><th>Risk</th></tr></thead>
+              <tbody>
+                {summary.sources.map((source) => (
+                  <tr key={source.id}>
+                    <td className="source-cell"><strong>{source.title}</strong><span>{source.id}</span></td>
+                    <td>{source.owner_or_steward}</td>
+                    <td><code>{source.license_id}</code></td>
+                    <td>{source.allowed_uses.join(' · ')}</td>
+                    <td><StatusPill status={source.sensitive_content_risk} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   )
 }
 
@@ -945,13 +1032,15 @@ export function JobForm({
         onKeyDown={onDialogKeyDown}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="drawer-head"><div><h2 id="queue-job-title">Queue a local job</h2><p>Only the four allowlisted job types can be started.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div>
+        <div className="drawer-head"><div><h2 id="queue-job-title">Queue a local job</h2><p>Only the covenant-declared typed jobs listed here can start.</p></div><button type="button" className="icon-button" onClick={onClose} aria-label="Close">×</button></div>
         <label className="form-field"><span>Job type</span><select aria-label="Job type" aria-describedby="queue-job-description" data-dialog-initial-focus value={type} onChange={(event) => setType(event.target.value as JobType)}>{definitions.map((item) => <option value={item.type} key={item.type}>{item.title}</option>)}</select><small id="queue-job-description">{definition?.description}</small></label>
         <div className="form-grid">
           {Object.entries(definition?.schema.properties ?? {}).map(([name, property]) => {
             const resolved = effectiveProperty(property)
             const propertyType = schemaPropertyType(resolved)
-            return propertyType === 'boolean' ? (
+            return resolved.enum && resolved.enum.length > 0 ? (
+              <label className="form-field" key={name}><span>{property.title ?? titleCase(name)}</span><select required={definition?.schema.required?.includes(name)} value={String(values[name] ?? '')} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}><option value="">Select…</option>{resolved.enum.map((option) => <option key={String(option)} value={String(option)}>{titleCase(String(option))}</option>)}</select></label>
+            ) : propertyType === 'boolean' ? (
               <label className="checkbox-field" key={name}><input type="checkbox" checked={Boolean(values[name])} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.checked }))} /><span>{property.title ?? titleCase(name)}</span></label>
             ) : (
               <label className="form-field" key={name}><span>{property.title ?? titleCase(name)}</span><input required={definition?.schema.required?.includes(name)} type={propertyType === 'integer' || propertyType === 'number' ? 'number' : 'text'} min={resolved.minimum} max={resolved.maximum} value={String(values[name] ?? '')} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))} /></label>
@@ -1002,6 +1091,7 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null)
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
   const [research, setResearch] = useState<ResearchCatalog | null>(null)
+  const [dataSummary, setDataSummary] = useState<DataSummary | null>(null)
   const [models, setModels] = useState<ModelFamily[]>([])
   const [definitions, setDefinitions] = useState<JobTypeDefinition[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
@@ -1041,10 +1131,10 @@ export default function App() {
 
   useEffect(() => {
     let disposed = false
-    Promise.all([api.capabilities(), api.research(), api.models(), api.jobTypes()])
-      .then(([nextCapabilities, nextResearch, nextModels, nextDefinitions]) => {
+    Promise.all([api.capabilities(), api.research(), api.data(), api.models(), api.jobTypes()])
+      .then(([nextCapabilities, nextResearch, nextData, nextModels, nextDefinitions]) => {
         if (disposed) return
-        setCapabilities(nextCapabilities); setResearch(nextResearch); setModels(nextModels); setDefinitions(nextDefinitions)
+        setCapabilities(nextCapabilities); setResearch(nextResearch); setDataSummary(nextData); setModels(nextModels); setDefinitions(nextDefinitions)
       })
       .catch((caught: unknown) => { if (!disposed) setError(caught instanceof Error ? caught.message : 'Could not connect to the control API') })
     return () => { disposed = true }
@@ -1142,6 +1232,7 @@ export default function App() {
               }
             />
           )}
+          {page === 'data' && <DataPage summary={dataSummary} onNew={(type) => startJob({ type })} />}
           {page === 'jobs' && <JobsPage jobs={jobs.filter((job) => !trainingTypes.has(job.type))} onSelect={(job) => setSelectedId(job.id)} onNew={() => startJob({})} canQueue={identity.authenticated} />}
           {page === 'safety' && <SafetyPage identity={identity} />}
           {page === 'access' && (
