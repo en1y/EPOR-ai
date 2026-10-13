@@ -72,6 +72,7 @@ class DataStore:
             "tombstones",
             "filtered",
             "builds",
+            "tokenizers",
             "audit/ingest",
             "tmp",
         ):
@@ -203,6 +204,18 @@ class DataStore:
         if name.startswith("/") or ".." in Path(name).parts:
             raise DataStoreError("build artifact path must remain inside the build")
         target = self.build_path(dataset_id, build_id) / name
+        self._write_immutable(target, payload)
+        return target
+
+    def tokenizer_path(self, tokenizer_id: str) -> Path:
+        if len(tokenizer_id) != 64 or not all(c in "0123456789abcdef" for c in tokenizer_id):
+            raise DataStoreError("tokenizer IDs are lowercase SHA-256 hex digests")
+        return self.root / "tokenizers" / tokenizer_id
+
+    def write_tokenizer_file(self, tokenizer_id: str, name: str, payload: bytes) -> Path:
+        if "/" in name or name in {"", ".", ".."}:
+            raise DataStoreError("tokenizer artifact names must be plain file names")
+        target = self.tokenizer_path(tokenizer_id) / name
         self._write_immutable(target, payload)
         return target
 
