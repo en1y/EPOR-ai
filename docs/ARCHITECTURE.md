@@ -108,17 +108,30 @@ status.
 
 ## Training and scale-out
 
-The single-process loop remains the correctness oracle. Future distributed work
-uses composable FSDP2 and distributed checkpointing, with DDP and exact RNG/data
-cursor resume tested before scale. Provider-specific CUDA, ROCm, JAX, Triton,
-and Hopper stacks live in separate locked environments.
+The single-process loop remains the correctness oracle. The v0.0.5 training
+kernel (`epor.training.kernel`) trains on verified token shards with packed,
+token-budgeted batches, AdamW with warmup and cosine decay, BF16 autocast,
+accumulation, activation checkpointing, and DDP or FSDP2 over CPU `gloo`. Loss
+is normalized by the global step's target tokens, so gradients are independent
+of world size and accumulation. Checkpoints go through
+`torch.distributed.checkpoint` and are hashed and promoted atomically, so one
+topology's checkpoint resumes exactly under another; the data cursor and RNG are
+part of every checkpoint. Local multi-rank runs rendezvous through a private
+file store with sockets pinned to loopback. See [`TRAINING.md`](TRAINING.md)
+for the exact-resume contract, what agrees bitwise and what within tolerance,
+and the limitations. Provider-specific CUDA, ROCm, JAX, Triton, and Hopper
+stacks live in separate locked environments.
 
 The executable v0.0.1 reference path shares one allocation-free policy across
 the CLI and control worker. It rejects non-reference or over-50M recipes before
 model construction, caps the in-memory corpus and trusted checkpoint before
 loading, and bounds steps, evaluation batches, and batch tokens. Direct CLI
 paths additionally remain under `EPOR_PROJECT_ROOT`; target-family recipes are
-metadata/meta-device planning inputs and cannot enter this runtime.
+metadata/meta-device planning inputs and cannot enter this runtime. The
+kernel has its own bounds (dense only, at most 50M parameters, 100,000 steps,
+and 1,048,576 tokens per step) and never resizes a shipped recipe: training on a
+tokenized build's vocabulary uses an explicitly derived config with its own
+hash.
 
 The reference RX 5700 XT is an inference target through llama.cpp/Vulkan with a
 CPU fallback. It is not a required PyTorch training device.
@@ -127,8 +140,9 @@ CPU fallback. It is not a required PyTorch training device.
 
 The API, worker, and UI are separate processes. Typed job specifications include
 the original probe/research/reference-training jobs, v0.0.3's `data_ingest`,
-`data_build`, `data_remove`, and `data_audit`, and v0.0.4's `tokenizer_train`,
-`tokenizer_shard`, and `tokenizer_evaluate`. The API never evaluates a client
+`data_build`, `data_remove`, and `data_audit`, v0.0.4's `tokenizer_train`,
+`tokenizer_shard`, and `tokenizer_evaluate`, and v0.0.5's single-process
+`kernel_train` and `kernel_evaluate`. The API never evaluates a client
 command, fetches an arbitrary data URL, or exposes a general filesystem browser.
 
 Admission is the covenant chokepoint. `JobService.create_job` resolves the
@@ -140,8 +154,8 @@ does not permit. The worker re-resolves at dispatch so a job admitted under an
 earlier covenant cannot execute under a later one. The CLI shares that registry
 rather than keeping its own, through a single command-to-action table, so
 `doctor`, `config validate`, `research sync|verify|index`, `data
-ingest|build|remove|audit`, `train
-pretrain|resume`, `eval run`, and `generate` are governed identically despite
+ingest|build|remove|audit`, `tokenizer train|shard|evaluate`, `train
+pretrain|resume|kernel|kernel-resume`, `eval run|kernel`, and `generate` are governed identically despite
 never touching the control plane. They also share the reference-runtime limits
 described above, so the declaration's resource assumptions hold on either
 route. Stopping work is never gated: the second principle outranks the third,

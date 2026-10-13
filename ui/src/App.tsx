@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccessPage, SignInDialog } from './AccessPage'
 import { DocsPage } from './DocsPage'
 import { SafetyPage } from './SafetyPage'
+import { KernelRunsPanel, latestTokenizedBuild } from './KernelRuns'
 import { TokenizerPage } from './TokenizerPage'
 import { api } from './api'
 import {
@@ -27,7 +28,9 @@ import type {
   JsonSchemaProperty,
   ModelFamily,
   ResearchCatalog,
+  TokenizedBuild,
   TokenizerSummary,
+  TrainingSummary,
 } from './types'
 
 const anonymousIdentity: Identity = {
@@ -58,7 +61,7 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   },
   training: {
     title: 'Training',
-    summary: 'Reference training and evaluation runs, their loss, and the checkpoints they wrote.',
+    summary: 'Kernel and reference training runs, their loss, and the checkpoints they wrote.',
   },
   data: {
     title: 'Data engine',
@@ -107,7 +110,8 @@ const terminalStatuses = new Set<JobStatus>([
   'interrupted',
 ])
 
-const trainingTypes = new Set<JobType>(['tiny_train', 'tiny_eval'])
+const trainingTypes = new Set<JobType>(['kernel_train', 'kernel_evaluate', 'tiny_train', 'tiny_eval'])
+const trainJobTypes = new Set<JobType>(['kernel_train', 'tiny_train'])
 const jobDetailPollMilliseconds = 1_800
 const healthPollMilliseconds = 5_000
 
@@ -697,20 +701,34 @@ export function LossChart({ points }: { points: { step: number; loss: number }[]
   )
 }
 
+function runLabel(type: JobType): string {
+  if (type === 'kernel_train') return 'Kernel training'
+  if (type === 'kernel_evaluate') return 'Kernel evaluation'
+  return type === 'tiny_train' ? 'Training' : 'Evaluation'
+}
+
 export function TrainingPage({
   jobs,
   onSelect,
   onTrain,
   onEvaluate,
+  kernelSummary = null,
+  kernelError = null,
+  tokenized = null,
+  onNew = () => undefined,
 }: {
   jobs: Job[]
   onSelect: (job: Job) => void
   onTrain: () => void
   onEvaluate: (checkpointPath: string) => void
+  kernelSummary?: TrainingSummary | null
+  kernelError?: string | null
+  tokenized?: TokenizedBuild | null
+  onNew?: (type: JobType, values?: Record<string, FormValue>) => void
 }) {
   const runs = jobs.filter((job) => trainingTypes.has(job.type))
-  const trainRuns = runs.filter((job) => job.type === 'tiny_train')
-  const evaluations = runs.filter((job) => job.type === 'tiny_eval')
+  const trainRuns = runs.filter((job) => trainJobTypes.has(job.type))
+  const evaluations = runs.filter((job) => !trainJobTypes.has(job.type))
   const lastLoss = trainRuns.map((job) => numberField(job.result, 'final_loss')).find(
     (value) => value !== null,
   )
@@ -719,14 +737,14 @@ export function TrainingPage({
     <div className="page-stack">
       <section className="metric-grid" aria-label="Training summary">
         <article className="metric-card">
-          <span>Training runs</span>
+          <span>Training jobs</span>
           <strong>{trainRuns.length}</strong>
-          <small>Reference trainer, CPU only</small>
+          <small>Kernel and reference, CPU only</small>
         </article>
         <article className="metric-card">
-          <span>Evaluations</span>
+          <span>Evaluation jobs</span>
           <strong>{evaluations.length}</strong>
-          <small>Against the fixture corpus</small>
+          <small>Kernel splits and the fixture corpus</small>
         </article>
         <article className="metric-card">
           <span>Latest final loss</span>
@@ -740,17 +758,25 @@ export function TrainingPage({
         </article>
       </section>
 
+      <KernelRunsPanel
+        summary={kernelSummary}
+        error={kernelError}
+        tokenized={tokenized}
+        onNew={onNew}
+      />
+
       <section className="panel table-panel">
         <div className="panel-heading">
           <div>
-            <h2>Runs</h2>
+            <h2>Training and evaluation jobs</h2>
             <p>
-              Fixture-scale reference training, capped at 50M parameters and a 1 MiB corpus. These
-              are contract tests for the pipeline, not model results.
+              Every kernel and reference job, for progress and cancellation. The v0.0.1 reference
+              trainer is fixture-scale (50M parameters, 1 MiB corpus): a pipeline contract test,
+              not a model result.
             </p>
           </div>
           <button className="primary-button" type="button" onClick={onTrain}>
-            Start a training run
+            Start a reference run
           </button>
         </div>
         {runs.length === 0 ? (
@@ -775,11 +801,15 @@ export function TrainingPage({
               </thead>
               <tbody>
                 {runs.map((job) => {
-                  const isTrain = job.type === 'tiny_train'
-                  const checkpoint = textField(job.result, 'checkpoint_path')
+                  const isTrain = trainJobTypes.has(job.type)
+                  const isKernel = job.type === 'kernel_train' || job.type === 'kernel_evaluate'
+                  const checkpoint = textField(job.result, isKernel ? 'output_path' : 'checkpoint_path')
                   const steps = isTrain
                     ? numberField(job.result, 'steps_completed')
-                    : numberField(job.result, 'batches')
+                    : numberField(job.result, isKernel ? 'steps' : 'batches')
+                  const lossValue = isTrain
+                    ? numberField(job.result, 'final_loss')
+                    : numberField(job.result, isKernel ? 'main_loss' : 'loss')
                   return (
                     <tr className="clickable-row" key={job.id} onClick={() => onSelect(job)}>
                       <td className="job-name">
@@ -788,7 +818,7 @@ export function TrainingPage({
                           className="job-row-trigger"
                           aria-label={`Open ${titleCase(job.type)} run ${shortId(job.id)} (${titleCase(job.status)})`}
                         >
-                          <strong>{isTrain ? 'Training' : 'Evaluation'}</strong>
+                          <strong>{runLabel(job.type)}</strong>
                           <code>{shortId(job.id)}</code>
                         </button>
                       </td>
@@ -800,7 +830,7 @@ export function TrainingPage({
                         {!isTrain && steps !== null ? ' batches' : ''}
                       </td>
                       <td className="numeric-cell">
-                        {formatLoss(numberField(job.result, isTrain ? 'final_loss' : 'loss'))}
+                        {formatLoss(lossValue)}
                       </td>
                       <td className="numeric-cell">
                         {formatLoss(numberField(job.result, 'perplexity'))}
@@ -813,7 +843,8 @@ export function TrainingPage({
                             className="ghost-button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              onEvaluate(checkpoint)
+                              if (isKernel) onNew('kernel_evaluate', { checkpoint_path: checkpoint })
+                              else onEvaluate(checkpoint)
                             }}
                           >
                             Evaluate
@@ -1104,6 +1135,8 @@ export default function App() {
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null)
   const [tokenizerSummary, setTokenizerSummary] = useState<TokenizerSummary | null>(null)
   const [tokenizerError, setTokenizerError] = useState<string | null>(null)
+  const [trainingSummary, setTrainingSummary] = useState<TrainingSummary | null>(null)
+  const [trainingError, setTrainingError] = useState<string | null>(null)
   const [models, setModels] = useState<ModelFamily[]>([])
   const [definitions, setDefinitions] = useState<JobTypeDefinition[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
@@ -1153,7 +1186,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (page !== 'tokenizer' && tokenizerSummary !== null) return
+    if (page !== 'tokenizer' && page !== 'training' && tokenizerSummary !== null) return
     let disposed = false
     // Fetched on its own so a missing optional data profile cannot blank the console.
     api.tokenizers()
@@ -1161,6 +1194,19 @@ export default function App() {
       .catch((caught: unknown) => { if (!disposed) setTokenizerError(caught instanceof Error ? caught.message : 'Could not load tokenizer artifacts') })
     return () => { disposed = true }
     // Refresh whenever the page is opened; the summary itself is not a trigger.
+  }, [page])
+
+  useEffect(() => {
+    if (page !== 'training') return
+    let disposed = false
+    const refreshTraining = () => {
+      api.trainingRuns()
+        .then((next) => { if (!disposed) { setTrainingSummary(next); setTrainingError(null) } })
+        .catch((caught: unknown) => { if (!disposed) setTrainingError(caught instanceof Error ? caught.message : 'Could not load training runs') })
+    }
+    refreshTraining()
+    const timer = window.setInterval(refreshTraining, healthPollMilliseconds)
+    return () => { disposed = true; window.clearInterval(timer) }
   }, [page])
 
   useEffect(() => {
@@ -1253,6 +1299,13 @@ export default function App() {
               onEvaluate={(checkpointPath) =>
                 startJob({ type: 'tiny_eval', values: { checkpoint_path: checkpointPath } })
               }
+              kernelSummary={trainingSummary}
+              kernelError={trainingError}
+              tokenized={latestTokenizedBuild(
+                tokenizerSummary?.tokenized_builds ?? [],
+                dataSummary?.latest_builds ?? {},
+              )}
+              onNew={(type, values) => startJob({ type, values })}
             />
           )}
           {page === 'data' && <DataPage summary={dataSummary} onNew={(type) => startJob({ type })} />}

@@ -271,6 +271,9 @@ def test_every_executing_cli_command_maps_to_a_reviewed_declaration(covenant: Co
         "tokenizer train": "tokenizer_train",
         "tokenizer shard": "tokenizer_shard",
         "tokenizer evaluate": "tokenizer_evaluate",
+        "train kernel": "kernel_train",
+        "train kernel-resume": "kernel_train",
+        "eval kernel": "kernel_evaluate",
     }.items() <= CLI_ACTIONS.items()
     for command, action_id in CLI_ACTIONS.items():
         assert action_id in DECLARED_ACTIONS, command
@@ -287,6 +290,34 @@ def test_tokenizer_work_requires_its_own_delegated_scope(covenant: Covenant) -> 
         assert refused.binding_priority == 2
         scoped = Actor(id="tok", role=Role.DELEGATED_OPERATOR, scopes=frozenset({action_id}))
         assert resolve_action(action_id, covenant, actor=scoped).outcome == "allow"
+
+
+def test_kernel_work_requires_its_own_delegated_scope(covenant: Covenant) -> None:
+    from epor.control.authority import Actor, Role
+
+    # Scope to shard a build does not stretch to training on it, and scope to
+    # evaluate a checkpoint does not stretch to producing one.
+    sharder = Actor(
+        id="sharder", role=Role.DELEGATED_OPERATOR, scopes=frozenset({"tokenizer_shard"})
+    )
+    evaluator = Actor(
+        id="eval", role=Role.DELEGATED_OPERATOR, scopes=frozenset({"kernel_evaluate"})
+    )
+    for actor, action_id in ((sharder, "kernel_train"), (evaluator, "kernel_train")):
+        refused = resolve_action(action_id, covenant, actor=actor)
+        assert refused.outcome == "refuse", (actor.id, action_id)
+        assert refused.binding_priority == 2
+    for action_id in ("kernel_train", "kernel_evaluate"):
+        scoped = Actor(id="k", role=Role.DELEGATED_OPERATOR, scopes=frozenset({action_id}))
+        assert resolve_action(action_id, covenant, actor=scoped).outcome == "allow"
+
+
+def test_kernel_declarations_state_their_boundaries() -> None:
+    train = DECLARED_ACTIONS["kernel_train"]
+    rationale = " ".join(item.rationale for item in train.assessments)
+    # The declaration must be defensible in review, so its limits are explicit.
+    for phrase in ("loopback", "fault-injection", "without ever being gated", "no paid compute"):
+        assert phrase in rationale, phrase
 
 
 def test_undeclared_work_escalates_instead_of_running(covenant: Covenant) -> None:

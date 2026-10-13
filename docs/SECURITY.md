@@ -27,6 +27,12 @@ bind to loopback. It is not an internet-facing multi-tenant service.
 - Standalone reference execution uses the same 50M-model, corpus, checkpoint,
   step, evaluation, and batch-token limits as control jobs. Its inputs and
   outputs resolve beneath `EPOR_PROJECT_ROOT` before any allocation or write.
+- The v0.0.5 training kernel trains only on hash-verified token shards, refuses
+  tampered checkpoints before loading any tensor, and keeps CLI paths beneath
+  `EPOR_PROJECT_ROOT` and job paths beneath the artifact root. Local DDP/FSDP2
+  ranks rendezvous through a private `0700` file store and bind gloo sockets to
+  loopback only; no EPOR surface opens a `TCPStore` server. Fault injection is a
+  test instrument that no CLI option or job spec accepts.
 - The worker dispatches typed allowlisted jobs and never executes a supplied
   shell string.
 - Every job passes covenant admission before its specification is parsed, and

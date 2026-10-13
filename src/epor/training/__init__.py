@@ -13,6 +13,22 @@ from epor.models.config import load_model_config, validate_config
 
 from .checkpoint import load_checkpoint
 from .data import DEFAULT_FIXTURE_CORPUS, RandomBatchStream, load_token_corpus
+from .distributed import (
+    DistributedContext,
+    DistributedStrategy,
+    destroy_distributed,
+    init_distributed,
+    launch_local,
+)
+from .faults import FaultPlan, InjectedFault, fault_plan_from_env
+from .kernel import (
+    PackedEvaluation,
+    PackedEvaluationResult,
+    PackedTrainingResult,
+    PackedTrainingSettings,
+    evaluate_packed_checkpoint,
+    pretrain_packed,
+)
 from .loop import (
     EvaluationResult,
     GenerationResult,
@@ -23,6 +39,19 @@ from .loop import (
     generate,
     pretrain,
 )
+from .optim import OptimizerSettings, learning_rate_at
+from .packing import (
+    PIPELINE_VERSION,
+    BatchGeometry,
+    DataPipelineSettings,
+    PackedBatch,
+    PackedBatchStream,
+    PackedStep,
+    RowSegment,
+    evaluation_steps,
+)
+from .run_checkpoint import CheckpointError, latest_checkpoint, read_kernel_checkpoint
+from .shard_data import ShardCorpus
 
 
 def resume_pretraining(
@@ -46,18 +75,46 @@ def resume_pretraining(
 
 __all__ = [
     "DEFAULT_FIXTURE_CORPUS",
+    "PIPELINE_VERSION",
+    "BatchGeometry",
+    "CheckpointError",
+    "DataPipelineSettings",
+    "DistributedContext",
+    "DistributedStrategy",
     "EvaluationResult",
+    "FaultPlan",
     "GenerationResult",
+    "InjectedFault",
+    "OptimizerSettings",
+    "PackedBatch",
+    "PackedBatchStream",
+    "PackedEvaluation",
+    "PackedEvaluationResult",
+    "PackedStep",
+    "PackedTrainingResult",
+    "PackedTrainingSettings",
     "RandomBatchStream",
+    "RowSegment",
+    "ShardCorpus",
     "TrainingCancelled",
     "TrainingResult",
     "TrainingSettings",
+    "destroy_distributed",
     "evaluate",
+    "evaluate_packed_checkpoint",
+    "evaluation_steps",
+    "fault_plan_from_env",
     "generate",
+    "init_distributed",
+    "latest_checkpoint",
+    "launch_local",
+    "learning_rate_at",
     "load_checkpoint",
     "load_model_config",
     "load_token_corpus",
     "pretrain",
+    "pretrain_packed",
+    "read_kernel_checkpoint",
     "resume_pretraining",
     "validate_config",
 ]

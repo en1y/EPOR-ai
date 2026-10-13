@@ -276,6 +276,44 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
             "cooperative cancellation"
         ),
     ),
+    "kernel_train": _declared(
+        "pretrain a bounded dense model on one verified tokenized build",
+        people=(
+            "reads only token shards of a tokenized build that verifies against its content "
+            "hashes and was cut from reviewed, training-eligible data after removal and "
+            "tombstone controls; the model is a local proxy-scale research artifact of at most "
+            "50M parameters that is neither released, served, nor used to generate text here, "
+            f"and nothing is published; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every setting is typed and bounded by the kernel policy "
+            "(dense only, at most 50M parameters, 100k steps, and 1,048,576 tokens per step), "
+            "token IDs are only ever counted and embedded, never interpreted as instructions, "
+            "and no surface accepts a fault-injection plan"
+        ),
+        system=(
+            "local CPU only with no paid compute; distributed ranks are spawned on this machine "
+            "and listen on loopback alone; checkpoints are hashed and promoted atomically, "
+            "resume refuses any change to the trajectory, and cooperative cancellation "
+            "checkpoints the last completed step without ever being gated"
+        ),
+    ),
+    "kernel_evaluate": _declared(
+        "measure a kernel checkpoint's loss on one tokenized split",
+        people=(
+            "reads a hash-verified local checkpoint and one split of a verified tokenized build "
+            "and records only aggregate losses, perplexity, and token counts, never text; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; the report names its checkpoint and split and is labelled a "
+            "proxy-scale measurement rather than a validated result"
+        ),
+        system=(
+            "read-only over the checkpoint and shards, single process, bounded batches, an "
+            "atomically written report, and cooperative cancellation"
+        ),
+    ),
     "owner_bootstrap": _declared(
         "mint the single local owner credential on first run",
         people=(
@@ -313,7 +351,10 @@ CLI_ACTIONS: dict[str, str] = {
     "tokenizer evaluate": "tokenizer_evaluate",
     "train pretrain": "tiny_train",
     "train resume": "tiny_train",
+    "train kernel": "kernel_train",
+    "train kernel-resume": "kernel_train",
     "eval run": "tiny_eval",
+    "eval kernel": "kernel_evaluate",
     "generate": "generate",
     "api": "control_api_start",
     "worker": "job_worker_start",

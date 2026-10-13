@@ -11,6 +11,9 @@
 - [Original tokenizer and token shards](TOKENIZER.md) — v0.0.4 reserved-ID
   layout, train-split-only training, shard and report formats, removal, and
   evidence boundaries.
+- [Training kernel](TRAINING.md) — v0.0.5 packed batching, optimizer and
+  precision, DDP/FSDP2 on CPU, checkpoints and the exact-resume contract, fault
+  injection, operator surfaces, and limitations.
 - [Compute policy](COMPUTE_POLICY.md) — cheap-first experiments, approval gates,
   abort rules, and hardware profiles.
 - [Contributing](CONTRIBUTING.md) — environment, tests, claim discipline, and
@@ -25,5 +28,6 @@ Downloaded bytes, extracted text, and local indexes live under ignored
 `research/raw/`, `research/extracted/`, and `research/cache/` directories.
 
 No target-size model or target-scale tokenizer has been trained or released by
-v0.0.4. Parameter counts, context lengths, vocabulary targets, and architecture
-descriptions are plans until their named gates produce measured artifacts.
+v0.0.5; kernel runs so far are proxy-scale local measurements. Parameter counts,
+context lengths, vocabulary targets, and architecture descriptions are plans
+until their named gates produce measured artifacts.

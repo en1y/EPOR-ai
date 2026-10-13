@@ -266,7 +266,8 @@ main { min-width: 0; }
 
 /* ----- tables ----- */
 
-.table-scroll { overflow-x: auto; }
+/* Positioned so visually hidden cells (e.g. an sr-only header) stay inside the scroller. */
+.table-scroll { position: relative; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th {
   padding: 10px 16px; text-align: left; white-space: nowrap;
