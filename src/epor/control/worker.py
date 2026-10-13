@@ -331,6 +331,94 @@ def _data_audit(context: WorkerContext, _spec: dict[str, Any]) -> dict[str, Any]
     return {**result, "report_artifact": str(artifact)}
 
 
+def _tokenizer_api() -> Any:
+    try:
+        import epor.tokenizer as tokenizer
+    except ImportError as exc:
+        raise RuntimeError(
+            "tokenizer support is unavailable; sync the data dependency profile"
+        ) from exc
+    return tokenizer
+
+
+def _tokenizer_train(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]:
+    tokenizer = _tokenizer_api()
+    settings = context.service.settings
+    assert settings.data_root is not None
+    context.progress(0.05, message="Training on the build's train split")
+    trained = tokenizer.train_tokenizer(
+        settings.data_root,
+        str(spec["dataset_id"]),
+        str(spec["build_id"]),
+        vocab_size=int(spec["vocab_size"]),
+        min_frequency=int(spec["min_frequency"]),
+        check_cancelled=context.raise_if_cancelled,
+    )
+    summary = tokenizer.describe_tokenizer(trained.tokenizer_id, trained.manifest)
+    artifact = _write_data_artifact(
+        context, "tokenizer-train.json", summary, media_type="application/json"
+    )
+    context.progress(1.0, message="Tokenizer artifact stored")
+    return {**summary, "report_artifact": str(artifact)}
+
+
+def _tokenizer_shard(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]:
+    tokenizer = _tokenizer_api()
+    settings = context.service.settings
+    assert settings.data_root is not None
+    context.progress(0.05, message="Encoding build splits into token shards")
+    result = tokenizer.build_token_shards(
+        settings.data_root,
+        str(spec["dataset_id"]),
+        str(spec["build_id"]),
+        str(spec["tokenizer_id"]),
+        max_shard_tokens=int(spec["max_shard_tokens"]),
+        check_cancelled=context.raise_if_cancelled,
+    )
+    summary = {
+        **tokenizer.describe_tokenized(result.tokenized_id, result.manifest),
+        "created": result.created,
+    }
+    artifact = _write_data_artifact(
+        context, "token-shards.json", summary, media_type="application/json"
+    )
+    context.progress(1.0, message="Token shards stored")
+    return {**summary, "report_artifact": str(artifact)}
+
+
+def _tokenizer_evaluate(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any]:
+    tokenizer = _tokenizer_api()
+    settings = context.service.settings
+    assert settings.data_root is not None
+    context.progress(0.05, message=f"Measuring fertility on the {spec['split']} split")
+    report = tokenizer.evaluate_tokenizer(
+        settings.data_root,
+        str(spec["tokenizer_id"]),
+        str(spec["dataset_id"]),
+        str(spec["build_id"]),
+        split=spec["split"],
+        check_cancelled=context.raise_if_cancelled,
+    )
+    summary = tokenizer.describe_report(report)
+    artifact = _write_data_artifact(
+        context, "tokenizer-fertility.json", summary, media_type="application/json"
+    )
+    if report.in_sample:
+        context.log(
+            "in-sample measurement on the tokenizer's own training split; "
+            "it does not describe held-out fertility",
+            level="warning",
+        )
+    context.progress(1.0, message="Fertility report stored")
+    if report.round_trip_failures:
+        # The report is kept for review, but the gate must not pass silently.
+        raise RuntimeError(
+            f"{report.round_trip_failures} document(s) failed exact byte round-trip; "
+            f"report {report.report_id}"
+        )
+    return {**summary, "report_artifact": str(artifact)}
+
+
 def _file_sha256(path: Path) -> str:
     import hashlib
 
@@ -380,6 +468,9 @@ DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.DATA_BUILD: _data_build,
     JobType.DATA_REMOVE: _data_remove,
     JobType.DATA_AUDIT: _data_audit,
+    JobType.TOKENIZER_TRAIN: _tokenizer_train,
+    JobType.TOKENIZER_SHARD: _tokenizer_shard,
+    JobType.TOKENIZER_EVALUATE: _tokenizer_evaluate,
     JobType.TINY_TRAIN: _training_handler("tiny_train"),
     JobType.TINY_EVAL: _training_handler("tiny_eval"),
 }
