@@ -39,7 +39,18 @@ HARNESS_VERSION = "epor-eval-harness-v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 MeasurementScope = Literal["harness-fixture", "proxy-scale"]
-TaskType = Literal["multiple-choice", "exact-match", "math", "code", "validation-loss"]
+TaskType = Literal[
+    "multiple-choice",
+    "exact-match",
+    "math",
+    "code",
+    "validation-loss",
+    "safety-preference",
+    "safety-rubric",
+    "contamination",
+    "memorization",
+    "canary-exposure",
+]
 JsonScalar = str | int | float | bool | None
 
 CLAIM_BOUNDARIES: dict[str, str] = {
@@ -113,9 +124,13 @@ class TaskResult(_Frozen):
 
 
 class ModelIdentity(_Frozen):
-    """What was evaluated: config and checkpoint hashes, tokenizer, scoring settings."""
+    """What was evaluated: config and checkpoint hashes, tokenizer, scoring settings.
 
-    kind: Literal["kernel-checkpoint", "in-memory-decoder", "stub"]
+    ``data-only`` marks a report that scored no model (a contamination scan of
+    evaluation items against a training build).
+    """
+
+    kind: Literal["kernel-checkpoint", "in-memory-decoder", "stub", "data-only"]
     model_id: str = Field(min_length=1, max_length=200)
     config_sha256: Sha256 | None = None
     checkpoint_sha256: Sha256 | None = None
