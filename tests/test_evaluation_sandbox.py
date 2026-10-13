@@ -156,3 +156,24 @@ def test_degraded_sandbox_reports_missing_isolation_and_requires_opt_in() -> Non
     with pytest.raises(CodeExecutionRefusedError, match="allow_unisolated_network"):
         require_isolation(degraded, allow_unisolated_network=False)
     require_isolation(degraded, allow_unisolated_network=True)
+
+
+def test_a_failed_namespace_setup_falls_back_and_still_needs_the_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Simulates a kernel where unshare() succeeds but the ID mapping is denied
+    # (Ubuntu's AppArmor restriction): the launcher exits before exec.
+    import epor.evaluation.sandbox as sandbox_module
+
+    failing = (
+        "import json, os, sys\nif json.loads(sys.argv[1])['try_namespaces']:\n    os._exit(125)\n"
+    )
+    monkeypatch.setattr(sandbox_module, "_LAUNCHER", failing + sandbox_module._LAUNCHER)
+    result = _sandbox(tmp_path).run("print('ran')\n")
+    # The candidate ran only in the degraded sandbox; the failed attempt never exec'ed it.
+    assert result.status == "passed" and result.stdout == "ran\n"
+    assert result.isolation.network_isolated is False
+    assert result.isolation.process_limit_scope == "global-user"
+    assert result.isolation.notes[0].startswith("user namespace setup failed")
+    with pytest.raises(CodeExecutionRefusedError, match="allow_unisolated_network"):
+        require_isolation(result.isolation, allow_unisolated_network=False)

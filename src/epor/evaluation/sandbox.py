@@ -77,6 +77,10 @@ class SandboxError(RuntimeError):
     """The sandbox could not be prepared, or running a candidate was refused."""
 
 
+class LauncherSetupError(SandboxError):
+    """The launcher exited before reporting isolation, so no candidate code ran."""
+
+
 class CodeExecutionRefusedError(SandboxError):
     """Code execution was not explicitly enabled, or isolation was insufficient."""
 
@@ -320,11 +324,28 @@ class CodeSandbox:
             outputs.mkdir(mode=0o700)
             script = workdir / "candidate.py"
             script.write_text(source, encoding="utf-8")
-            return self._execute(workdir, outputs, script)
+            try:
+                return self._execute(workdir, outputs, script, self.use_namespaces)
+            except LauncherSetupError:
+                if not self.use_namespaces:
+                    raise
+            # Some kernels let unshare() succeed but then deny the ID mapping
+            # (Ubuntu's AppArmor restriction on unprivileged user namespaces).
+            # The launcher stops before exec, so the candidate never ran; run
+            # it once more without namespaces and record what was lost.  The
+            # degraded result still needs the separate network opt-in.
+            result = self._execute(workdir, outputs, script, False)
+            note = "user namespace setup failed before the candidate ran; ran without namespaces"
+            isolation = result.isolation.model_copy(
+                update={"notes": [note, *result.isolation.notes]}
+            )
+            return result.model_copy(update={"isolation": isolation})
         finally:
             shutil.rmtree(container, ignore_errors=True)
 
-    def _execute(self, workdir: Path, outputs: Path, script: Path) -> SandboxResult:
+    def _execute(
+        self, workdir: Path, outputs: Path, script: Path, use_namespaces: bool
+    ) -> SandboxResult:
         limits = self.limits
         env = {
             "PATH": "/usr/bin:/bin",
@@ -341,7 +362,7 @@ class CodeSandbox:
             "open_files": limits.open_files,
             "processes": limits.processes,
             "current_user_processes": _current_user_processes(),
-            "try_namespaces": self.use_namespaces,
+            "try_namespaces": use_namespaces,
             "try_landlock": self.use_landlock,
             "workdir": str(workdir),
             "script": str(script),
@@ -374,7 +395,7 @@ class CodeSandbox:
         with os.fdopen(status_read, "rb") as status_stream:
             status_bytes = status_stream.read(64 * 1024)
         if not status_bytes:
-            raise SandboxError("sandbox launcher failed before reporting its isolation")
+            raise LauncherSetupError("sandbox launcher failed before reporting its isolation")
         isolation = SandboxIsolation.model_validate(json.loads(status_bytes))
         stdout_text, stdout_truncated = _read_bounded(stdout_path, limits.max_output_bytes)
         stderr_text, stderr_truncated = _read_bounded(stderr_path, limits.max_output_bytes)
@@ -427,6 +448,7 @@ __all__ = [
     "SANDBOX_VERSION",
     "CodeExecutionRefusedError",
     "CodeSandbox",
+    "LauncherSetupError",
     "SandboxError",
     "SandboxIsolation",
     "SandboxLimits",
