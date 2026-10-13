@@ -202,3 +202,31 @@ def test_training_honours_cancellation_and_limits(tmp_path: Path) -> None:
     with pytest.raises(CorpusError, match="not found"):
         train_tokenizer(tmp_path / "data", build.dataset_id, "0" * 64)
     assert not list((tmp_path / "data" / "tokenizers").iterdir())
+
+
+def test_training_refuses_a_build_with_documents_removed_after_it(tmp_path: Path) -> None:
+    from epor.data.service import DataEngine
+
+    build = make_tokenizer_build(tmp_path)
+    store = DataStore(tmp_path / "data")
+    held_out = next(item for item in build.documents if item.split == "validation")
+    DataEngine(tmp_path / "data").remove(
+        target_kind="document_id",
+        target=held_out.document_id,
+        reason="Held-out removal does not touch training text.",
+        requested_by="tests",
+    )
+    # A removal outside the train split leaves training input unchanged.
+    train_tokenizer(store, build.dataset_id, build.build_id, vocab_size=TOKENIZER_FIXTURE_VOCAB)
+
+    trained = next(item for item in build.documents if item.split == "train")
+    DataEngine(tmp_path / "data").remove(
+        target_kind="document_id",
+        target=trained.document_id,
+        reason="Fixture removal request.",
+        requested_by="tests",
+    )
+    with pytest.raises(CorpusError, match="rebuild the dataset"):
+        train_tokenizer(
+            store, build.dataset_id, build.build_id, vocab_size=TOKENIZER_FIXTURE_VOCAB + 8
+        )

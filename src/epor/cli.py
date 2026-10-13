@@ -28,7 +28,9 @@ app = typer.Typer(
 auth_app = typer.Typer(help="Manage the local owner credential and delegations.")
 config_app = typer.Typer(help="Validate versioned model and run configuration.")
 data_app = typer.Typer(help="Provenance-first data pipeline (post-v0.0.1).")
-tokenizer_app = typer.Typer(help="Original tokenizer laboratory (post-v0.0.1).")
+tokenizer_app = typer.Typer(
+    help="Train, shard with, and measure original byte-level BPE tokenizers."
+)
 train_app = typer.Typer(help="Reference pretraining and later alignment workflows.")
 eval_app = typer.Typer(help="Evaluate reference checkpoints and compare reports.")
 export_app = typer.Typer(help="Export release artifacts (post-v0.0.1).")
@@ -46,8 +48,6 @@ console = Console()
 
 
 class FutureCommand(StrEnum):
-    tokenizer_train = "tokenizer train"
-    tokenizer_evaluate = "tokenizer evaluate"
     train_sft = "train sft"
     train_preference = "train preference"
     train_grpo = "train grpo"
@@ -612,14 +612,140 @@ def data_remove(
     typer.echo(tombstone.model_dump_json(indent=2))
 
 
+_TokenizerSplit = Literal["train", "validation", "test"]
+
+
+def _data_root() -> Path:
+    from epor.control.settings import ControlSettings
+
+    settings = ControlSettings.from_environment()
+    settings.prepare_directories()
+    assert settings.data_root is not None
+    return settings.data_root
+
+
+def _echo_json(payload: object) -> None:
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _refuse_tokenizer_command(exc: Exception) -> typer.Exit:
+    console.print(f"[red]tokenizer command refused[/red]: {exc}")
+    return typer.Exit(code=2)
+
+
+def _tokenizer_errors() -> tuple[type[Exception], ...]:
+    from epor.data.store import DataStoreError
+    from epor.tokenizer import CorpusError, TokenizedBuildError, TokenizerArtifactError
+
+    # ``ValueError`` covers bounded settings and invalid identifiers, including
+    # pydantic validation of stored manifests.
+    return (CorpusError, DataStoreError, TokenizedBuildError, TokenizerArtifactError, ValueError)
+
+
 @tokenizer_app.command("train")
-def tokenizer_train() -> None:
-    _planned(FutureCommand.tokenizer_train, "v0.0.4")
+def tokenizer_train(
+    dataset_id: Annotated[str, typer.Argument()],
+    build_id: Annotated[str, typer.Argument()],
+    vocab_size: Annotated[
+        int,
+        typer.Option(min=520, max=65_536, help="Declared vocabulary size (IDs incl. reserved)."),
+    ] = 65_536,
+    min_frequency: Annotated[int, typer.Option(min=1, max=1_000_000)] = 2,
+) -> None:
+    """Train a deterministic byte-level BPE from one build's train split only."""
+
+    authorize_command("tokenizer train")
+    from epor.tokenizer import describe_tokenizer, train_tokenizer
+
+    try:
+        trained = train_tokenizer(
+            _data_root(),
+            dataset_id,
+            build_id,
+            vocab_size=vocab_size,
+            min_frequency=min_frequency,
+        )
+    except _tokenizer_errors() as exc:
+        raise _refuse_tokenizer_command(exc) from exc
+    _echo_json(
+        {
+            **describe_tokenizer(trained.tokenizer_id, trained.manifest),
+            "directory": str(trained.directory),
+        }
+    )
+
+
+@tokenizer_app.command("shard")
+def tokenizer_shard(
+    dataset_id: Annotated[str, typer.Argument()],
+    build_id: Annotated[str, typer.Argument()],
+    tokenizer_id: Annotated[str, typer.Argument()],
+    max_shard_tokens: Annotated[
+        int,
+        typer.Option(min=4, max=1 << 24, help="Upper bound on tokens per uint16 shard."),
+    ] = 1 << 24,
+) -> None:
+    """Encode every split of a build into content-addressed token shards."""
+
+    authorize_command("tokenizer shard")
+    from epor.tokenizer import build_token_shards, describe_tokenized
+
+    try:
+        result = build_token_shards(
+            _data_root(),
+            dataset_id,
+            build_id,
+            tokenizer_id,
+            max_shard_tokens=max_shard_tokens,
+        )
+    except _tokenizer_errors() as exc:
+        raise _refuse_tokenizer_command(exc) from exc
+    _echo_json(
+        {
+            **describe_tokenized(result.tokenized_id, result.manifest),
+            "created": result.created,
+            "directory": str(result.directory),
+        }
+    )
 
 
 @tokenizer_app.command("evaluate")
-def tokenizer_evaluate() -> None:
-    _planned(FutureCommand.tokenizer_evaluate, "v0.0.4")
+def tokenizer_evaluate(
+    tokenizer_id: Annotated[str, typer.Argument()],
+    dataset_id: Annotated[str, typer.Argument()],
+    build_id: Annotated[str, typer.Argument()],
+    split: Annotated[
+        _TokenizerSplit,
+        typer.Option(help="One of: validation, test, train (train is flagged in-sample)."),
+    ] = "validation",
+) -> None:
+    """Measure fertility and exact byte round-trip on one build split.
+
+    Exits 1 when any document fails to round-trip, so the gate cannot pass
+    silently; the report is still stored for review.
+    """
+
+    authorize_command("tokenizer evaluate")
+    from epor.tokenizer import describe_report, evaluate_tokenizer
+
+    try:
+        report = evaluate_tokenizer(_data_root(), tokenizer_id, dataset_id, build_id, split=split)
+    except _tokenizer_errors() as exc:
+        raise _refuse_tokenizer_command(exc) from exc
+    _echo_json(describe_report(report))
+    if report.in_sample:
+        typer.echo(
+            "warning: in-sample measurement on the tokenizer's own training split; "
+            "it does not describe held-out fertility",
+            err=True,
+        )
+    if report.round_trip_failures:
+        typer.echo(
+            f"round-trip gate failed: {report.round_trip_failures} document(s) did not decode "
+            "to their exact source bytes",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
 
 @train_app.command("sft")

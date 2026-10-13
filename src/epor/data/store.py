@@ -227,6 +227,11 @@ class DataStore:
         self._write_immutable(target, payload)
         return target
 
+    def tokenizer_ids(self) -> list[str]:
+        return sorted(
+            path.parent.name for path in (self.root / "tokenizers").glob("*/manifest.json")
+        )
+
     def document(self, document_id: str) -> DocumentRecord:
         _require_sha256(document_id, "document IDs")
         path = self.root / "records" / f"{document_id}.json"
@@ -247,6 +252,9 @@ class DataStore:
     def evaluation_path(self, report_id: str) -> Path:
         _require_sha256(report_id, "evaluation report IDs")
         return self.root / "evaluations" / f"{report_id}.json"
+
+    def evaluation_ids(self) -> list[str]:
+        return sorted(path.stem for path in (self.root / "evaluations").glob("*.json"))
 
     def write_evaluation(self, payload: bytes) -> tuple[str, Path]:
         report_id = sha256_bytes(payload)

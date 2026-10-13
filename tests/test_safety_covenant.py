@@ -264,6 +264,31 @@ def test_every_executable_action_has_a_reviewed_declaration(covenant: Covenant) 
         assert resolve_action(action_id, covenant).outcome == "allow", action_id
 
 
+def test_every_executing_cli_command_maps_to_a_reviewed_declaration(covenant: Covenant) -> None:
+    from epor.actions import CLI_ACTIONS
+
+    assert {
+        "tokenizer train": "tokenizer_train",
+        "tokenizer shard": "tokenizer_shard",
+        "tokenizer evaluate": "tokenizer_evaluate",
+    }.items() <= CLI_ACTIONS.items()
+    for command, action_id in CLI_ACTIONS.items():
+        assert action_id in DECLARED_ACTIONS, command
+
+
+def test_tokenizer_work_requires_its_own_delegated_scope(covenant: Covenant) -> None:
+    from epor.control.authority import Actor, Role
+
+    # Scope for building a dataset does not stretch to training on it.
+    builder = Actor(id="builder", role=Role.DELEGATED_OPERATOR, scopes=frozenset({"data_build"}))
+    for action_id in ("tokenizer_train", "tokenizer_shard", "tokenizer_evaluate"):
+        refused = resolve_action(action_id, covenant, actor=builder)
+        assert refused.outcome == "refuse", action_id
+        assert refused.binding_priority == 2
+        scoped = Actor(id="tok", role=Role.DELEGATED_OPERATOR, scopes=frozenset({action_id}))
+        assert resolve_action(action_id, covenant, actor=scoped).outcome == "allow"
+
+
 def test_undeclared_work_escalates_instead_of_running(covenant: Covenant) -> None:
     resolution = resolve_action("model_serve", covenant)
     assert resolution.outcome == "escalate"

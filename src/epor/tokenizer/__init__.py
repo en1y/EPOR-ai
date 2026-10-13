@@ -10,7 +10,8 @@ Consumers (token shards, fertility reports) should depend on:
 * ``build_token_shards`` / ``verify_tokenized_build`` / ``iter_tokenized_documents``
   for content-addressed, boundary-preserving token shards, and
   ``affected_tokenized_builds`` for removal impact;
-* ``evaluate_tokenizer`` for held-out fertility reports.
+* ``evaluate_tokenizer`` for held-out fertility reports;
+* ``tokenizer_summary`` and the ``describe_*`` helpers for operator surfaces.
 """
 
 from .artifact import TokenizerArtifactError, TokenizerManifest, read_artifact
@@ -44,6 +45,7 @@ from .spec import (
     SPECIAL_TOKEN_IDS,
     ReservedToken,
 )
+from .summary import describe_report, describe_tokenized, describe_tokenizer, tokenizer_summary
 from .train import TrainedTokenizer, train_tokenizer
 
 __all__ = [
@@ -75,6 +77,9 @@ __all__ = [
     "TrainedTokenizer",
     "affected_tokenized_builds",
     "build_token_shards",
+    "describe_report",
+    "describe_tokenized",
+    "describe_tokenizer",
     "evaluate_tokenizer",
     "iter_split_documents",
     "iter_tokenized_documents",
@@ -83,6 +88,7 @@ __all__ = [
     "load_tokenized_manifest",
     "load_tokenizer",
     "read_artifact",
+    "tokenizer_summary",
     "train_tokenizer",
     "verify_tokenized_build",
 ]

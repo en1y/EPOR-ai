@@ -16,6 +16,11 @@ not rest on an undocumented property of the parallel path; the setting is
 recorded in the manifest. Tokenizer training is a one-off, so the cost is
 acceptable.
 
+Removal tombstones recorded after the build are honored by refusal: if any
+train-split document is now tombstoned, training stops and the dataset must be
+rebuilt first, so a tokenizer's recorded ``split_sha256`` always names exactly
+the text it learned from.
+
 If the corpus supports fewer merges than ``vocab_size`` asks for, the manifest
 records the smaller ``learned_vocab_size`` next to the declared size. Nothing
 is padded and the declared size is never claimed as learned.
@@ -47,7 +52,13 @@ from .artifact import (
     validate_layout,
     write_artifact,
 )
-from .corpus import CorpusError, iter_split_documents, load_build, split_sha256
+from .corpus import (
+    CorpusError,
+    iter_split_documents,
+    load_build,
+    split_sha256,
+    tombstoned_documents,
+)
 from .spec import (
     BYTE_COUNT,
     BYTE_OFFSET,
@@ -145,6 +156,17 @@ def train_tokenizer(
     train_split_sha256 = split_sha256(build, "train")
     if not any(item.split == "train" for item in build.documents):
         raise CorpusError("build has no training documents")
+    # The manifest pins the whole train split by hash, so training cannot
+    # silently drop a document removed after the build. Refuse instead: the
+    # operator rebuilds the dataset, which applies the tombstone, and trains on
+    # that build.
+    removed, _ = tombstoned_documents(data_store, build)
+    train_ids = {item.document_id for item in build.documents if item.split == "train"}
+    if removed & train_ids:
+        raise CorpusError(
+            "build has training documents removed since it was made; rebuild the dataset "
+            "before training a tokenizer"
+        )
 
     stats = {"documents": 0, "bytes": 0}
 
