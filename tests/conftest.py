@@ -251,3 +251,66 @@ def make_token_shards(
         tokenizer_id=trained.tokenizer_id,
         vocab_size=shards.manifest.vocab_size,
     )
+
+
+DOMAIN_CODE_TEXT = (
+    "def step_{n}(values: list[int]) -> int:\n"
+    "    total = 0\n"
+    "    for item in values:\n"
+    "        total += item * {n}\n"
+    "    return total\n\n"
+    "class Counter{n}:\n"
+    "    def __init__(self) -> None:\n"
+    "        self.count = {n}\n"
+)
+DOMAIN_PROSE_TEXT = (
+    "Report number {n} describes how the river valley changed over many seasons. "
+    "Farmers planted barley near the water, and travellers crossed the old bridge "
+    "while the town archive kept careful notes about every harvest and storm. "
+)
+
+
+def make_domain_shards(root: Path) -> TokenShardFixture:
+    """A tokenized build with ``code`` and ``general`` documents in train and validation."""
+
+    from epor.data.models import BuildRequest, SplitRatios
+    from epor.data.service import DataEngine
+    from epor.tokenizer import build_token_shards, train_tokenizer
+
+    engine = DataEngine(root / "data")
+    for split, count in (("train", 4), ("validation", 2)):
+        for kind, template, media in (
+            ("code", DOMAIN_CODE_TEXT, "text/x-python"),
+            ("prose", DOMAIN_PROSE_TEXT, "text/plain"),
+        ):
+            folder = root / "inputs" / f"{kind}-{split}"
+            folder.mkdir(parents=True)
+            paths = []
+            for index in range(count):
+                n = index + (0 if split == "train" else 50)
+                path = folder / f"{kind}-{index}.txt"
+                path.write_text(template.format(n=n) * (3 + index), encoding="utf-8")
+                paths.append(path)
+            registration = tokenizer_registration(f"{kind}-{split}", group_for_split(split))
+            engine.ingest(registration.model_copy(update={"media_type": media}), paths)
+    build, _ = engine.build(
+        BuildRequest(
+            dataset_id="mixture-fixture",
+            split_ratios=SplitRatios(train=50, validation=50, test=0),
+            split_salt=TOKENIZER_SPLIT_SALT,
+            intended_uses=["scaling tests"],
+            prohibited_uses=["production deployment"],
+        )
+    )
+    assert set(build.domain_counts) == {"code", "general"}
+    data = root / "data"
+    trained = train_tokenizer(
+        data, build.dataset_id, build.build_id, vocab_size=TOKENIZER_FIXTURE_VOCAB
+    )
+    tokenized = build_token_shards(data, build.dataset_id, build.build_id, trained.tokenizer_id)
+    return TokenShardFixture(
+        data_root=data,
+        tokenized_id=tokenized.tokenized_id,
+        tokenizer_id=trained.tokenizer_id,
+        vocab_size=tokenized.manifest.vocab_size,
+    )
