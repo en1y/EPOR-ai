@@ -1,0 +1,44 @@
+# Reward-overoptimization monitors and alignment admission thresholds (v0.0.7).
+#
+# Every number below is a [hypothesis]: a starting guess for proxy-scale runs
+# on the reference machine, not a measured or validated limit. Each must be
+# revisited against EPOR's own SFT and human-preference controls before it
+# guards anything at target scale. A crossed `alert` threshold is recorded on
+# the run and report; a crossed `abort` threshold stops a DPO run at a
+# checkpoint and marks an overoptimization report `abort`, which blocks it from
+# being treated as a candidate for promotion until a human reviews it.
+schema_version: 1
+id: epor-alignment-monitors
+version: 1
+evidence: hypothesis
+
+# Mean per-token log pi(y|x) - log ref(y|x) on the policy's own greedy replies
+# to held-out prompts (a sample estimate of KL(pi || ref)).
+kl_per_token:
+  alert: 0.5
+  abort: 2.0
+
+# Proxy reward accuracy (the DPO implicit reward prefers the chosen reply on
+# held-out pairs) minus the policy's agreement with human-audited preferences.
+# A widening gap means the policy fits the proxy better than the humans.
+proxy_minus_audited:
+  alert: 0.2
+  abort: 0.4
+
+# Mean generated reply length of the policy divided by the reference's on the
+# same held-out prompts (verbosity drift), checked in both directions.
+length_ratio:
+  alert: 1.5
+  abort: 2.5
+
+# Per-step DPO guard on the chosen-reply log-ratio (see epor.alignment.preference).
+dpo_step_logratio:
+  alert: 0.5
+  abort: 2.0
+
+# Judging runs: the largest judge-human disagreement rate on the audited sample
+# that still admits a run's candidates to training, and the minimum number of
+# audited accepted and rejected decisions.
+judge_admission:
+  max_disagreement: 0.25
+  min_per_stratum: 1
