@@ -106,3 +106,45 @@ def sleeping_worker(rank: int, world_size: int, seconds: float) -> int:
 
     time.sleep(seconds)
     return rank
+
+
+def _listening_inodes(table: str) -> dict[str, str]:
+    """``{socket inode: local address}`` for every listening socket in a /proc table."""
+
+    listening: dict[str, str] = {}
+    path = Path("/proc/net") / table
+    if not path.is_file():
+        return listening
+    for line in path.read_text(encoding="ascii").splitlines()[1:]:
+        fields = line.split()
+        if fields[3] == "0A":  # TCP_LISTEN
+            listening[fields[9]] = fields[1]
+    return listening
+
+
+def listening_addresses_worker(rank: int, world_size: int) -> list[str]:
+    """Every TCP address this rank listens on, read while the group is live."""
+
+    import os
+
+    from epor.training import init_distributed
+
+    context = init_distributed("ddp")
+    tensor = torch.ones(1)
+    torch.distributed.all_reduce(tensor)
+    assert float(tensor) == world_size
+    listening = {**_listening_inodes("tcp"), **_listening_inodes("tcp6")}
+    fd_dir = Path(f"/proc/{os.getpid()}/fd")
+    addresses: list[str] = []
+    for entry in fd_dir.iterdir():
+        try:
+            target = os.readlink(entry)
+        except OSError:
+            continue
+        if target.startswith("socket:["):
+            inode = target[len("socket:[") : -1]
+            if inode in listening:
+                addresses.append(listening[inode])
+    context.barrier()
+    del rank
+    return addresses

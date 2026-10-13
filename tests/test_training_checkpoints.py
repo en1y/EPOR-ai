@@ -10,7 +10,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from kernel_support import failing_worker, sleeping_worker  # noqa: E402
+from kernel_support import (  # noqa: E402
+    failing_worker,
+    listening_addresses_worker,
+    sleeping_worker,
+)
 
 from epor.training import (  # noqa: E402
     CheckpointError,
@@ -149,3 +153,15 @@ def test_context_and_launcher_guard_rails(monkeypatch: pytest.MonkeyPatch) -> No
         launch_local(failing_worker, 2, timeout_seconds=60)
     with pytest.raises(TimeoutError):
         launch_local(sleeping_worker, 1, 120.0, timeout_seconds=4)
+
+
+@pytest.mark.skipif(not Path("/proc/net/tcp").is_file(), reason="needs Linux /proc sockets")
+def test_local_launch_listens_on_loopback_only() -> None:
+    loopback = {"0100007F", "00000000000000000000000001000000"}
+    ranks = launch_local(listening_addresses_worker, 2, timeout_seconds=60)
+    addresses = [address for rank in ranks for address in rank]
+    # gloo pairs listen (one per rank); a TCPStore server would add a wildcard.
+    assert addresses
+    for address in addresses:
+        host = address.rsplit(":", 1)[0]
+        assert host in loopback, address

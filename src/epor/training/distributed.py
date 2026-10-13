@@ -21,21 +21,37 @@ Both distributed strategies keep FP32 parameters, gradients, and reductions;
 BF16 is applied by CPU autocast in the trainer, identically for every strategy.
 
 Process groups come from the standard ``env://`` variables (``RANK``,
-``WORLD_SIZE``, ``MASTER_ADDR``, ``MASTER_PORT``), so ``torchrun`` and the
-local :func:`launch_local` helper start the same code.
+``WORLD_SIZE``, ``MASTER_ADDR``, ``MASTER_PORT``) under an external launcher
+such as ``torchrun``; the trainer itself never chooses a topology.
+
+Network exposure
+----------------
+:func:`launch_local`, the only launcher EPOR's CLI uses, opens no listener
+beyond loopback.  Rendezvous goes through a ``FileStore`` in a private
+``0700`` temporary directory instead of a ``TCPStore`` (whose server binds
+every interface whatever address it is given), and gloo's pair sockets are
+pinned to the loopback interface with ``GLOO_SOCKET_IFNAME``.  Without that
+pin gloo binds the address the host name resolves to, which on an ordinary
+workstation is a LAN interface.  :func:`init_distributed` applies the same
+interface pin when ``MASTER_ADDR`` is a loopback address, but the ``env://``
+``TCPStore`` an external launcher creates is that launcher's own listener.
 """
 
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import os
 import queue
+import shutil
 import socket
+import tempfile
 import time
 import traceback
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import torch
@@ -103,6 +119,32 @@ class DistributedContext:
         return bool(tensor.item())
 
 
+def loopback_interface() -> str:
+    """The name of this host's loopback network interface (``lo`` on Linux).
+
+    Raises rather than guessing, because a wrong guess would let gloo fall back
+    to binding a routable interface.
+    """
+
+    names = [name for _, name in socket.if_nameindex()]
+    for preferred in ("lo", "lo0"):
+        if preferred in names:
+            return preferred
+    for name in names:
+        if name.startswith("lo"):
+            return name
+    raise RuntimeError("no loopback network interface found for local distributed ranks")
+
+
+def _is_loopback(address: str) -> bool:
+    if address == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(address).is_loopback
+    except ValueError:
+        return False
+
+
 def init_distributed(
     strategy: DistributedStrategy,
     *,
@@ -128,6 +170,8 @@ def init_distributed(
             raise RuntimeError(
                 f"distributed strategy {strategy!r} needs env:// variables: {', '.join(missing)}"
             )
+        if _is_loopback(os.environ["MASTER_ADDR"]):
+            os.environ.setdefault("GLOO_SOCKET_IFNAME", loopback_interface())
         dist.init_process_group(
             backend="gloo",
             init_method="env://",
@@ -202,18 +246,12 @@ def gradient_sync(model: nn.Module, enabled: bool) -> Iterator[None]:
     yield
 
 
-def free_port() -> int:
-    """An ephemeral localhost TCP port for a local rendezvous."""
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
-
-
 def _local_worker(
     rank: int,
     world_size: int,
-    port: int,
+    store_path: str,
+    interface: str,
+    timeout_seconds: float,
     threads: int | None,
     function: Callable[..., Any],
     args: tuple[Any, ...],
@@ -223,12 +261,23 @@ def _local_worker(
         RANK=str(rank),
         WORLD_SIZE=str(world_size),
         LOCAL_RANK=str(rank),
-        MASTER_ADDR="127.0.0.1",
-        MASTER_PORT=str(port),
+        GLOO_SOCKET_IFNAME=interface,
     )
     if threads is not None:
         torch.set_num_threads(threads)
     try:
+        # Join the group here, over a file rendezvous, so no rank ever opens a
+        # TCPStore server; ``init_distributed`` then reuses this group.
+        store = dist.FileStore(  # pyright: ignore[reportPrivateImportUsage]
+            store_path, world_size
+        )
+        dist.init_process_group(
+            backend="gloo",
+            store=store,
+            rank=rank,
+            world_size=world_size,
+            timeout=timedelta(seconds=timeout_seconds),
+        )
         value = function(rank, world_size, *args)
         results.put((rank, True, value))
     except BaseException as exc:  # report every failure to the parent
@@ -246,22 +295,37 @@ def launch_local(
 ) -> list[Any]:
     """Run ``function(rank, world_size, *args)`` in ``world_size`` spawned processes.
 
-    Each process receives ``env://`` variables for a fresh localhost port; the
-    function itself calls :func:`init_distributed`.  Return values (which must
-    pickle) come back in rank order.  A rank that raises, exits, or outlives
-    ``timeout_seconds`` fails the launch, and every process is terminated, so a
-    broken collective cannot hang the caller.
+    Each process joins a gloo group over a private file rendezvous with its
+    sockets pinned to loopback (see the module docstring), then calls
+    ``function``, which obtains its context from :func:`init_distributed`.
+    Return values (which must pickle) come back in rank order.  A rank that
+    raises, exits, or outlives ``timeout_seconds`` fails the launch, and every
+    process is terminated, so a broken collective cannot hang the caller.
     """
 
     if world_size < 1:
         raise ValueError("world_size must be positive")
+    interface = loopback_interface()
     context = mp.get_context("spawn")
     results = context.Queue()
-    port = free_port()
+    rendezvous = Path(tempfile.mkdtemp(prefix="epor-rendezvous-"))
+    rendezvous.chmod(0o700)
+    store_path = str(rendezvous / "store")
+    collective_timeout = min(timeout_seconds, DEFAULT_TIMEOUT_SECONDS)
     processes = [
         context.Process(
             target=_local_worker,
-            args=(rank, world_size, port, threads_per_rank, function, args, results),
+            args=(
+                rank,
+                world_size,
+                store_path,
+                interface,
+                collective_timeout,
+                threads_per_rank,
+                function,
+                args,
+                results,
+            ),
             daemon=True,
         )
         for rank in range(world_size)
@@ -305,4 +369,5 @@ def launch_local(
                 process.kill()
                 process.join(timeout=5)
         results.close()
+        shutil.rmtree(rendezvous, ignore_errors=True)
     return [collected[rank] for rank in range(world_size)]
