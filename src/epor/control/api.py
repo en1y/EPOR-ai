@@ -77,6 +77,7 @@ from .schemas import (
     ResearchSourceRead,
     SessionCreate,
     TokenizerSummaryRead,
+    TrainingSummaryRead,
 )
 from .security import redact, redact_text
 from .service import JobService
@@ -125,6 +126,14 @@ _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
     JobType.TOKENIZER_EVALUATE: (
         "Tokenizer fertility",
         "Measure fertility and exact byte round-trip on one split; failures fail the job.",
+    ),
+    JobType.KERNEL_TRAIN: (
+        "Kernel pretraining",
+        "Train on a verified tokenized build in one process with exact checkpointed resume.",
+    ),
+    JobType.KERNEL_EVALUATE: (
+        "Kernel evaluation",
+        "Measure a kernel checkpoint's loss, perplexity, and MTP losses on one split.",
     ),
     JobType.TINY_TRAIN: (
         "Tiny pretraining",
@@ -415,6 +424,15 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
 
         assert settings.data_root is not None
         return TokenizerSummaryRead.model_validate(tokenizer_summary(settings.data_root))
+
+    @router.get("/training/runs", response_model=TrainingSummaryRead, tags=["training"])
+    async def training_runs() -> TrainingSummaryRead:
+        from .training_runs import training_summary
+
+        assert settings.artifact_root is not None
+        return TrainingSummaryRead.model_validate(
+            training_summary(settings.artifact_root, settings.project_root)
+        )
 
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])
     async def models() -> ModelFamilyList:

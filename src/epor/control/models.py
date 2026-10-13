@@ -65,6 +65,8 @@ class JobType(StrEnum):
     TOKENIZER_TRAIN = "tokenizer_train"
     TOKENIZER_SHARD = "tokenizer_shard"
     TOKENIZER_EVALUATE = "tokenizer_evaluate"
+    KERNEL_TRAIN = "kernel_train"
+    KERNEL_EVALUATE = "kernel_evaluate"
     TINY_TRAIN = "tiny_train"
     TINY_EVAL = "tiny_eval"
 
@@ -111,7 +113,8 @@ class Job(Base):
         CheckConstraint(
             "type IN ('system_probe', 'research_sync', 'data_ingest', 'data_build', "
             "'data_remove', 'data_audit', 'tokenizer_train', 'tokenizer_shard', "
-            "'tokenizer_evaluate', 'tiny_train', 'tiny_eval')",
+            "'tokenizer_evaluate', 'kernel_train', 'kernel_evaluate', 'tiny_train', "
+            "'tiny_eval')",
             name="job_type",
         ),
         CheckConstraint(

@@ -16,10 +16,11 @@ _SENSITIVE_KEY = re.compile(
     r"(?:authorization|cookie|credential|password|passwd|secret|token|api[_-]?key|private[_-]?key)",
     re.IGNORECASE,
 )
-# Exact tokenizer measurement and identifier keys that contain "token" but name
-# a language-model token, never a credential. This is an explicit allowlist, so
-# every other key matching ``_SENSITIVE_KEY`` stays redacted, and values under
-# these keys are still scanned for inline credentials.
+# Exact tokenizer and training measurement and identifier keys that contain
+# "token" but name a language-model token, never a credential. This is an
+# explicit allowlist, so every other key matching ``_SENSITIVE_KEY`` stays
+# redacted, and values under these keys are still scanned for inline
+# credentials.
 _LANGUAGE_MODEL_TOKEN_KEYS = frozenset(
     {
         "tokenizer_id",
@@ -34,6 +35,10 @@ _LANGUAGE_MODEL_TOKEN_KEYS = frozenset(
         "tokens_per_byte",
         "tokens_per_word",
         "bytes_per_token",
+        # Training-kernel job results (v0.0.5).
+        "tokens_seen",
+        "tokens_per_batch",
+        "target_tokens",
     }
 )
 _INLINE_SECRET_PATTERNS = (
