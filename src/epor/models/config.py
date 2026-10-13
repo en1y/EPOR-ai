@@ -18,6 +18,22 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 NonNegativeInt = Annotated[int, Field(ge=0)]
 PositiveInt = Annotated[int, Field(gt=0)]
 
+# DeepSeek-V3 reports an MTP loss weight of 0.3 for its first 10T tokens and
+# 0.1 afterwards (``deepseek-v3``, ``disclosed``).  EPOR starts from the first
+# value; whether MTP is worth its memory at EPOR scale is decided at G3/G5.
+DEFAULT_MTP_LOSS_WEIGHT = 0.3
+
+# Architecture fields added after configurations were already hashed into run
+# manifests and checkpoints.  At these values they select the original
+# computation, so ``canonical_json`` omits them and every pre-existing config
+# keeps its hash.  A non-default value changes the computation and therefore
+# appears in, and changes, the hash.
+HASH_NEUTRAL_DEFAULTS: dict[str, object] = {
+    "qk_norm": False,
+    "mtp_depth": 0,
+    "mtp_loss_weight": DEFAULT_MTP_LOSS_WEIGHT,
+}
+
 
 class CertifiedProfile(BaseModel):
     """A hardware-specific context profile, planned or measured."""
@@ -62,6 +78,15 @@ class ModelConfig(BaseModel):
     initializer_range: float = Field(default=0.02, gt=0)
     dropout: float = Field(default=0.0, ge=0.0, lt=1.0)
     tie_embeddings: bool = True
+
+    # Per-head RMSNorm on queries and keys before RoPE (``gemma-3-technical-report``,
+    # ``disclosed``).  False is the pre-norm control block.
+    qk_norm: bool = False
+    # DeepSeek-V3-style sequential multi-token prediction (``deepseek-v3``,
+    # ``disclosed``).  Zero disables it; each depth adds one projection and one
+    # transformer block that share the embedding and output head.
+    mtp_depth: NonNegativeInt = 0
+    mtp_loss_weight: float = Field(default=DEFAULT_MTP_LOSS_WEIGHT, ge=0.0, le=1.0)
 
     pad_token_id: NonNegativeInt = 0
     bos_token_id: NonNegativeInt = 1
@@ -121,6 +146,11 @@ class ModelConfig(BaseModel):
                     f"planned profile {profile.profile_id!r} exceeds configured context"
                 )
 
+        if self.mtp_depth >= self.configured_max_context:
+            raise ValueError("mtp_depth must be smaller than configured_max_context")
+        if self.mtp_depth == 0 and self.mtp_loss_weight != DEFAULT_MTP_LOSS_WEIGHT:
+            raise ValueError("mtp_loss_weight has no effect unless mtp_depth is positive")
+
         has_moe_fields = any((self.n_routed_experts, self.n_shared_experts, self.experts_per_token))
         if self.architecture == "dense-decoder" and has_moe_fields:
             raise ValueError("dense decoders must not configure MoE experts")
@@ -154,10 +184,19 @@ class ModelConfig(BaseModel):
         return self
 
     def canonical_json(self) -> str:
-        """Return stable JSON used for config hashing and manifests."""
+        """Return stable JSON used for config hashing and manifests.
 
+        Fields listed in :data:`HASH_NEUTRAL_DEFAULTS` are omitted while they
+        hold their computation-preserving default, so adding them did not
+        change the hash of any existing configuration.
+        """
+
+        payload = self.model_dump(mode="json")
+        for name, default in HASH_NEUTRAL_DEFAULTS.items():
+            if payload[name] == default:
+                del payload[name]
         return json.dumps(
-            self.model_dump(mode="json"),
+            payload,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -199,9 +238,24 @@ def structural_parameter_count(config: ModelConfig) -> int:
     """
 
     hidden = config.d_model
+    embeddings = config.vocab_size * hidden
+    output_head = 0 if config.tie_embeddings else embeddings
+    return (
+        embeddings
+        + output_head
+        + config.n_layers * _block_parameter_count(config)
+        + hidden
+        + mtp_parameter_count(config)
+    )
+
+
+def _block_parameter_count(config: ModelConfig) -> int:
+    hidden = config.d_model
     head_dimension = hidden // config.n_heads
     key_value_width = config.n_kv_heads * head_dimension
     attention = 2 * hidden * hidden + 2 * hidden * key_value_width
+    if config.qk_norm:
+        attention += 2 * head_dimension
     normalization = 2 * hidden
     expert = 3 * hidden * config.d_ff
     if config.architecture == "moe-decoder":
@@ -210,14 +264,30 @@ def structural_parameter_count(config: ModelConfig) -> int:
         )
     else:
         feed_forward = expert
-    embeddings = config.vocab_size * hidden
-    output_head = 0 if config.tie_embeddings else embeddings
-    return (
-        embeddings
-        + output_head
-        + config.n_layers * (attention + normalization + feed_forward)
-        + hidden
-    )
+    return attention + normalization + feed_forward
+
+
+def mtp_parameter_count(config: ModelConfig) -> int:
+    """Count the extra parameters owned by multi-token-prediction modules.
+
+    Each depth owns two input RMSNorms, a ``2 * d_model -> d_model``
+    projection, one decoder block, and an output RMSNorm.  The embedding and
+    output head are shared with the main model and are not counted again.
+    """
+
+    hidden = config.d_model
+    per_depth = 2 * hidden + 2 * hidden * hidden + _block_parameter_count(config) + hidden
+    return config.mtp_depth * per_depth
+
+
+def mtp_logit_bytes_per_token(config: ModelConfig) -> int:
+    """FP32 bytes of extra training logits that MTP materializes per token.
+
+    Each depth produces a full-vocabulary logit row per position.  At a 65,536
+    vocabulary this activation term usually dominates the parameter overhead.
+    """
+
+    return config.mtp_depth * config.vocab_size * 4
 
 
 def dump_model_config(config: ModelConfig, path: str | Path) -> None:
