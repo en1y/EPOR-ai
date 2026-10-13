@@ -35,7 +35,12 @@ from .authority import (
 )
 from .database import create_session_factory, create_sqlite_engine, initialize_database
 from .documents import DocumentTooLargeError, build_index, read_document
-from .errors import AuthenticationRequiredError, AuthorizationDeniedError, ControlError
+from .errors import (
+    AuthenticationRequiredError,
+    AuthorizationDeniedError,
+    CapabilityUnavailableError,
+    ControlError,
+)
 from .models import JobStatus, JobType
 from .safety_view import covenant_payload, declared_action_payload
 from .schemas import (
@@ -71,6 +76,7 @@ from .schemas import (
     ResearchCatalogRead,
     ResearchSourceRead,
     SessionCreate,
+    TokenizerSummaryRead,
 )
 from .security import redact, redact_text
 from .service import JobService
@@ -107,6 +113,18 @@ _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
     JobType.DATA_AUDIT: (
         "Data audit",
         "Verify content hashes and summarize registrations, layers, builds, and removals.",
+    ),
+    JobType.TOKENIZER_TRAIN: (
+        "Tokenizer training",
+        "Train a deterministic byte-level BPE from one build's train split only.",
+    ),
+    JobType.TOKENIZER_SHARD: (
+        "Token shards",
+        "Encode a build into content-addressed uint16 shards that keep document boundaries.",
+    ),
+    JobType.TOKENIZER_EVALUATE: (
+        "Tokenizer fertility",
+        "Measure fertility and exact byte round-trip on one split; failures fail the job.",
     ),
     JobType.TINY_TRAIN: (
         "Tiny pretraining",
@@ -385,6 +403,18 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
 
         assert settings.data_root is not None
         return DataSummaryRead.model_validate(DataEngine(settings.data_root).dataset_summary())
+
+    @router.get("/tokenizers", response_model=TokenizerSummaryRead, tags=["tokenizers"])
+    async def tokenizer_summary() -> TokenizerSummaryRead:
+        try:
+            from epor.tokenizer.summary import tokenizer_summary
+        except ModuleNotFoundError as exc:
+            raise CapabilityUnavailableError(
+                "tokenizer support requires the optional data dependencies (uv sync --extra data)"
+            ) from exc
+
+        assert settings.data_root is not None
+        return TokenizerSummaryRead.model_validate(tokenizer_summary(settings.data_root))
 
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])
     async def models() -> ModelFamilyList:

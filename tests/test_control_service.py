@@ -96,6 +96,25 @@ def test_loopback_settings_path_containment_and_redaction(tmp_path: Path) -> Non
         "api_token": "[REDACTED]",
         "message": "Bearer [REDACTED]",
     }
+    # Language-model token measurements are not credentials, but only exact
+    # allowlisted keys are exempt and their string values are still scanned.
+    assert redact(
+        {
+            "tokenizer_id": "a" * 64,
+            "total_tokens": 12,
+            "tokens_per_byte": 0.25,
+            "tokenized_id": "Bearer abcdefghijklmnop",
+            "tokenizer_token": "value",
+            "tokens_secret": "value",
+        }
+    ) == {
+        "tokenizer_id": "a" * 64,
+        "total_tokens": 12,
+        "tokens_per_byte": 0.25,
+        "tokenized_id": "Bearer [REDACTED]",
+        "tokenizer_token": "[REDACTED]",
+        "tokens_secret": "[REDACTED]",
+    }
 
 
 def test_sqlite_wal_and_transactional_lifecycle(tmp_path: Path) -> None:

@@ -49,6 +49,22 @@ def load_registration(path: Path) -> SourceRegistration:
     return SourceRegistration.model_validate(raw)
 
 
+def is_tombstoned(record: DocumentRecord, tombstones: Iterable[Tombstone]) -> bool:
+    """Whether any tombstone targets this record by source, document, or raw hash.
+
+    This is the single matching rule for removal: builds apply it before
+    deduplication, and derived layers (token shards, evaluations) apply it to
+    exclude documents removed after their parent build was made.
+    """
+
+    values = {
+        "source_id": record.source_id,
+        "document_id": record.document_id,
+        "raw_sha256": record.raw_sha256,
+    }
+    return any(values[item.target_kind] == item.target for item in tombstones)
+
+
 class DataEngine:
     """Deterministic v0.0.3 data engine over a private immutable store."""
 
@@ -167,12 +183,7 @@ class DataEngine:
 
     @staticmethod
     def _tombstoned(record: DocumentRecord, tombstones: list[Tombstone]) -> bool:
-        values = {
-            "source_id": record.source_id,
-            "document_id": record.document_id,
-            "raw_sha256": record.raw_sha256,
-        }
-        return any(values[item.target_kind] == item.target for item in tombstones)
+        return is_tombstoned(record, tombstones)
 
     @staticmethod
     def _deduplicate(

@@ -69,6 +69,39 @@ class DataAuditSpec(StrictSchema):
     pass
 
 
+_DATASET_ID = r"^[a-z0-9][a-z0-9._-]{0,95}$"
+_SHA256 = r"^[0-9a-f]{64}$"
+
+
+class TokenizerTrainSpec(StrictSchema):
+    dataset_id: str = Field(pattern=_DATASET_ID)
+    build_id: str = Field(pattern=_SHA256)
+    vocab_size: int = Field(
+        default=65_536,
+        ge=520,
+        le=65_536,
+        description="Declared vocabulary size; the manifest records what was actually learned.",
+    )
+    min_frequency: int = Field(default=2, ge=1, le=1_000_000)
+
+
+class TokenizerShardSpec(StrictSchema):
+    dataset_id: str = Field(pattern=_DATASET_ID)
+    build_id: str = Field(pattern=_SHA256)
+    tokenizer_id: str = Field(pattern=_SHA256)
+    max_shard_tokens: int = Field(default=1 << 24, ge=4, le=1 << 24)
+
+
+class TokenizerEvaluateSpec(StrictSchema):
+    tokenizer_id: str = Field(pattern=_SHA256)
+    dataset_id: str = Field(pattern=_DATASET_ID)
+    build_id: str = Field(pattern=_SHA256)
+    split: Literal["validation", "test", "train"] = Field(
+        default="validation",
+        description="Held-out split to measure; train is reported as in-sample.",
+    )
+
+
 TinyModelConfigPath = Literal[
     "configs/models/epor-tiny.yaml",
     "configs/models/epor-reference.yaml",
@@ -116,6 +149,9 @@ JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.DATA_BUILD: DataBuildSpec,
     JobType.DATA_REMOVE: DataRemoveSpec,
     JobType.DATA_AUDIT: DataAuditSpec,
+    JobType.TOKENIZER_TRAIN: TokenizerTrainSpec,
+    JobType.TOKENIZER_SHARD: TokenizerShardSpec,
+    JobType.TOKENIZER_EVALUATE: TokenizerEvaluateSpec,
     JobType.TINY_TRAIN: TinyTrainSpec,
     JobType.TINY_EVAL: TinyEvalSpec,
 }
@@ -430,6 +466,87 @@ class DataSummaryRead(BaseModel):
     integrity_errors: list[str]
     latest_builds: dict[str, str]
     sources: list[DataSourceRead]
+
+
+class TokenizerRead(BaseModel):
+    tokenizer_id: str
+    tokenizer_version: str
+    reserved_spec_version: str
+    declared_vocab_size: int
+    learned_vocab_size: int
+    merge_count: int
+    dataset_id: str
+    build_id: str
+    train_split_sha256: str
+    train_documents: int
+    train_bytes: int
+    min_frequency: int
+    library_version: str
+
+
+class TokenizedSplitRead(BaseModel):
+    document_count: int
+    excluded_document_count: int
+    token_count: int
+    shard_count: int
+
+
+class TokenizedBuildRead(BaseModel):
+    tokenized_id: str
+    tokenizer_id: str
+    dataset_id: str
+    build_id: str
+    max_shard_tokens: int
+    total_tokens: int
+    total_documents: int
+    excluded_document_count: int
+    applied_tombstone_ids: list[str]
+    shard_count: int
+    splits: dict[str, TokenizedSplitRead]
+
+
+class FertilityMetricsRead(BaseModel):
+    documents: int
+    bytes: int
+    characters: int
+    words: int
+    tokens: int
+    byte_fallback_tokens: int
+    tokens_per_byte: float | None
+    tokens_per_word: float | None
+    bytes_per_token: float | None
+    byte_fallback_rate: float | None
+
+
+class FertilityReportRead(BaseModel):
+    report_id: str
+    schema_version: int
+    kind: str
+    scope: str
+    tokenizer_id: str
+    tokenizer_json_sha256: str
+    reserved_spec_sha256: str
+    vocab_size: int
+    learned_vocab_size: int
+    dataset_id: str
+    build_id: str
+    split: str
+    split_sha256: str
+    in_sample: bool
+    excluded_document_count: int
+    applied_tombstone_ids: list[str]
+    round_trip_failures: int
+    overall: FertilityMetricsRead
+    by_domain: dict[str, FertilityMetricsRead]
+    by_language: dict[str, FertilityMetricsRead]
+
+
+class TokenizerSummaryRead(BaseModel):
+    schema_version: int
+    tokenizers: list[TokenizerRead]
+    tokenized_builds: list[TokenizedBuildRead]
+    fertility_reports: list[FertilityReportRead]
+    integrity_errors: list[str]
 
 
 class DocumentSummary(BaseModel):

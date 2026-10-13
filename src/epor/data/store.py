@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,11 @@ def sha256_model(value: BaseModel | dict[str, Any] | list[Any]) -> str:
     return sha256_bytes(canonical_json_bytes(value))
 
 
+def _require_sha256(value: str, label: str) -> None:
+    if len(value) != 64 or not all(c in "0123456789abcdef" for c in value):
+        raise DataStoreError(f"{label} are lowercase SHA-256 hex digests")
+
+
 class DataStore:
     """Immutable, content-addressed local data layers beneath one private root."""
 
@@ -72,6 +79,9 @@ class DataStore:
             "tombstones",
             "filtered",
             "builds",
+            "tokenizers",
+            "tokenized",
+            "evaluations",
             "audit/ingest",
             "tmp",
         ):
@@ -205,6 +215,86 @@ class DataStore:
         target = self.build_path(dataset_id, build_id) / name
         self._write_immutable(target, payload)
         return target
+
+    def tokenizer_path(self, tokenizer_id: str) -> Path:
+        _require_sha256(tokenizer_id, "tokenizer IDs")
+        return self.root / "tokenizers" / tokenizer_id
+
+    def write_tokenizer_file(self, tokenizer_id: str, name: str, payload: bytes) -> Path:
+        if "/" in name or name in {"", ".", ".."}:
+            raise DataStoreError("tokenizer artifact names must be plain file names")
+        target = self.tokenizer_path(tokenizer_id) / name
+        self._write_immutable(target, payload)
+        return target
+
+    def tokenizer_ids(self) -> list[str]:
+        return sorted(
+            path.parent.name for path in (self.root / "tokenizers").glob("*/manifest.json")
+        )
+
+    def document(self, document_id: str) -> DocumentRecord:
+        _require_sha256(document_id, "document IDs")
+        path = self.root / "records" / f"{document_id}.json"
+        try:
+            return DocumentRecord.model_validate_json(path.read_bytes())
+        except FileNotFoundError as exc:
+            raise DataStoreError(f"document record not found: {document_id}") from exc
+
+    def tokenized_path(self, tokenized_id: str) -> Path:
+        _require_sha256(tokenized_id, "tokenized build IDs")
+        return self.root / "tokenized" / tokenized_id
+
+    def tokenized_ids(self) -> list[str]:
+        return sorted(
+            path.parent.name for path in (self.root / "tokenized").glob("*/manifest.json")
+        )
+
+    def evaluation_path(self, report_id: str) -> Path:
+        _require_sha256(report_id, "evaluation report IDs")
+        return self.root / "evaluations" / f"{report_id}.json"
+
+    def evaluation_ids(self) -> list[str]:
+        return sorted(path.stem for path in (self.root / "evaluations").glob("*.json"))
+
+    def write_evaluation(self, payload: bytes) -> tuple[str, Path]:
+        report_id = sha256_bytes(payload)
+        target = self.evaluation_path(report_id)
+        self._write_immutable(target, payload)
+        return report_id, target
+
+    @contextmanager
+    def staging_directory(self, prefix: str) -> Iterator[Path]:
+        """A private scratch directory under ``tmp`` that is always removed on exit.
+
+        Multi-file artifacts are written here in full and then moved into their
+        content-addressed place with ``publish_directory``, so a failure or
+        cancellation never leaves a partial artifact at a final address.
+        """
+
+        path = Path(tempfile.mkdtemp(prefix=prefix, dir=self.root / "tmp"))
+        try:
+            yield path
+        finally:
+            shutil.rmtree(path, ignore_errors=True)
+
+    @staticmethod
+    def publish_directory(staging: Path, target: Path) -> bool:
+        """Atomically rename a completed staging directory to ``target``.
+
+        Returns ``False`` without touching anything when ``target`` already
+        exists; the caller must then verify the existing artifact.
+        """
+
+        if target.exists():
+            return False
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            os.replace(staging, target)
+        except OSError:
+            if target.exists():
+                return False
+            raise
+        return True
 
     def builds(self) -> Iterator[tuple[Path, DatasetBuild]]:
         for path in sorted((self.root / "builds").glob("*/*/manifest.json")):

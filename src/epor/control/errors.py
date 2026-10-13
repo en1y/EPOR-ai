@@ -110,3 +110,10 @@ class EscalationError(ControlError):
 class EscalationNotFoundError(ControlError):
     status_code = 404
     code = "escalation_not_found"
+
+
+class CapabilityUnavailableError(ControlError):
+    """An optional dependency group this request needs is not installed."""
+
+    status_code = 503
+    code = "capability_unavailable"

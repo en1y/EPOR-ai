@@ -228,6 +228,54 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
         direction=f"{_OPERATOR_REQUEST}; the audit changes no dataset record",
         system="read-only integrity verification over the private data root",
     ),
+    "tokenizer_train": _declared(
+        "train an original byte-level BPE tokenizer from one dataset build's train split",
+        people=(
+            "reads only the train split of a local build, which already holds only "
+            "training-eligible reviewed registrations after sensitive-value removal, quarantine, "
+            "and duplicate controls, and refuses a build with documents removed since it was "
+            "made; it publishes nothing and the artifact stays in the private data root"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; vocabulary and frequency settings are typed and bounded, and "
+            "corpus text is only ever counted, never interpreted as an instruction"
+        ),
+        system=(
+            "single-threaded deterministic training, a content-addressed immutable artifact "
+            "pinned to the frozen reserved-ID spec, and cooperative cancellation"
+        ),
+    ),
+    "tokenizer_shard": _declared(
+        "encode one dataset build into content-addressed token shards",
+        people=(
+            "re-applies every current removal tombstone so removed documents never enter shards, "
+            "writes only to the private data root, and publishes nothing"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; the build and tokenizer are hash-verified and text cannot "
+            "forge reserved control tokens, because reserved IDs appear only as document "
+            "boundaries"
+        ),
+        system=(
+            "staged atomic publication, immutable content-addressed shards and indexes, "
+            "idempotent rebuilds, bounded shard sizes, and cooperative cancellation"
+        ),
+    ),
+    "tokenizer_evaluate": _declared(
+        "measure tokenizer fertility and byte round-trip on one dataset split",
+        people=(
+            "reads local split text and records only aggregate counts and ratios, never document "
+            f"text; tombstoned documents are excluded; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; the report names its split, flags in-sample measurement, and "
+            "states that it is not a target-scale result"
+        ),
+        system=(
+            "read-only over verified artifacts, an immutable content-addressed report, and "
+            "cooperative cancellation"
+        ),
+    ),
     "owner_bootstrap": _declared(
         "mint the single local owner credential on first run",
         people=(
@@ -260,6 +308,9 @@ CLI_ACTIONS: dict[str, str] = {
     "data build": "data_build",
     "data remove": "data_remove",
     "data audit": "data_audit",
+    "tokenizer train": "tokenizer_train",
+    "tokenizer shard": "tokenizer_shard",
+    "tokenizer evaluate": "tokenizer_evaluate",
     "train pretrain": "tiny_train",
     "train resume": "tiny_train",
     "eval run": "tiny_eval",

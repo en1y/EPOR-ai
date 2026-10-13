@@ -62,6 +62,9 @@ class JobType(StrEnum):
     DATA_BUILD = "data_build"
     DATA_REMOVE = "data_remove"
     DATA_AUDIT = "data_audit"
+    TOKENIZER_TRAIN = "tokenizer_train"
+    TOKENIZER_SHARD = "tokenizer_shard"
+    TOKENIZER_EVALUATE = "tokenizer_evaluate"
     TINY_TRAIN = "tiny_train"
     TINY_EVAL = "tiny_eval"
 
@@ -107,7 +110,8 @@ class Job(Base):
     __table_args__ = (
         CheckConstraint(
             "type IN ('system_probe', 'research_sync', 'data_ingest', 'data_build', "
-            "'data_remove', 'data_audit', 'tiny_train', 'tiny_eval')",
+            "'data_remove', 'data_audit', 'tokenizer_train', 'tokenizer_shard', "
+            "'tokenizer_evaluate', 'tiny_train', 'tiny_eval')",
             name="job_type",
         ),
         CheckConstraint(
