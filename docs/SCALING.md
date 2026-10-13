@@ -127,8 +127,12 @@ scarcest domain is taken whole; others are filled in hash order), so no build,
 tokenizer, or shard is rewritten and every mixture shares one tokenizer and one
 validation split. `scale mixture` trains the same model for the same steps on
 each mixture — matched training tokens, with epochs over each subset recorded —
-then measures validation loss on each domain's full validation documents and
-the whole split. This materialization is an `EPOR-adaptation`; the roadmap's
+then measures validation loss on each domain's validation documents. The
+overall figure is the target-token-weighted mean of the per-domain losses,
+which equals the whole-split mean when the pass is uncapped; under
+`--evaluation-max-steps` each domain is capped separately, so a capped pass can
+no longer let the first domain in document order stand in for the split. This
+materialization is an `EPOR-adaptation`; the roadmap's
 55/25/15/5 proxy mixture is a starting point, and a mixture is chosen only by a
 human from measured losses. Validation is never re-weighted.
 

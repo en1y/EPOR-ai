@@ -261,6 +261,15 @@ def test_mixture_ablation_reports_per_domain_validation_loss(
     for item in summary:
         assert set(item["by_domain"]) == {"code", "general"}
         assert all(value > 0 for value in item["by_domain"].values())
+    # A capped pass must not let the first domain stand in for the whole split:
+    # overall is the target-token-weighted mean of the per-domain losses.
+    for mixture in report.results["mixtures"]:
+        validation = mixture["validation"]
+        domains = validation["by_domain"].values()
+        weighted = sum(d["main_loss"] * d["target_tokens"] for d in domains)
+        tokens = sum(d["target_tokens"] for d in domains)
+        assert validation["overall"]["target_tokens"] == tokens
+        assert validation["overall"]["main_loss"] == pytest.approx(weighted / tokens)
     balanced, code_only = report.results["mixtures"]
     assert balanced["selection"]["selection_sha256"] != code_only["selection"]["selection_sha256"]
     assert balanced["tokens_seen"] == code_only["tokens_seen"] == 64

@@ -24,6 +24,7 @@ result.  Losses are proxy-scale measurements.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any
@@ -139,10 +140,25 @@ def _evaluate(
             "documents": len(ids) if ids is not None else None,
         }
 
-    return {
-        "overall": one(None),
-        "by_domain": {domain: one(ids) for domain, ids in documents.items()},
+    by_domain = {domain: one(ids) for domain, ids in documents.items()}
+    # A capped evaluation pass walks documents in a fixed order, so evaluating
+    # the whole split under a cap would score only the first domain(s). The
+    # overall figure is therefore the target-token-weighted mean of the
+    # per-domain losses, which equals the global mean exactly when uncapped.
+    target_tokens = sum(item["target_tokens"] for item in by_domain.values())
+    main_loss = (
+        sum(item["main_loss"] * item["target_tokens"] for item in by_domain.values())
+        / target_tokens
+        if target_tokens
+        else float("nan")
+    )
+    overall = {
+        "main_loss": main_loss,
+        "perplexity": math.exp(main_loss) if target_tokens else float("nan"),
+        "target_tokens": target_tokens,
+        "documents": sum(item["documents"] or 0 for item in by_domain.values()),
     }
+    return {"overall": overall, "by_domain": by_domain}
 
 
 def run_mixture_ablation(
