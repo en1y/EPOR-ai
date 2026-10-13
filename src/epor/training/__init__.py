@@ -21,6 +21,14 @@ from .distributed import (
     launch_local,
 )
 from .faults import FaultPlan, InjectedFault, fault_plan_from_env
+from .kernel import (
+    PackedEvaluation,
+    PackedEvaluationResult,
+    PackedTrainingResult,
+    PackedTrainingSettings,
+    evaluate_packed_checkpoint,
+    pretrain_packed,
+)
 from .loop import (
     EvaluationResult,
     GenerationResult,
@@ -80,7 +88,11 @@ __all__ = [
     "OptimizerSettings",
     "PackedBatch",
     "PackedBatchStream",
+    "PackedEvaluation",
+    "PackedEvaluationResult",
     "PackedStep",
+    "PackedTrainingResult",
+    "PackedTrainingSettings",
     "RandomBatchStream",
     "RowSegment",
     "ShardCorpus",
@@ -89,6 +101,7 @@ __all__ = [
     "TrainingSettings",
     "destroy_distributed",
     "evaluate",
+    "evaluate_packed_checkpoint",
     "evaluation_steps",
     "fault_plan_from_env",
     "generate",
@@ -100,6 +113,7 @@ __all__ = [
     "load_model_config",
     "load_token_corpus",
     "pretrain",
+    "pretrain_packed",
     "read_kernel_checkpoint",
     "resume_pretraining",
     "validate_config",
