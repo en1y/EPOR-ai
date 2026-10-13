@@ -9,12 +9,14 @@ Consumers (token shards, fertility reports) should depend on:
 * ``load_build`` / ``iter_split_documents`` for hash-verified split reads;
 * ``build_token_shards`` / ``verify_tokenized_build`` / ``iter_tokenized_documents``
   for content-addressed, boundary-preserving token shards, and
-  ``affected_tokenized_builds`` for removal impact.
+  ``affected_tokenized_builds`` for removal impact;
+* ``evaluate_tokenizer`` for held-out fertility reports.
 """
 
 from .artifact import TokenizerArtifactError, TokenizerManifest, read_artifact
 from .codec import EporTokenizer, load_tokenizer
 from .corpus import CorpusError, SplitDocument, iter_split_documents, load_build
+from .evaluate import FertilityMetrics, FertilityReport, evaluate_tokenizer, load_fertility_report
 from .shards import (
     DEFAULT_MAX_SHARD_TOKENS,
     AffectedShards,
@@ -61,6 +63,8 @@ __all__ = [
     "AffectedShards",
     "CorpusError",
     "EporTokenizer",
+    "FertilityMetrics",
+    "FertilityReport",
     "ReservedToken",
     "SplitDocument",
     "TokenizedBuild",
@@ -71,9 +75,11 @@ __all__ = [
     "TrainedTokenizer",
     "affected_tokenized_builds",
     "build_token_shards",
+    "evaluate_tokenizer",
     "iter_split_documents",
     "iter_tokenized_documents",
     "load_build",
+    "load_fertility_report",
     "load_tokenized_manifest",
     "load_tokenizer",
     "read_artifact",
