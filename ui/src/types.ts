@@ -10,6 +10,11 @@ export type JobType =
   | 'tokenizer_evaluate'
   | 'kernel_train'
   | 'kernel_evaluate'
+  | 'eval_suite'
+  | 'eval_contamination'
+  | 'scale_profile'
+  | 'scale_sweep'
+  | 'scale_mixture'
   | 'tiny_train'
   | 'tiny_eval'
 export type JobStatus =
@@ -442,6 +447,7 @@ export interface Artifact {
 }
 
 export interface JsonSchemaProperty {
+  $ref?: string
   type?: string | string[]
   title?: string
   description?: string
@@ -468,4 +474,179 @@ export interface ErrorEnvelope {
   message: string
   details: unknown
   request_id: string
+}
+
+export type MeasurementScope = 'harness-fixture' | 'proxy-scale'
+
+export interface PrimaryMetric {
+  task_id: string
+  task_type: string
+  metric: string
+  value: number | null
+  scope: string
+}
+
+export interface EvaluationReportSummary {
+  report_id: string
+  suite_id: string
+  suite_version: number
+  scope: string
+  claim_boundary: string
+  model_kind: string
+  model_id: string
+  checkpoint_step: number | null
+  parameter_count: number | null
+  task_count: number
+  skipped_task_count: number
+  primary_metrics: PrimaryMetric[]
+  code_executed: boolean
+}
+
+export interface EvaluationReportList {
+  schema_version: number
+  reports: EvaluationReportSummary[]
+  integrity_errors: string[]
+}
+
+export interface EvaluationMetric {
+  name: string
+  value: number | null
+  scope: string
+  higher_is_better: boolean
+}
+
+export interface ReliabilityBin {
+  lower: number
+  upper: number
+  count: number
+  mean_confidence: number | null
+  accuracy: number | null
+}
+
+export interface CalibrationSummary {
+  method: string
+  probability_source: string
+  bins: number
+  items: number
+  expected_calibration_error: number
+  brier_score: number
+  reliability: ReliabilityBin[]
+}
+
+export interface SandboxIsolation {
+  sandbox_version: string
+  network_isolated: boolean
+  network_method: string
+  filesystem_writes_confined: boolean
+  landlock_abi: number
+  signals_scoped: boolean
+  process_limit_scope: string
+  notes: string[]
+}
+
+export interface EvaluationTask {
+  task_id: string
+  task_type: string
+  format: string
+  primary_metric: string
+  metrics: EvaluationMetric[]
+  item_count: number
+  settings: Record<string, unknown>
+  calibration: CalibrationSummary | null
+  sandbox: SandboxIsolation | null
+}
+
+export interface EvaluationReportView {
+  report_id: string
+  suite_id: string
+  suite_version: number
+  scope: string
+  claim_boundary: string
+  model: {
+    kind: string
+    model_id: string
+    checkpoint_step: number | null
+    parameter_count: number | null
+    tokenizer_id: string
+  }
+  data: { kind: string; source_id: string; content_sha256: string; task_ids: string[] }[]
+  tasks: EvaluationTask[]
+  skipped_tasks: { task_id: string; reason: string }[]
+  summary: EvaluationReportSummary
+}
+
+export interface MetricDelta {
+  task_id: string
+  name: string
+  baseline: number | null
+  candidate: number | null
+  delta: number | null
+  higher_is_better: boolean
+}
+
+export interface PairedBootstrap {
+  task_id: string
+  paired_items: number
+  unmatched_items: number
+  baseline_mean: number | null
+  candidate_mean: number | null
+  mean_delta: number | null
+  ci_lower: number | null
+  ci_upper: number | null
+  confidence: number
+  resamples: number
+  seed: number
+}
+
+export interface ReportComparison {
+  baseline_report_id: string
+  candidate_report_id: string
+  warnings: string[]
+  metric_deltas: MetricDelta[]
+  bootstraps: PairedBootstrap[]
+}
+
+export interface ScalingReportSummary {
+  report_id: string
+  content_sha256: string
+  kind: string
+  scope: string
+  claim_boundary: string
+  warning_count: number
+  recorded_at: string | null
+  [headline: string]: unknown
+}
+
+export interface ScalingReportList {
+  schema_version: number
+  reports: ScalingReportSummary[]
+  integrity_errors: string[]
+}
+
+export interface LadderRung {
+  slug: string
+  config_sha256: string
+  nominal_non_embedding: number | null
+  total_parameters: number
+  non_embedding_parameters: number
+  vocab_size: number
+  execution: 'local' | 'projection-only'
+  reason: string
+}
+
+export interface Ladder {
+  rungs: LadderRung[]
+  note: string
+}
+
+export interface ScalingReport {
+  report_id: string
+  kind: string
+  scope: string
+  claim_boundary: string
+  inputs: Record<string, unknown>
+  results: Record<string, unknown>
+  warnings: string[]
+  measured: Record<string, unknown> | null
+  summary: ScalingReportSummary
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccessPage, SignInDialog } from './AccessPage'
 import { DocsPage } from './DocsPage'
+import { EvaluationPage } from './EvaluationPage'
+import { ScalingPage } from './ScalingPage'
 import { SafetyPage } from './SafetyPage'
 import { KernelRunsPanel, latestTokenizedBuild } from './KernelRuns'
 import { TokenizerPage } from './TokenizerPage'
@@ -45,6 +47,8 @@ const anonymousIdentity: Identity = {
 type Page =
   | 'overview'
   | 'training'
+  | 'evaluation'
+  | 'scaling'
   | 'data'
   | 'tokenizer'
   | 'jobs'
@@ -62,6 +66,14 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   training: {
     title: 'Training',
     summary: 'Kernel and reference training runs, their loss, and the checkpoints they wrote.',
+  },
+  evaluation: {
+    title: 'Evaluation',
+    summary: 'Suite reports with scoped metrics, calibration, contamination, memorization, and G10 behaviour.',
+  },
+  scaling: {
+    title: 'Scaling',
+    summary: 'The model-size ladder, host profiles, sweeps, mixture ablations, fits, and projections.',
   },
   data: {
     title: 'Data engine',
@@ -98,7 +110,10 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
 }
 
 const navGroups: { label: string; pages: Page[] }[] = [
-  { label: 'Workspace', pages: ['overview', 'training', 'data', 'tokenizer', 'jobs'] },
+  {
+    label: 'Workspace',
+    pages: ['overview', 'training', 'evaluation', 'scaling', 'data', 'tokenizer', 'jobs'],
+  },
   { label: 'Governance', pages: ['safety', 'access'] },
   { label: 'Reference', pages: ['models', 'research', 'docs'] },
 ]
@@ -145,6 +160,18 @@ function effectiveProperty(property: JsonSchemaProperty): JsonSchemaProperty {
   return { ...alternative, ...property, type }
 }
 
+/** Nested objects and lists of objects are entered as JSON (sweep templates, mixtures). */
+export function isJsonProperty(property: JsonSchemaProperty): boolean {
+  if (property.$ref !== undefined) return true
+  const type = schemaPropertyType(property)
+  if (type === 'object') return true
+  if (type === 'array') {
+    const items = property.items ?? property.anyOf?.find((item) => item.items)?.items
+    return items !== undefined && (items.$ref !== undefined || schemaPropertyType(items) === 'object')
+  }
+  return false
+}
+
 export function hydrateFormDefaults(
   definition: JobTypeDefinition | undefined,
 ): Record<string, FormValue> {
@@ -152,6 +179,8 @@ export function hydrateFormDefaults(
   for (const [name, property] of Object.entries(definition?.schema.properties ?? {})) {
     if (property.default === null || property.default === undefined) {
       defaults[name] = ''
+    } else if (isJsonProperty(property)) {
+      defaults[name] = JSON.stringify(property.default)
     } else if (typeof property.default === 'boolean') {
       defaults[name] = property.default
     } else if (Array.isArray(property.default)) {
@@ -172,6 +201,14 @@ export function serializeJobSpec(
     const value = values[name]
     if (value === '' || value === undefined) continue
 
+    if (isJsonProperty(property)) {
+      try {
+        spec[name] = JSON.parse(String(value)) as unknown
+      } catch {
+        throw new Error(`${property.title ?? titleCase(name)} must be valid JSON`)
+      }
+      continue
+    }
     const type = schemaPropertyType(property)
     if (type === 'integer' || type === 'number') {
       const number = Number(value)
@@ -231,6 +268,12 @@ function Icon({ name }: { name: Page }) {
   }
   if (name === 'training') {
     return <path d="M4 19h16M5 16l4-6 4 4 6-8" />
+  }
+  if (name === 'evaluation') {
+    return <path d="M5 4h14v16H5zM8 9l2 2 4-4M8 15h8" />
+  }
+  if (name === 'scaling') {
+    return <path d="M4 20h16M6 16v4M10 12v8M14 8v12M18 4v16" />
   }
   if (name === 'jobs') {
     return <path d="M5 5h14v14H5zM9 9h6M9 13h6M9 17h3" />
@@ -1049,8 +1092,8 @@ export function JobForm({
     if (!definition) return
     setSubmitting(true)
     setError('')
-    const spec = serializeJobSpec(definition, values)
     try {
+      const spec = serializeJobSpec(definition, values)
       onCreated(await api.createJob(type, spec))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not queue job')
@@ -1081,6 +1124,8 @@ export function JobForm({
             const propertyType = schemaPropertyType(resolved)
             return resolved.enum && resolved.enum.length > 0 ? (
               <label className="form-field" key={name}><span>{property.title ?? titleCase(name)}</span><select required={definition?.schema.required?.includes(name)} value={String(values[name] ?? '')} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))}><option value="">Select…</option>{resolved.enum.map((option) => <option key={String(option)} value={String(option)}>{titleCase(String(option))}</option>)}</select></label>
+            ) : isJsonProperty(property) ? (
+              <label className="form-field" key={name}><span>{property.title ?? titleCase(name)} (JSON)</span><textarea required={definition?.schema.required?.includes(name)} rows={3} spellCheck={false} value={String(values[name] ?? '')} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.value }))} /></label>
             ) : propertyType === 'boolean' ? (
               <label className="checkbox-field" key={name}><input type="checkbox" checked={Boolean(values[name])} onChange={(event) => setValues((current) => ({ ...current, [name]: event.target.checked }))} /><span>{property.title ?? titleCase(name)}</span></label>
             ) : (
@@ -1186,7 +1231,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (page !== 'tokenizer' && page !== 'training' && tokenizerSummary !== null) return
+    if (
+      page !== 'tokenizer' &&
+      page !== 'training' &&
+      page !== 'evaluation' &&
+      page !== 'scaling' &&
+      tokenizerSummary !== null
+    )
+      return
     let disposed = false
     // Fetched on its own so a missing optional data profile cannot blank the console.
     api.tokenizers()
@@ -1197,7 +1249,7 @@ export default function App() {
   }, [page])
 
   useEffect(() => {
-    if (page !== 'training') return
+    if (page !== 'training' && page !== 'evaluation') return
     let disposed = false
     const refreshTraining = () => {
       api.trainingRuns()
@@ -1306,6 +1358,31 @@ export default function App() {
                 dataSummary?.latest_builds ?? {},
               )}
               onNew={(type, values) => startJob({ type, values })}
+            />
+          )}
+          {page === 'evaluation' && (
+            <EvaluationPage
+              onNew={(type, values) => startJob({ type, values })}
+              checkpointPath={
+                trainingSummary?.runs.find((run) => run.source === 'job' && run.checkpoint)?.location ?? null
+              }
+              tokenizedId={
+                latestTokenizedBuild(
+                  tokenizerSummary?.tokenized_builds ?? [],
+                  dataSummary?.latest_builds ?? {},
+                )?.tokenized_id ?? null
+              }
+            />
+          )}
+          {page === 'scaling' && (
+            <ScalingPage
+              onNew={(type, values) => startJob({ type, values })}
+              tokenizedId={
+                latestTokenizedBuild(
+                  tokenizerSummary?.tokenized_builds ?? [],
+                  dataSummary?.latest_builds ?? {},
+                )?.tokenized_id ?? null
+              }
             />
           )}
           {page === 'data' && <DataPage summary={dataSummary} onNew={(type) => startJob({ type })} />}
