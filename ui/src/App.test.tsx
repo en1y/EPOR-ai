@@ -311,6 +311,13 @@ describe('API health polling', () => {
     vi.spyOn(api, 'capabilities').mockResolvedValue(capabilities)
     vi.spyOn(api, 'research').mockResolvedValue(research)
     vi.spyOn(api, 'data').mockResolvedValue(dataSummary)
+    vi.spyOn(api, 'tokenizers').mockResolvedValue({
+      schema_version: 1,
+      tokenizers: [],
+      tokenized_builds: [],
+      fertility_reports: [],
+      integrity_errors: [],
+    })
     vi.spyOn(api, 'models').mockResolvedValue([])
     vi.spyOn(api, 'jobTypes').mockResolvedValue([])
     vi.spyOn(api, 'jobs').mockResolvedValue([])

@@ -334,6 +334,8 @@ tbody tr:hover { background: rgba(199, 243, 107, 0.025); }
   border: 1px solid color-mix(in srgb, var(--family) 42%, transparent); color: var(--family);
   background: color-mix(in srgb, var(--family) 9%, transparent); font: 18px/1 var(--mono);
 }
+.report-scope { margin: 12px 20px; }
+.report-footnote { margin: 0; color: var(--text-dim); font-size: 13px; }
 .plan-warning {
   margin: 16px 0; padding: 8px 10px;
   border: 1px solid var(--line-strong); border-radius: 6px;
@@ -668,7 +670,7 @@ code.hash {
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   }
   .sidebar nav { display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 2px; }
-  .nav-group { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
+  .nav-group { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
   .nav-item { min-height: 48px; font-size: 10px; }
 }
 
