@@ -14,6 +14,11 @@
 - [Training kernel](TRAINING.md) — v0.0.5 packed batching, optimizer and
   precision, DDP/FSDP2 on CPU, checkpoints and the exact-resume contract, fault
   injection, operator surfaces, and limitations.
+- [Evaluation harness](EVALUATION.md) — v0.0.6 suites, task types and scoring,
+  calibration, registered benchmark sources, the code sandbox and its gaps,
+  contamination, memorization, and the G10 safety suite's claim boundary.
+- [Scaling laboratory](SCALING.md) — v0.0.6 ladder, FLOPs model, host profiles,
+  sweeps, mixture ablations, fits, and projections mapped to the compute policy.
 - [Compute policy](COMPUTE_POLICY.md) — cheap-first experiments, approval gates,
   abort rules, and hardware profiles.
 - [Contributing](CONTRIBUTING.md) — environment, tests, claim discipline, and
@@ -28,6 +33,7 @@ Downloaded bytes, extracted text, and local indexes live under ignored
 `research/raw/`, `research/extracted/`, and `research/cache/` directories.
 
 No target-size model or target-scale tokenizer has been trained or released by
-v0.0.5; kernel runs so far are proxy-scale local measurements. Parameter counts,
+v0.0.6; kernel runs, evaluations, and sweeps so far are proxy-scale local
+measurements, and no target-size run has been proposed or approved. Parameter counts,
 context lengths, vocabulary targets, and architecture descriptions are plans
 until their named gates produce measured artifacts.

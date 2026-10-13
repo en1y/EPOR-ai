@@ -77,4 +77,4 @@ dominate a total-count ladder; each lands within 5% of its nominal size. Shapes
 follow the shipped recipes: `d_ff = 3 * d_model`, grouped-query attention, 64-wide
 heads up to 300M and 128-wide at 1B. Local sweeps train a derived config with
 the tokenized build's vocabulary, the same derivation `--vocab-from-build` uses;
-the rung file is never edited. See `src/epor/scaling/ladder.py`.
+the rung file is never edited. See [`docs/SCALING.md`](../../docs/SCALING.md).

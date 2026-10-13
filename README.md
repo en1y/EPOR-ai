@@ -2,7 +2,7 @@
 
 <!-- project-version:start -->
 > [!IMPORTANT]
-> **Current project version: `v0.0.5`**
+> **Current project version: `v0.0.6`**
 >
 > This identifies the code in this checkout; it does not imply a formal release.
 > Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -14,13 +14,13 @@ language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
-The v0.0.x program is intentionally small. Through v0.0.5 it validates research
+The v0.0.x program is intentionally small. Through v0.0.6 it validates research
 provenance, the executable safety covenant and local authorization boundary,
 configuration, tiny-model correctness and exact resume, a provenance-first
 offline data engine, an original byte-level BPE tokenizer with
-content-addressed token shards, and a CPU training kernel with exact resume
-across single-process, DDP, and FSDP2 runs before any target-size run is
-considered. The 30B/12B/8B
+content-addressed token shards, a CPU training kernel with exact resume
+across single-process, DDP, and FSDP2 runs, and an evaluation and scaling
+laboratory before any target-size run is considered. The 30B/12B/8B
 family descriptions are gated research destinations, not bundled checkpoints
 or fabricated performance claims.
 
@@ -84,13 +84,13 @@ once. A refusal is never approvable.
 
 What this is not: a harm detector. The resolver enforces ordering, citation,
 justification, and fail-closed escalation over assessments supplied to it.
-Through v0.0.5, those assessments are reviewed per-action declarations over a
+Through v0.0.6, those assessments are reviewed per-action declarations over a
 closed allowlist, which is only sound because that action space is small and
 fixed.
 The authorization model is local and single-machine: it verifies a bearer
 credential held on this machine, and cannot defend against a compromised local
 account that can read that credential from disk. Classifiers, model-behavior
-evaluations, and red teaming are later versions.
+evaluations beyond the v0.0.6 G10 harness, and red teaming are later versions.
 
 ## Quick start
 
@@ -205,6 +205,31 @@ local measurement, not a trained or validated model. See
 [`docs/TRAINING.md`](docs/TRAINING.md) for settings, the exact-resume contract,
 DDP/FSDP2 findings, and limitations.
 
+The v0.0.6 laboratory evaluates and scales those runs. Suites score a
+checkpoint and store a content-addressed report; code tasks run only with
+`--allow-code-execution`, a separately authorized action, in a defense-in-depth
+sandbox that is not a security boundary:
+
+```bash
+uv run --frozen --no-sync epor eval suite runs/kernel-tiny --suite fixtures
+uv run --frozen --no-sync epor eval suite runs/kernel-tiny --suite safety
+uv run --frozen --no-sync epor eval contamination --training-data <tokenized-id>
+uv run --frozen --no-sync epor eval compare <baseline-report-id> <candidate-report-id>
+uv run --frozen --no-sync epor scale ladder
+uv run --frozen --no-sync epor scale profile configs/models/ladder/epor-ladder-10m.yaml
+uv run --frozen --no-sync epor scale sweep --tokenized-id <tokenized-id> \
+  --rung configs/models/epor-tiny.yaml --budget 8192 --budget 16384 --output runs/sweep
+uv run --frozen --no-sync epor scale fit <sweep-report-id>
+uv run --frozen --no-sync epor scale project --inputs <your-inputs.yaml> \
+  --target configs/models/ladder/epor-ladder-1b.yaml
+```
+
+Only the 10M ladder rung runs on the reference machine; 100M, 300M, and 1B are
+projection-only. Every result is a harness-fixture, proxy-scale, or host
+measurement, and a projection provisions nothing and is never an approval. See
+[`docs/EVALUATION.md`](docs/EVALUATION.md) and
+[`docs/SCALING.md`](docs/SCALING.md).
+
 The tiny reference path can be checked independently:
 
 ```bash
@@ -226,9 +251,10 @@ allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary
 URL.
 
-The console separates its work into ten pages: **Overview**, **Training**,
-**Data engine**, **Tokenizer**, **Jobs**, **Safety covenant**, **Access**,
-**Model families**, **Research ledger**, and **Documentation**. The data page
+The console separates its work into twelve pages: **Overview**, **Training**,
+**Evaluation**, **Scaling**, **Data engine**, **Tokenizer**, **Jobs**,
+**Safety covenant**, **Access**, **Model families**, **Research ledger**, and
+**Documentation**. The data page
 shows reviewed source registrations, immutable-layer counts, quarantines,
 removals, builds, and audit state without exposing document content. The
 tokenizer page lists tokenizers with declared and learned vocabulary kept
@@ -236,12 +262,16 @@ apart, tokenized builds, and fertility reports with their scope and any
 in-sample or round-trip warning. The training page lists verified
 training-kernel runs with their losses, MTP losses, throughput, precision,
 topology, features, checkpoint, and validation result, labelled as proxy-scale
-measurements, beside the training and evaluation jobs. The documentation reader serves
+measurements, beside the training and evaluation jobs. The evaluation page
+shows verified suite reports with scoped metrics, calibration, contamination,
+memorization, G10 scores under their claim note, and comparisons; the scaling
+page shows the ladder, profiles, sweeps, mixtures, fits, and projections with
+their unknown inputs and approval requirement, and has no launch control. The documentation reader serves
 tracked first-party Markdown only. Ignored
 third-party research downloads are never rendered as console content; the
 research ledger links those sources at their canonical URL instead.
 
-Version 0.0.5 is operated from a source checkout. The wheel and source archive
+Version 0.0.6 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository
 resources until the v0.1.0 packaging contract is finalized.
@@ -255,8 +285,9 @@ future `train-cuNNN` profile will conflict with `train-cpu` and pin its CUDA
 provider, driver assumptions, PyTorch index, and kernels together.
 JAX and Hopper-specific kernels will likewise never be mixed into the default
 environment. The `train-cpu` profile resolves PyTorch from its official
-CPU-only wheel index; the v0.0.1 `eval` extra uses that same CPU backend so the
-public evaluation command works without another profile.
+CPU-only wheel index; the `eval` extra uses that same CPU backend and adds
+SymPy for math checking (with lm-eval and tree-sitter pinned for later suites),
+so the evaluation harness works without another profile.
 
 ## Project map
 
@@ -269,6 +300,8 @@ public evaluation command works without another profile.
   and fertility reports.
 - `src/epor/models/` and `src/epor/training/` — canonical PyTorch reference and
   the v0.0.5 training kernel.
+- `src/epor/evaluation/` and `src/epor/scaling/` — the v0.0.6 evaluation harness,
+  code sandbox, and scaling laboratory.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.
 
