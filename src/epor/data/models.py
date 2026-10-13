@@ -145,10 +145,15 @@ class DocumentRecord(FrozenSchema):
         return value.astimezone(UTC)
 
 
+TombstoneTarget = Literal["source_id", "document_id", "raw_sha256", "alignment_record"]
+
+
 class Tombstone(FrozenSchema):
+    """An immutable removal; ``alignment_record`` targets a v0.0.7 teacher/judge record."""
+
     schema_version: Literal[1] = 1
     id: Sha256
-    target_kind: Literal["source_id", "document_id", "raw_sha256"]
+    target_kind: TombstoneTarget
     target: str = Field(min_length=1, max_length=200)
     reason: str = Field(min_length=1, max_length=2_000)
     requested_at: datetime

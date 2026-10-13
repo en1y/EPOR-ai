@@ -58,7 +58,7 @@ class DataBuildSpec(StrictSchema):
 
 
 class DataRemoveSpec(StrictSchema):
-    target_kind: Literal["source_id", "document_id", "raw_sha256"]
+    target_kind: Literal["source_id", "document_id", "raw_sha256", "alignment_record"]
     target: str = Field(min_length=1, max_length=200)
     reason: str = Field(min_length=1, max_length=2_000)
     requested_at: datetime | None = None

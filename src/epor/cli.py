@@ -586,8 +586,8 @@ def data_audit() -> None:
 @data_app.command("remove")
 def data_remove(
     target_kind: Annotated[
-        Literal["source_id", "document_id", "raw_sha256"],
-        typer.Argument(help="One of: source_id, document_id, raw_sha256."),
+        Literal["source_id", "document_id", "raw_sha256", "alignment_record"],
+        typer.Argument(help="One of: source_id, document_id, raw_sha256, alignment_record."),
     ],
     target: Annotated[str, typer.Argument()],
     reason: Annotated[str, typer.Option(prompt=True)],

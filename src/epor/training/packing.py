@@ -13,7 +13,9 @@ document-causal attention never crosses documents.
 * ``targets[r, t]`` is always the true next token: EOS where the document
   really ends, otherwise the following content token, *including* at a row
   boundary that cuts a document (that target is known, so it is not masked).
-  Only padding positions carry ``IGNORE_INDEX``.
+  For token shards only padding positions carry ``IGNORE_INDEX``; a chat
+  corpus (:mod:`epor.training.chat_data`) also masks every non-assistant
+  target, and ``target_tokens`` always counts the unmasked targets.
 * **Known limitation:** a continued chunk starts a new segment, so RoPE
   positions restart at 0 and the chunk cannot attend to the document's earlier
   tokens.  No position offset is carried; long documents are trained as
@@ -69,7 +71,7 @@ from epor.models.reference import IGNORE_INDEX
 from epor.tokenizer.corpus import Split
 from epor.tokenizer.spec import PAD_ID
 
-from .shard_data import ShardCorpus
+from .shard_data import TrainingCorpus
 
 PIPELINE_VERSION: Final = "epor-packing-v1"
 STATE_SCHEMA_VERSION: Final = 1
@@ -104,7 +106,7 @@ class DataPipelineSettings(FrozenSchema):
     @classmethod
     def for_corpus(
         cls,
-        corpus: ShardCorpus,
+        corpus: TrainingCorpus,
         *,
         seq_len: int,
         tokens_per_batch: int,
@@ -212,7 +214,7 @@ def _epoch_seed(seed: int, epoch: int) -> int:
 class _Planner:
     """Row layouts from document lengths alone; reads no tokens."""
 
-    def __init__(self, corpus: ShardCorpus, seq_len: int, seed: int, shuffle: bool) -> None:
+    def __init__(self, corpus: TrainingCorpus, seq_len: int, seed: int, shuffle: bool) -> None:
         if corpus.document_count == 0:
             raise ValueError(f"split {corpus.split!r} has no documents")
         self._lengths = corpus.pair_counts
@@ -262,12 +264,11 @@ class _Planner:
         return tuple(segments), _Cursor(epoch, position, offset)
 
 
-def _materialize(corpus: ShardCorpus, rows: Sequence[Row], seq_len: int) -> PackedBatch:
+def _materialize(corpus: TrainingCorpus, rows: Sequence[Row], seq_len: int) -> PackedBatch:
     shape = (len(rows), seq_len)
     inputs = torch.full(shape, PAD_ID, dtype=torch.int64)
     targets = torch.full(shape, IGNORE_INDEX, dtype=torch.int64)
     segments = torch.zeros(shape, dtype=torch.int64)
-    real = 0
     for row_index, row in enumerate(rows):
         position = 0
         for segment_index, segment in enumerate(row):
@@ -279,7 +280,7 @@ def _materialize(corpus: ShardCorpus, rows: Sequence[Row], seq_len: int) -> Pack
             position = stop
         # Padding is its own run, after every document run of the row.
         segments[row_index, position:] = len(row)
-        real += position
+    real = int((targets != IGNORE_INDEX).sum())
     return PackedBatch(
         input_ids=inputs,
         targets=targets,
@@ -289,7 +290,7 @@ def _materialize(corpus: ShardCorpus, rows: Sequence[Row], seq_len: int) -> Pack
     )
 
 
-def _check_context(corpus: ShardCorpus, seq_len: int) -> None:
+def _check_context(corpus: TrainingCorpus, seq_len: int) -> None:
     if corpus.max_context is not None and seq_len > corpus.max_context:
         raise ValueError(
             f"seq_len {seq_len} exceeds the model's configured context {corpus.max_context}"
@@ -297,7 +298,7 @@ def _check_context(corpus: ShardCorpus, seq_len: int) -> None:
 
 
 def _build_step(
-    corpus: ShardCorpus,
+    corpus: TrainingCorpus,
     rows: list[Row],
     geometry: BatchGeometry,
     seq_len: int,
@@ -313,7 +314,11 @@ def _build_step(
         step=step,
         micro_batches=micro,
         global_tokens=len(rows) * seq_len,
-        global_target_tokens=sum(segment.length for row in rows for segment in row),
+        global_target_tokens=sum(
+            corpus.target_count(segment.document, segment.start, segment.length)
+            for row in rows
+            for segment in row
+        ),
     )
 
 
@@ -342,7 +347,7 @@ class PackedBatchStream:
 
     def __init__(
         self,
-        corpus: ShardCorpus,
+        corpus: TrainingCorpus,
         *,
         seq_len: int,
         tokens_per_batch: int,
@@ -417,7 +422,7 @@ class PackedBatchStream:
 
 
 def evaluation_steps(
-    corpus: ShardCorpus,
+    corpus: TrainingCorpus,
     *,
     seq_len: int,
     tokens_per_batch: int,

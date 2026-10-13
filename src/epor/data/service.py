@@ -62,7 +62,8 @@ def is_tombstoned(record: DocumentRecord, tombstones: Iterable[Tombstone]) -> bo
         "document_id": record.document_id,
         "raw_sha256": record.raw_sha256,
     }
-    return any(values[item.target_kind] == item.target for item in tombstones)
+    # ``alignment_record`` tombstones target alignment records, never documents.
+    return any(values.get(item.target_kind) == item.target for item in tombstones)
 
 
 class DataEngine:

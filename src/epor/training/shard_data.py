@@ -32,6 +32,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 import torch
 from torch import Tensor
@@ -49,6 +50,31 @@ from epor.tokenizer.shards import (
     verify_tokenized_build,
 )
 from epor.tokenizer.spec import BOS_ID, DOC_END_ID, DOC_START_ID, EOS_ID, PAD_ID
+
+
+class TrainingCorpus(Protocol):
+    """What packing needs from a corpus: documents as (masked) next-token pairs.
+
+    :class:`ShardCorpus` (pretraining) and
+    :class:`~epor.training.chat_data.ChatCorpus` (assistant-only chat targets)
+    implement it.  ``target_count`` is the number of pairs in a range whose
+    target is trained; it equals the range length when nothing is masked.
+    """
+
+    tokenized_id: str
+    split: Split
+    max_context: int | None
+    pair_counts: tuple[int, ...]
+
+    @property
+    def tokenizer_id(self) -> str: ...
+
+    @property
+    def document_count(self) -> int: ...
+
+    def pairs(self, document: int, start: int, length: int) -> tuple[Tensor, Tensor]: ...
+
+    def target_count(self, document: int, start: int, length: int) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,3 +258,9 @@ class ShardCorpus:
             raise IndexError("pair range is outside the document")
         framed = self.framed_tokens(document, start, start + length + 1)
         return framed[:-1], framed[1:]
+
+    def target_count(self, document: int, start: int, length: int) -> int:
+        """Pretraining masks nothing: every pair in a range is a target."""
+
+        del document, start
+        return length
