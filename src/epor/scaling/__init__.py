@@ -21,6 +21,8 @@ from __future__ import annotations
 from .fit import fit_joint, fit_observations, fit_power_law, fit_sweep, predict_loss
 from .flops import FlopsEstimate, ParameterCounts, estimate_flops, parameter_counts
 from .ladder import LADDER_RUNGS, RungStatus, derive_rung, ladder_paths, load_ladder, rung_status
+from .mixture import MixturePlan, NamedMixture, mixture_summary, run_mixture_ablation
+from .profile import ProfileSettings, profile_training_step
 from .projection import ProjectionInputs, load_projection_inputs, project_training
 from .report import (
     ScalingReport,
@@ -29,15 +31,20 @@ from .report import (
     seal_scaling_report,
     store_scaling_report,
 )
+from .sweep import SweepPlan, run_sweep, sweep_points
 
 __all__ = [
     "LADDER_RUNGS",
     "FlopsEstimate",
+    "MixturePlan",
+    "NamedMixture",
     "ParameterCounts",
+    "ProfileSettings",
     "ProjectionInputs",
     "RungStatus",
     "ScalingReport",
     "ScalingReportError",
+    "SweepPlan",
     "derive_rung",
     "estimate_flops",
     "fit_joint",
@@ -48,10 +55,15 @@ __all__ = [
     "load_ladder",
     "load_projection_inputs",
     "load_scaling_reports",
+    "mixture_summary",
     "parameter_counts",
     "predict_loss",
+    "profile_training_step",
     "project_training",
+    "run_mixture_ablation",
+    "run_sweep",
     "rung_status",
     "seal_scaling_report",
     "store_scaling_report",
+    "sweep_points",
 ]
