@@ -45,3 +45,15 @@ control at matched tokens; the parameter report lists MTP's extra parameters
 and per-token FP32 logit bytes so that memory cost is visible. Activation
 checkpointing is a runtime option of the decoder, not a config field, because it
 does not change the model's math.
+
+## Training-kernel runs
+
+`epor-tiny.yaml` keeps the 260-ID vocabulary of the v0.0.1 debug byte
+tokenizer, which the CI smoke path uses. The v0.0.5 training kernel needs the
+tokenized build's vocabulary instead. These files are never edited for that:
+`epor train kernel --vocab-from-build` (or `vocab_from_build` in a job) trains a
+derived config whose `vocab_size` and declared parameter counts come from the
+build, and `--qk-norm`/`--mtp-depth` derive feature variants the same way. A
+derived config has its own canonical hash, recorded in the run manifest and in
+every checkpoint; the hash of the file it came from does not change. See
+[`docs/TRAINING.md`](../../docs/TRAINING.md).

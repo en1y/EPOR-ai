@@ -291,7 +291,8 @@ The initial archive covers:
   measurement of a named local split rather than a validated result. v0.0.4
   performs no crawl, model training, paid API call, or tokenizer, shard, or
   dataset publication.
-- **v0.0.5 — Training kernel:** Add token-based batching, AdamW (`β1=.9`,
+- **v0.0.5 — Training kernel (implementation complete; formal release
+  pending):** Add token-based batching, AdamW (`β1=.9`,
   `β2=.95`, weight decay `.1`, clip `1.0`), warmup/cosine scheduling, sequence
   packing, BF16 mixed precision, activation checkpointing, DDP, FSDP2,
   distributed checkpoints, fault injection, and exact data-cursor/RNG resume.
@@ -306,6 +307,48 @@ The initial archive covers:
   **`[EPOR-adaptation]`** BF16 is EPOR's baseline and FP8 stays a cloud-only
   ablation gated on loss-curve agreement with a BF16 control; the reference
   machine cannot run it, so it never becomes the default path.
+  The kernel (`epor.training.kernel`) trains on hash-verified token shards
+  packed into `[BOS, content, EOS]` rows with document-causal segments, under a
+  global token budget split across ranks and accumulation micro-batches. Loss
+  is normalized by the global step's target tokens (and per-depth MTP targets),
+  so the gradient is independent of world size and accumulation. AdamW decays
+  only matrices, clipping accumulates the global norm in float64, and the
+  warmup/cosine schedule is a pure function of the step. BF16 is CPU autocast
+  over FP32 parameters, optimizer state, and loss. DDP and FSDP2 run on CPU
+  `gloo`; checkpoints go through `torch.distributed.checkpoint`, are hashed and
+  promoted atomically behind a `latest.json` pointer, carry the data cursor and
+  every rank's RNG, and reshard across strategies and world sizes. Fault
+  injection fails a run between checkpoints or mid-checkpoint for tests only.
+  `epor train kernel|kernel-resume` and `epor eval kernel` share reviewed
+  `kernel_train`/`kernel_evaluate` declarations with single-process control
+  jobs; local multi-rank runs listen on loopback only; the console lists
+  verified runs as proxy-scale measurements. A shipped recipe is never resized:
+  training on a build's vocabulary uses an explicitly derived config with its
+  own hash. G3 evidence, all on fixture builds with tiny recipes: FP32 single
+  process, DDP, and FSDP2 agree **exactly** (losses and final weights), and an
+  FSDP2 checkpoint resumes exactly under DDP and in one process
+  (`test_training_distributed.py`); BF16 + QK-norm + MTP + activation
+  checkpointing with accumulation agrees **within** `1e-5` relative/absolute on
+  losses and `1e-5` on weights, because accumulation reassociates the gradient
+  sum; resume, cooperative cancellation, a crash between checkpoints, and a
+  killed distributed checkpoint write all reproduce the uninterrupted losses and
+  weights exactly (`test_training_resume.py`, `test_training_faults.py`); the
+  MTP objective is exact under accumulation and a tiny model overfits a packed
+  fixture (`test_training_kernel.py`, `test_model_overfit.py`); packed attention
+  matches running each document alone and SDPA matches math attention within
+  documented FP32/BF16 tolerances (`test_model_attention_agreement.py`); and
+  activation checkpointing preserves the loss bitwise and gradients within FP32
+  tolerance (`test_model_checkpointing.py`). The CLI repeats exact resume and DDP agreement
+  (`test_training_kernel_cli.py`), and control jobs resume, stop at a
+  checkpoint on cancellation, and refuse trajectory changes through the worker
+  (`test_training_control.py`). QK-norm and MTP remain decisions for
+  G3/G5 against their controls at matched tokens; no benefit is claimed. Known
+  limits: dense ≤50M parameters on the CPU reference machine, cross-topology
+  agreement assumes `dropout = 0`, `all_gather_object` loss records would not
+  scale to large world sizes, long documents restart RoPE at each packed
+  chunk, and FP8 is not implemented. See [`TRAINING.md`](TRAINING.md). v0.0.5
+  performs no GPU or target-scale training, paid compute, model release, or
+  serving.
 - **v0.0.6 — Evaluation and scaling laboratory:** Add validation
   loss/perplexity, code/math/general benchmarks, calibration, contamination and
   memorization tests, safety suites, hardware profiling, data-mixture ablations,
@@ -539,8 +582,8 @@ epor research sync|verify|index
 epor config validate
 epor data ingest|build|remove|audit
 epor tokenizer train|shard|evaluate
-epor train pretrain|resume|sft|preference|grpo
-epor eval run|compare
+epor train pretrain|resume|kernel|kernel-resume|sft|preference|grpo
+epor eval run|kernel|compare
 epor export hf|gguf
 epor serve
 epor api
@@ -549,8 +592,12 @@ epor ui
 ```
 
 The control API lives under `/api/v1` and supplies health/capabilities, typed
-allowlisted jobs, job listing/detail/cancellation/events/artifacts, and the
-stable error envelope `{code, message, details, request_id}`.
+allowlisted jobs, job listing/detail/cancellation/events/artifacts, read-only
+data, tokenizer, and training-run summaries (`/data`, `/tokenizers`,
+`/training/runs`), and the stable error envelope
+`{code, message, details, request_id}`. `train kernel` is the training kernel on
+token shards (local `ddp`/`fsdp2` via `--strategy` and `--world-size`);
+`train pretrain|resume` and `eval run` remain the v0.0.1 debug path.
 
 The eventual inference API supplies `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`, including streaming, cancellation, token usage,
