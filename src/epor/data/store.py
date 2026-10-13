@@ -82,6 +82,7 @@ class DataStore:
             "tokenizers",
             "tokenized",
             "evaluations",
+            "evaluation-reports",
             "audit/ingest",
             "tmp",
         ):
@@ -261,6 +262,25 @@ class DataStore:
         target = self.evaluation_path(report_id)
         self._write_immutable(target, payload)
         return report_id, target
+
+    def evaluation_report_path(self, report_id: str) -> Path:
+        """Location of a sealed :mod:`epor.evaluation` suite report.
+
+        Distinct from ``evaluations/`` (tokenizer fertility reports, addressed
+        by the hash of their bytes): a suite report is addressed by the
+        ``report_id`` sealed inside it, which excludes the ID field itself.
+        """
+
+        _require_sha256(report_id, "evaluation report IDs")
+        return self.root / "evaluation-reports" / f"{report_id}.json"
+
+    def evaluation_report_ids(self) -> list[str]:
+        return sorted(path.stem for path in (self.root / "evaluation-reports").glob("*.json"))
+
+    def write_evaluation_report(self, report_id: str, payload: bytes) -> Path:
+        target = self.evaluation_report_path(report_id)
+        self._write_immutable(target, payload)
+        return target
 
     @contextmanager
     def staging_directory(self, prefix: str) -> Iterator[Path]:
