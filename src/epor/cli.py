@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import typer
 from rich.console import Console
@@ -746,6 +747,360 @@ def tokenizer_evaluate(
             err=True,
         )
         raise typer.Exit(code=1)
+
+
+_KERNEL_SPLIT = Literal["train", "validation", "test"]
+_KernelPrecision = Literal["bf16", "fp32"]
+_KernelStrategy = Literal["none", "ddp", "fsdp2"]
+_KernelValidation = Literal["validation", "test", "none"]
+_KERNEL_INPUT_ERRORS = frozenset(
+    {
+        "CheckpointError",
+        "CorpusError",
+        "DataStoreError",
+        "FileExistsError",
+        "FileNotFoundError",
+        "NotADirectoryError",
+        "TokenizedBuildError",
+        "TokenizerArtifactError",
+        "ValidationError",
+        "ValueError",
+    }
+)
+_KERNEL_CANCELLED_EXIT = 130
+
+
+def _contained_directory(supplied: Path, *, label: str) -> Path:
+    """Resolve an existing run or checkpoint directory beneath ``EPOR_PROJECT_ROOT``."""
+
+    from epor.control.security import PathOutsideRootError, contained_path
+    from epor.control.settings import project_root_from_environment
+
+    try:
+        resolved = contained_path(project_root_from_environment(), supplied, must_exist=True)
+        if not resolved.is_dir():
+            raise NotADirectoryError(resolved)
+    except (OSError, PathOutsideRootError) as exc:
+        console.print(f"[red]training command refused[/red]: {label} {exc}")
+        raise typer.Exit(code=2) from exc
+    return resolved
+
+
+class _StopRequests:
+    """First SIGINT/SIGTERM asks for a checkpointed stop; a second aborts at once."""
+
+    def __init__(self, request: Callable[[], None]) -> None:
+        self._request = request
+        self._count = 0
+        self._previous: dict[int, Any] = {}
+
+    def _handle(self, signum: int, _frame: object) -> None:
+        self._count += 1
+        if self._count > 1:
+            raise KeyboardInterrupt
+        typer.echo(
+            "stop requested: checkpointing the last completed step (repeat to abort at once)",
+            err=True,
+        )
+        self._request()
+
+    def __enter__(self) -> _StopRequests:
+        import signal
+
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            self._previous[signum] = signal.signal(signum, self._handle)
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        import signal
+
+        for signum, handler in self._previous.items():
+            signal.signal(signum, handler)
+
+
+def _kernel_failure(exc: BaseException) -> typer.Exit:
+    from epor.training.runner import KernelRunError, is_cancellation
+
+    if is_cancellation(exc):
+        typer.echo(f"training stopped: {exc}", err=True)
+        return typer.Exit(code=_KERNEL_CANCELLED_EXIT)
+    name = exc.error_type if isinstance(exc, KernelRunError) else type(exc).__name__
+    message = exc.message if isinstance(exc, KernelRunError) else str(exc)
+    if name in _KERNEL_INPUT_ERRORS:
+        console.print(f"[red]training command refused[/red]: {message}")
+        return typer.Exit(code=2)
+    console.print(f"[red]training failed[/red] ({name}): {message}")
+    return typer.Exit(code=1)
+
+
+def _run_kernel_command(
+    model: Any,
+    output: Path,
+    settings: Any,
+    *,
+    max_steps: int,
+    resume_from: Path | None,
+    strategy: str,
+    world_size: int,
+    launch_timeout: float,
+    project_root: Path,
+) -> dict[str, Any]:
+    import threading
+
+    from epor.training.runner import run_kernel
+
+    if strategy == "none":
+        stop: Any = threading.Event()
+    else:
+        import torch.multiprocessing as mp
+
+        stop = mp.get_context("spawn").Event()
+
+    def on_step(step: int, total: int, loss: float) -> None:
+        typer.echo(f"step {step}/{total} loss {loss:.6f}", err=True)
+
+    try:
+        with _StopRequests(stop.set):
+            return run_kernel(
+                model,
+                _data_root(),
+                output,
+                settings,
+                max_steps=max_steps,
+                resume_from=resume_from,
+                strategy=strategy,  # pyright: ignore[reportArgumentType]
+                world_size=world_size,
+                project_root=project_root,
+                should_cancel=stop.is_set,
+                on_step=on_step,
+                launch_timeout_seconds=launch_timeout,
+                stop_event=None if strategy == "none" else stop,
+            )
+    except Exception as exc:
+        raise _kernel_failure(exc) from exc
+
+
+@train_app.command("kernel")
+def train_kernel(
+    recipe: Annotated[Path, typer.Argument(dir_okay=False, help="Model recipe (YAML/JSON).")],
+    tokenized_id: Annotated[
+        str, typer.Option("--tokenized-id", help="Verified tokenized build to train on.")
+    ],
+    output: Annotated[Path, typer.Option("--output", help="New run directory.")],
+    max_steps: Annotated[int, typer.Option(min=1, max=100_000, help="Optimizer steps.")],
+    vocab_from_build: Annotated[
+        bool,
+        typer.Option(
+            "--vocab-from-build",
+            help="Train a derived config with the build's vocabulary (the recipe is unchanged).",
+        ),
+    ] = False,
+    qk_norm: Annotated[
+        bool | None,
+        typer.Option("--qk-norm/--no-qk-norm", help="Override the recipe's QK-norm flag."),
+    ] = None,
+    mtp_depth: Annotated[
+        int | None, typer.Option(min=0, max=4, help="Override the recipe's MTP depth.")
+    ] = None,
+    seq_len: Annotated[int, typer.Option(min=1, max=8_192)] = 128,
+    tokens_per_batch: Annotated[
+        int, typer.Option(min=1, max=1_048_576, help="Global positions per optimizer step.")
+    ] = 4_096,
+    micro_batch_size: Annotated[
+        int | None, typer.Option(min=1, help="Rows per micro-batch per rank (accumulation).")
+    ] = None,
+    precision: Annotated[_KernelPrecision, typer.Option()] = "bf16",
+    strategy: Annotated[_KernelStrategy, typer.Option()] = "none",
+    world_size: Annotated[int, typer.Option(min=1, max=8, help="Local ranks for ddp/fsdp2.")] = 1,
+    learning_rate: Annotated[float, typer.Option(min=1e-8, max=1.0)] = 3e-4,
+    min_lr_ratio: Annotated[float, typer.Option(min=0.0, max=1.0)] = 0.1,
+    warmup_steps: Annotated[int, typer.Option(min=0, max=100_000)] = 0,
+    total_steps: Annotated[
+        int | None,
+        typer.Option(min=1, max=100_000, help="Schedule length (default: --max-steps)."),
+    ] = None,
+    beta1: Annotated[float, typer.Option(min=0.0, max=0.999999)] = 0.9,
+    beta2: Annotated[float, typer.Option(min=0.0, max=0.999999)] = 0.95,
+    weight_decay: Annotated[float, typer.Option(min=0.0, max=1.0)] = 0.1,
+    gradient_clip: Annotated[float, typer.Option(min=1e-6, max=1_000.0)] = 1.0,
+    data_seed: Annotated[int, typer.Option(min=0, max=2**32 - 1)] = 23,
+    model_seed: Annotated[int, typer.Option(min=0, max=2**32 - 1)] = 17,
+    checkpoint_every: Annotated[int, typer.Option(min=1, max=100_000)] = 50,
+    keep_checkpoints: Annotated[int, typer.Option(min=1, max=100)] = 3,
+    activation_checkpointing: Annotated[bool, typer.Option()] = False,
+    validation_split: Annotated[_KernelValidation, typer.Option()] = "validation",
+    eval_max_steps: Annotated[int | None, typer.Option(min=1, max=100_000)] = None,
+    launch_timeout: Annotated[
+        float, typer.Option(min=10.0, max=7 * 24 * 3600.0, help="Distributed wall-clock limit (s).")
+    ] = 6 * 3600.0,
+) -> None:
+    """Train the kernel on packed token shards (exit 2 input, 3 covenant, 130 stopped)."""
+
+    authorize_command("train kernel")
+    from epor.training import OptimizerSettings, PackedTrainingSettings
+    from epor.training.runner import derive_kernel_model
+
+    project_root, recipe = _reference_path(recipe, label="recipe path", must_exist=True)
+    _, output = _reference_path(output, label="output path", must_exist=False)
+    if (strategy == "none") != (world_size == 1):
+        console.print(
+            "[red]training command refused[/red]: strategy 'none' runs one process and "
+            "ddp/fsdp2 need --world-size of at least 2"
+        )
+        raise typer.Exit(code=2)
+    try:
+        model = derive_kernel_model(
+            recipe,
+            data_root=_data_root(),
+            tokenized_id=tokenized_id,
+            vocab_from_build=vocab_from_build,
+            qk_norm=qk_norm,
+            mtp_depth=mtp_depth,
+        )
+        settings = PackedTrainingSettings(
+            tokenized_id=tokenized_id,
+            seq_len=seq_len,
+            tokens_per_batch=tokens_per_batch,
+            micro_batch_size=micro_batch_size,
+            data_seed=data_seed,
+            model_seed=model_seed,
+            precision=precision,
+            activation_checkpointing=activation_checkpointing,
+            checkpoint_every=checkpoint_every,
+            keep_checkpoints=keep_checkpoints,
+            validation_split=None if validation_split == "none" else validation_split,
+            eval_max_steps=eval_max_steps,
+            optimizer=OptimizerSettings(
+                learning_rate=learning_rate,
+                min_lr_ratio=min_lr_ratio,
+                warmup_steps=warmup_steps,
+                total_steps=total_steps or max_steps,
+                beta1=beta1,
+                beta2=beta2,
+                weight_decay=weight_decay,
+                gradient_clip=gradient_clip,
+            ),
+        )
+    except Exception as exc:
+        raise _kernel_failure(exc) from exc
+    summary = _run_kernel_command(
+        model,
+        output,
+        settings,
+        max_steps=max_steps,
+        resume_from=None,
+        strategy=strategy,
+        world_size=world_size,
+        launch_timeout=launch_timeout,
+        project_root=project_root,
+    )
+    _echo_json({**summary, "recipe": str(recipe.relative_to(project_root))})
+
+
+@train_app.command("kernel-resume")
+def train_kernel_resume(
+    checkpoint: Annotated[
+        Path, typer.Argument(help="Run directory, its checkpoints/ directory, or a step-*.")
+    ],
+    max_steps: Annotated[
+        int, typer.Option(min=1, max=100_000, help="Absolute final optimizer step.")
+    ],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Run directory (default: the checkpoint's own run)."),
+    ] = None,
+    strategy: Annotated[_KernelStrategy, typer.Option()] = "none",
+    world_size: Annotated[int, typer.Option(min=1, max=8)] = 1,
+    micro_batch_size: Annotated[int | None, typer.Option(min=1)] = None,
+    checkpoint_every: Annotated[int | None, typer.Option(min=1, max=100_000)] = None,
+    keep_checkpoints: Annotated[int | None, typer.Option(min=1, max=100)] = None,
+    activation_checkpointing: Annotated[
+        bool | None, typer.Option("--activation-checkpointing/--no-activation-checkpointing")
+    ] = None,
+    eval_max_steps: Annotated[int | None, typer.Option(min=1, max=100_000)] = None,
+    launch_timeout: Annotated[float, typer.Option(min=10.0, max=7 * 24 * 3600.0)] = 6 * 3600.0,
+) -> None:
+    """Continue a kernel run exactly; only runtime settings and topology may change."""
+
+    authorize_command("train kernel-resume")
+    from epor.control.settings import project_root_from_environment
+    from epor.training.runner import resume_inputs
+
+    project_root = project_root_from_environment()
+    checkpoint = _contained_directory(checkpoint, label="checkpoint path")
+    if (strategy == "none") != (world_size == 1):
+        console.print(
+            "[red]training command refused[/red]: strategy 'none' runs one process and "
+            "ddp/fsdp2 need --world-size of at least 2"
+        )
+        raise typer.Exit(code=2)
+    try:
+        model, settings, run_dir, step = resume_inputs(
+            checkpoint,
+            {
+                "micro_batch_size": micro_batch_size,
+                "checkpoint_every": checkpoint_every,
+                "keep_checkpoints": keep_checkpoints,
+                "activation_checkpointing": activation_checkpointing,
+                "eval_max_steps": eval_max_steps,
+            },
+        )
+    except Exception as exc:
+        raise _kernel_failure(exc) from exc
+    if output is None:
+        destination = _contained_directory(run_dir, label="run directory")
+    else:
+        _, destination = _reference_path(output, label="output path", must_exist=False)
+    typer.echo(f"resuming from step {step} toward step {max_steps}", err=True)
+    summary = _run_kernel_command(
+        model,
+        destination,
+        settings,
+        max_steps=max_steps,
+        resume_from=checkpoint,
+        strategy=strategy,
+        world_size=world_size,
+        launch_timeout=launch_timeout,
+        project_root=project_root,
+    )
+    _echo_json(summary)
+
+
+@eval_app.command("kernel")
+def eval_kernel(
+    checkpoint: Annotated[
+        Path, typer.Argument(help="Run directory, its checkpoints/ directory, or a step-*.")
+    ],
+    split: Annotated[_KERNEL_SPLIT, typer.Option()] = "validation",
+    max_steps: Annotated[
+        int | None, typer.Option(min=1, max=100_000, help="Cap on evaluation batches.")
+    ] = None,
+) -> None:
+    """Measure a kernel checkpoint's main loss, perplexity, and per-depth MTP loss."""
+
+    authorize_command("eval kernel")
+    from epor.training import evaluate_packed_checkpoint
+    from epor.training.run_checkpoint import resolve_checkpoint
+
+    checkpoint = _contained_directory(checkpoint, label="checkpoint path")
+    try:
+        directory = resolve_checkpoint(checkpoint)
+        result = evaluate_packed_checkpoint(
+            directory,
+            _data_root(),
+            split=split,
+            max_steps=max_steps,
+            report_dir=directory.parent.parent / "evaluations",
+        )
+    except Exception as exc:
+        raise _kernel_failure(exc) from exc
+    payload = result.model_dump(mode="json")
+    payload["scope"] = (
+        "proxy-scale local measurement of one checkpoint on one split; not a validated result"
+    )
+    _echo_json(payload)
+    if split == "train":
+        typer.echo("warning: in-sample measurement on the training split", err=True)
 
 
 @train_app.command("sft")
