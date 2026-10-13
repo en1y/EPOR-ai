@@ -57,3 +57,24 @@ build, and `--qk-norm`/`--mtp-depth` derive feature variants the same way. A
 derived config has its own canonical hash, recorded in the run manifest and in
 every checkpoint; the hash of the file it came from does not change. See
 [`docs/TRAINING.md`](../../docs/TRAINING.md).
+
+## Scaling ladder
+
+`ladder/` holds the v0.0.6 scaling-laboratory rungs. They are architecture
+contracts for sweeps and projections, not trained or validated models, and
+adding them changed no shipped config hash.
+
+| File | Non-embedding parameters | Structural total (65,536 vocab) | Local execution |
+|------|--------------------------|---------------------------------|-----------------|
+| `ladder/epor-ladder-10m.yaml` | 10,326,912 | 35,492,736 | local (within the 50M kernel bound) |
+| `ladder/epor-ladder-100m.yaml` | 103,243,008 | 153,574,656 | projection only |
+| `ladder/epor-ladder-300m.yaml` | 301,517,824 | 368,626,688 | projection only |
+| `ladder/epor-ladder-1b.yaml` | 1,013,012,480 | 1,147,230,208 | projection only |
+
+Rungs are sized by non-embedding parameters (the `N` of Kaplan et al. 2020),
+because at the 65,536-entry target vocabulary the tied embedding alone would
+dominate a total-count ladder; each lands within 5% of its nominal size. Shapes
+follow the shipped recipes: `d_ff = 3 * d_model`, grouped-query attention, 64-wide
+heads up to 300M and 128-wide at 1B. Local sweeps train a derived config with
+the tokenized build's vocabulary, the same derivation `--vocab-from-build` uses;
+the rung file is never edited. See `src/epor/scaling/ladder.py`.
