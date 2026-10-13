@@ -93,6 +93,9 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "data_build",
                 "data_remove",
                 "data_audit",
+                "tokenizer_train",
+                "tokenizer_shard",
+                "tokenizer_evaluate",
                 "tiny_train",
                 "tiny_eval",
             }
@@ -112,6 +115,14 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "integrity_errors": [],
                 "latest_builds": {},
                 "sources": [],
+            }
+            tokenizers = (await client.get("/api/v1/tokenizers")).json()
+            assert tokenizers == {
+                "schema_version": 1,
+                "tokenizers": [],
+                "tokenized_builds": [],
+                "fertility_reports": [],
+                "integrity_errors": [],
             }
 
             # Reading is public; every mutation requires a verified identity.

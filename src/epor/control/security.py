@@ -16,6 +16,26 @@ _SENSITIVE_KEY = re.compile(
     r"(?:authorization|cookie|credential|password|passwd|secret|token|api[_-]?key|private[_-]?key)",
     re.IGNORECASE,
 )
+# Exact tokenizer measurement and identifier keys that contain "token" but name
+# a language-model token, never a credential. This is an explicit allowlist, so
+# every other key matching ``_SENSITIVE_KEY`` stays redacted, and values under
+# these keys are still scanned for inline credentials.
+_LANGUAGE_MODEL_TOKEN_KEYS = frozenset(
+    {
+        "tokenizer_id",
+        "tokenized_id",
+        "tokenizer_json_sha256",
+        "tokenizer_version",
+        "tokens",
+        "total_tokens",
+        "token_count",
+        "max_shard_tokens",
+        "byte_fallback_tokens",
+        "tokens_per_byte",
+        "tokens_per_word",
+        "bytes_per_token",
+    }
+)
 _INLINE_SECRET_PATTERNS = (
     re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{8,}"),
     re.compile(
@@ -88,7 +108,9 @@ def redact(value: Any) -> Any:
 
     if isinstance(value, Mapping):
         return {
-            str(key): "[REDACTED]" if _SENSITIVE_KEY.search(str(key)) else redact(item)
+            str(key): "[REDACTED]"
+            if _SENSITIVE_KEY.search(str(key)) and str(key) not in _LANGUAGE_MODEL_TOKEN_KEYS
+            else redact(item)
             for key, item in value.items()
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):

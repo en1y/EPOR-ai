@@ -83,3 +83,131 @@ def run(scenario: Callable[[], Coroutine[Any, Any, None]]) -> None:
     """Drive one async API scenario from a synchronous test."""
 
     asyncio.run(scenario())
+
+
+# --- Tokenizer fixtures -------------------------------------------------------
+
+TOKENIZER_STAMP = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
+TOKENIZER_SPLIT_SALT = "epor-data-split-v1"
+TOKENIZER_FIXTURE_VOCAB = 1_024
+# A string that appears nowhere in the train corpus; it must leave no trace in a
+# tokenizer trained while its document sits in the validation split.
+VALIDATION_MARKER = "qzvxjwkpf"
+
+TOKENIZER_TRAIN_TEXTS: dict[str, str] = {
+    "prose.txt": (
+        "The quick brown fox jumps over the lazy dog while the archive records each "
+        "change. Every document keeps its provenance, and the system rebuilds the same "
+        "manifest from the same inputs. "
+    )
+    * 12,
+    "module.py": (
+        "def tokenize(value: str) -> list[int]:\n"
+        "\tif not value:\n"
+        "\t\treturn []  \n"
+        "    result = [ord(item) for item in value]\n"
+        "    return result\n\n"
+        "class Encoder:\n"
+        "    def __init__(self, size: int) -> None:\n"
+        "        self.size = size\n"
+    )
+    * 10,
+    "notes.md": (
+        "# Notes\n\n- Unicode: café, naïve, Ελληνικά, 日本語, emoji 🙂🚀\n"
+        "- Whitespace:   three spaces, a\ttab, and trailing space \n"
+        "- Brackets <|like|> these and <tags> appear in prose too.\n\n"
+    )
+    * 10,
+}
+
+
+def group_for_split(split: str, *, train: int = 50, validation: int = 50) -> str:
+    """Find a deterministic content-family ID that the data engine assigns to ``split``."""
+
+    from epor.data.pipeline import split_for
+
+    for index in range(10_000):
+        candidate = f"family-{split}-{index}"
+        if split_for(candidate, TOKENIZER_SPLIT_SALT, train, validation) == split:
+            return candidate
+    raise AssertionError(f"no group found for split {split}")
+
+
+def tokenizer_registration(source_id: str, group_id: str) -> Any:
+    from epor.data.models import SourceRegistration
+
+    return SourceRegistration.model_validate(
+        {
+            "id": source_id,
+            "title": f"Tokenizer fixture {source_id}",
+            "owner_or_steward": "EPOR test suite",
+            "canonical_origin": f"fixture://{source_id}",
+            "acquisition_method": "generated_fixture",
+            "acquired_at": TOKENIZER_STAMP.isoformat(),
+            "media_type": "text/plain",
+            "license_id": "fixture-only",
+            "permission_basis": "Generated locally for deterministic tests.",
+            "allowed_uses": ["research", "train", "evaluate"],
+            "sensitive_content_risk": "low",
+            "removal_contact": "owner@example.invalid",
+            "group_id": group_id,
+        }
+    )
+
+
+def make_tokenizer_build(
+    root: Path,
+    *,
+    marker_split: str | None = "validation",
+    extra_train_text: str | None = None,
+) -> Any:
+    """Ingest the fixture corpus and build it; returns the ``DatasetBuild``."""
+
+    from epor.data.models import BuildRequest, SplitRatios
+    from epor.data.service import DataEngine
+
+    engine = DataEngine(root / "data")
+    inputs = root / "inputs"
+    inputs.mkdir(parents=True, exist_ok=True)
+    texts = dict(TOKENIZER_TRAIN_TEXTS)
+    if extra_train_text is not None:
+        texts["extra.txt"] = extra_train_text
+    paths = []
+    for name, text in texts.items():
+        path = inputs / name
+        path.write_text(text, encoding="utf-8")
+        paths.append(path)
+    engine.ingest(tokenizer_registration("train-corpus", group_for_split("train")), paths)
+    if marker_split is not None:
+        marker = inputs / "marker.txt"
+        marker.write_text(
+            " ".join([VALIDATION_MARKER] * 80) + "\nheld out evaluation text only\n",
+            encoding="utf-8",
+        )
+        engine.ingest(
+            tokenizer_registration("marker-corpus", group_for_split(marker_split)), [marker]
+        )
+    build, _ = engine.build(
+        BuildRequest(
+            dataset_id="tokenizer-fixture",
+            split_ratios=SplitRatios(train=50, validation=50, test=0),
+            split_salt=TOKENIZER_SPLIT_SALT,
+            intended_uses=["tokenizer tests"],
+            prohibited_uses=["production deployment"],
+        )
+    )
+    return build
+
+
+@pytest.fixture(scope="session")
+def trained_tokenizer(tmp_path_factory: pytest.TempPathFactory) -> Any:
+    """One fixture tokenizer shared by read-only codec tests."""
+
+    from epor.tokenizer import load_tokenizer, train_tokenizer
+
+    root = tmp_path_factory.mktemp("tokenizer")
+    build = make_tokenizer_build(root)
+    trained = train_tokenizer(
+        root / "data", build.dataset_id, build.build_id, vocab_size=TOKENIZER_FIXTURE_VOCAB
+    )
+    return load_tokenizer(root / "data", trained.tokenizer_id)

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccessPage, SignInDialog } from './AccessPage'
 import { DocsPage } from './DocsPage'
 import { SafetyPage } from './SafetyPage'
+import { TokenizerPage } from './TokenizerPage'
 import { api } from './api'
 import {
   EmptyState,
@@ -26,6 +27,7 @@ import type {
   JsonSchemaProperty,
   ModelFamily,
   ResearchCatalog,
+  TokenizerSummary,
 } from './types'
 
 const anonymousIdentity: Identity = {
@@ -41,6 +43,7 @@ type Page =
   | 'overview'
   | 'training'
   | 'data'
+  | 'tokenizer'
   | 'jobs'
   | 'safety'
   | 'access'
@@ -60,6 +63,10 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   data: {
     title: 'Data engine',
     summary: 'Rights registrations, immutable layers, removals, dataset builds, and integrity.',
+  },
+  tokenizer: {
+    title: 'Tokenizer',
+    summary: 'Byte-level BPE artifacts, document-preserving token shards, and fertility reports.',
   },
   jobs: {
     title: 'Jobs',
@@ -88,7 +95,7 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
 }
 
 const navGroups: { label: string; pages: Page[] }[] = [
-  { label: 'Workspace', pages: ['overview', 'training', 'data', 'jobs'] },
+  { label: 'Workspace', pages: ['overview', 'training', 'data', 'tokenizer', 'jobs'] },
   { label: 'Governance', pages: ['safety', 'access'] },
   { label: 'Reference', pages: ['models', 'research', 'docs'] },
 ]
@@ -226,6 +233,9 @@ function Icon({ name }: { name: Page }) {
   }
   if (name === 'data') {
     return <path d="M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3Zm-8 3v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+  }
+  if (name === 'tokenizer') {
+    return <path d="M4 6h5v5H4zM15 6h5v5h-5zM4 15h5v3H4zM11 15h9v3h-9zM9 8.5h6" />
   }
   if (name === 'safety') {
     return <path d="M12 3l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6l7-3ZM9 12l2 2 4-4" />
@@ -1092,6 +1102,8 @@ export default function App() {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
   const [research, setResearch] = useState<ResearchCatalog | null>(null)
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null)
+  const [tokenizerSummary, setTokenizerSummary] = useState<TokenizerSummary | null>(null)
+  const [tokenizerError, setTokenizerError] = useState<string | null>(null)
   const [models, setModels] = useState<ModelFamily[]>([])
   const [definitions, setDefinitions] = useState<JobTypeDefinition[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
@@ -1139,6 +1151,17 @@ export default function App() {
       .catch((caught: unknown) => { if (!disposed) setError(caught instanceof Error ? caught.message : 'Could not connect to the control API') })
     return () => { disposed = true }
   }, [])
+
+  useEffect(() => {
+    if (page !== 'tokenizer' && tokenizerSummary !== null) return
+    let disposed = false
+    // Fetched on its own so a missing optional data profile cannot blank the console.
+    api.tokenizers()
+      .then((next) => { if (!disposed) { setTokenizerSummary(next); setTokenizerError(null) } })
+      .catch((caught: unknown) => { if (!disposed) setTokenizerError(caught instanceof Error ? caught.message : 'Could not load tokenizer artifacts') })
+    return () => { disposed = true }
+    // Refresh whenever the page is opened; the summary itself is not a trigger.
+  }, [page])
 
   useEffect(() => {
     let disposed = false
@@ -1233,6 +1256,14 @@ export default function App() {
             />
           )}
           {page === 'data' && <DataPage summary={dataSummary} onNew={(type) => startJob({ type })} />}
+          {page === 'tokenizer' && (
+            <TokenizerPage
+              summary={tokenizerSummary}
+              error={tokenizerError}
+              latestBuilds={dataSummary?.latest_builds ?? {}}
+              onNew={(type, values) => startJob({ type, values })}
+            />
+          )}
           {page === 'jobs' && <JobsPage jobs={jobs.filter((job) => !trainingTypes.has(job.type))} onSelect={(job) => setSelectedId(job.id)} onNew={() => startJob({})} canQueue={identity.authenticated} />}
           {page === 'safety' && <SafetyPage identity={identity} />}
           {page === 'access' && (

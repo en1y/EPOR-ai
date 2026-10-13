@@ -5,6 +5,9 @@ export type JobType =
   | 'data_build'
   | 'data_remove'
   | 'data_audit'
+  | 'tokenizer_train'
+  | 'tokenizer_shard'
+  | 'tokenizer_evaluate'
   | 'tiny_train'
   | 'tiny_eval'
 export type JobStatus =
@@ -84,6 +87,87 @@ export interface DataSummary {
   integrity_errors: string[]
   latest_builds: Record<string, string>
   sources: DataSource[]
+}
+
+export interface TokenizerArtifact {
+  tokenizer_id: string
+  tokenizer_version: string
+  reserved_spec_version: string
+  declared_vocab_size: number
+  learned_vocab_size: number
+  merge_count: number
+  dataset_id: string
+  build_id: string
+  train_split_sha256: string
+  train_documents: number
+  train_bytes: number
+  min_frequency: number
+  library_version: string
+}
+
+export interface TokenizedSplit {
+  document_count: number
+  excluded_document_count: number
+  token_count: number
+  shard_count: number
+}
+
+export interface TokenizedBuild {
+  tokenized_id: string
+  tokenizer_id: string
+  dataset_id: string
+  build_id: string
+  max_shard_tokens: number
+  total_tokens: number
+  total_documents: number
+  excluded_document_count: number
+  applied_tombstone_ids: string[]
+  shard_count: number
+  splits: Record<string, TokenizedSplit>
+}
+
+export interface FertilityMetrics {
+  documents: number
+  bytes: number
+  characters: number
+  words: number
+  tokens: number
+  byte_fallback_tokens: number
+  tokens_per_byte: number | null
+  tokens_per_word: number | null
+  bytes_per_token: number | null
+  byte_fallback_rate: number | null
+}
+
+export interface FertilityReport {
+  report_id: string
+  schema_version: number
+  kind: string
+  scope: string
+  tokenizer_id: string
+  tokenizer_json_sha256: string
+  reserved_spec_sha256: string
+  vocab_size: number
+  learned_vocab_size: number
+  dataset_id: string
+  build_id: string
+  split: string
+  split_sha256: string
+  in_sample: boolean
+  excluded_document_count: number
+  applied_tombstone_ids: string[]
+  round_trip_failures: number
+  overall: FertilityMetrics
+  by_domain: Record<string, FertilityMetrics>
+  by_language: Record<string, FertilityMetrics>
+}
+
+export interface TokenizerSummary {
+  schema_version: number
+  tokenizers: TokenizerArtifact[]
+  tokenized_builds: TokenizedBuild[]
+  fertility_reports: FertilityReport[]
+  integrity_errors: string[]
 }
 
 export interface CertifiedProfile {
