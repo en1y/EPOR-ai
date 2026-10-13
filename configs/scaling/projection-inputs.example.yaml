@@ -1,0 +1,44 @@
+# EXAMPLE projection inputs for `epor.scaling.projection` (copy, then fill in).
+#
+# Every value below is deliberately null. EPOR never fetches prices or hardware
+# numbers: the operator writes them here from their own provider quote and
+# vendor sheet, and records where they came from. Any input left null makes
+# every quantity that depends on it `unknown` in the projection report; it is
+# never replaced by an invented number.
+#
+# Two documented defaults apply only when their field is null:
+#   run.tokens_per_parameter     -> 20 (Chinchilla ratio, `hypothesis` for EPOR)
+#                                   used only when run.token_budget is also null
+#   run.failure_reserve_fraction -> 0.25 (EPOR policy default, `EPOR-adaptation`)
+#
+# A projection is not an approval and provisions nothing.
+schema_version: epor-projection-inputs-v1
+hardware:
+  provider: null              # e.g. the provider name from the operator's quote
+  device_sku: null            # exact accelerator SKU
+  device_count: null          # devices in the run
+  peak_flops_per_device: null # dense FLOP/s at the training precision (vendor sheet)
+  assumed_mfu: null           # fraction in (0, 1]; should come from a measured 1B pilot
+  mfu_source: null            # where assumed_mfu comes from (report ID or note)
+  device_memory_bytes: null
+  device_power_kw: null       # average draw per device, for energy estimates
+prices:
+  currency: null
+  price_per_device_hour: null
+  storage_price_per_gib_month: null
+  egress_price_per_gib: null
+  price_source: null          # quote reference and date
+energy:
+  pue: null                   # data-centre power usage effectiveness (>= 1)
+  carbon_intensity_kg_per_kwh: null
+run:
+  sequence_length: null       # training sequence length (attention FLOPs term)
+  token_budget: null          # training tokens; null -> tokens_per_parameter x parameters
+  tokens_per_parameter: null
+  checkpoint_every_hours: null
+  keep_checkpoints: null
+  evaluation_every_tokens: null
+  evaluation_tokens_per_pass: null
+  egress_gib: null
+  storage_months: null
+  failure_reserve_fraction: null

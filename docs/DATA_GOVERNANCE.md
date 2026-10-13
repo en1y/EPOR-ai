@@ -71,13 +71,39 @@ record versions, confidence, finding kinds, and aggregate counts without
 claiming complete language, PII, malware, or benchmark-contamination coverage.
 Their accepted and rejected samples still require human audit.
 
+## Evaluation data and contamination reports
+
+Public benchmarks are never downloaded by EPOR. An operator who has reviewed a
+benchmark's rights places a local JSONL file in the project and registers it
+like any other source; the evaluation harness loads it only when the
+registration's `allowed_uses` includes `evaluate`, its media type is
+`application/jsonl`, no tombstone removes the source or the file's hash, and
+any hash pinned by the suite matches. Training eligibility is a separate
+`allowed_uses` entry: registering a benchmark for evaluation does not admit it
+to training builds. Evaluation reports record the source ID and the file and
+registration hashes, never the local path.
+
+Contamination reports (v0.0.6) measure n-gram overlap between evaluation items
+and a training build at the word and token level, and `split-leakage` mode
+measures train-split overlap inside a build's validation and test documents.
+They hold item IDs, text hashes, counts, and offsets, never item or training
+text. A clean scan is a lower bound, not a clearance: paraphrase and
+reformatting are not detected, flagged items need human review, and
+contamination found in a target run is a mandatory abort condition. See
+[`EVALUATION.md`](EVALUATION.md).
+
 ## Initial proxy mixture
 
 The starting hypothesis is 55% rights-cleared general/reference English, 25%
 permissively licensed code and repository context, 15% math/science/technical
 material, and 5% high-quality multilingual material. This is a versioned
 experiment, not a fixed recipe. Ablations must report mixture changes, effective
-tokens, repeated-token rates, and downstream/safety regressions.
+tokens, repeated-token rates, and downstream/safety regressions. v0.0.6
+mixture ablations materialize a mixture as a deterministic, non-repeating
+subset of one tokenized build's training documents, record unique-token epochs
+per subset, and compare per-domain validation loss on the unweighted validation
+split (see [`SCALING.md`](SCALING.md)); the choice of mixture stays a human
+decision from those measurements.
 
 ## Teacher and synthetic data
 

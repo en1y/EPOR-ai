@@ -1,0 +1,28 @@
+schema_version: "1"
+display_name: EPOR Scaling Ladder 1B
+slug: epor-ladder-1b
+family: reference
+architecture: dense-decoder
+vocab_size: 65536
+d_model: 2048
+n_layers: 21
+n_heads: 16
+n_kv_heads: 4
+d_ff: 6144
+rope_theta: 10000.0
+rms_norm_eps: 1.0e-5
+initializer_range: 0.02
+dropout: 0.0
+tie_embeddings: true
+pad_token_id: 0
+bos_token_id: 1
+eos_token_id: 2
+configured_max_context: 2048
+trained_max_context: 0
+validated_max_context: 0
+operational_default_context: 0
+total_parameters: 1147230208
+active_parameters: 1147230208
+core_parameters: 1147230208
+research_features:
+  - scaling-ladder-rung

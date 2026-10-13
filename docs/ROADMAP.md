@@ -349,11 +349,58 @@ The initial archive covers:
   chunk, and FP8 is not implemented. See [`TRAINING.md`](TRAINING.md). v0.0.5
   performs no GPU or target-scale training, paid compute, model release, or
   serving.
-- **v0.0.6 — Evaluation and scaling laboratory:** Add validation
+- **v0.0.6 — Evaluation and scaling laboratory (implementation complete;
+  formal release pending):** Add validation
   loss/perplexity, code/math/general benchmarks, calibration, contamination and
   memorization tests, safety suites, hardware profiling, data-mixture ablations,
   and 10M→100M→300M→1B sweeps. Project tokens, GPU-hours, storage, failure
   reserve, and cost before any target-size run.
+  The harness (`epor.evaluation`) runs versioned YAML suites against kernel
+  checkpoints: multiple choice scored per UTF-8 byte with ECE, Brier, and
+  reliability bins; exact match; math checked for symbolic equivalence by a
+  closed grammar that never calls `eval`; HumanEval-style code; and validation
+  loss. Every metric carries a `harness-fixture` or `proxy-scale` scope, and
+  reports are content-addressed with no timestamps, so identical inputs give an
+  identical ID; `epor eval compare` reports deltas and a seeded paired
+  bootstrap with comparability warnings. External benchmarks are never
+  downloaded: they enter only as local files registered for `evaluate`, hash
+  pinnable and tombstone-checked. Model-generated code runs only behind its own
+  covenant action from the owner's CLI, in a defense-in-depth sandbox
+  (isolated-mode process, private directory, stripped environment, rlimits,
+  group kill, and where available a user/network namespace and Landlock) that
+  refuses unisolated network without a separate opt-in and is documented as not
+  a security boundary. Contamination is word- and token-level 13-gram overlap
+  with the training build (a lower bound), memorization is the train versus
+  held-out extraction gap plus canary exposure, and the G10 suite holds
+  project-authored paired-preference and rubric items per covenant situation,
+  separate from the system-level resolver and explicitly not evidence of
+  safety. The scaling laboratory (`epor.scaling`) ships a non-embedding-sized
+  ladder whose 100M, 300M, and 1B rungs are **projection-only** on the reference
+  machine (only the 10M rung fits the kernel's 50M structural bound), an
+  analytic FLOPs model, host profiles with MFU `unknown` absent an operator
+  peak, resumable sweeps that keep failed points, mixture ablations as
+  deterministic training subsets with per-domain validation loss, closed-form
+  scaling-law fits that warn on small spans, and projections from
+  operator-written inputs that map onto the compute policy's target proposal,
+  label every quantity, report missing inputs as `unknown`, and state that a
+  named human must still approve the exact proposal. `epor eval
+  suite|contamination|compare|reports` and `epor scale
+  ladder|profile|sweep|mixture|fit|project|reports` share reviewed
+  declarations with `eval_suite`, `eval_contamination`, `scale_profile`,
+  `scale_sweep`, and `scale_mixture` jobs; code execution, fits, and
+  projections stay on the CLI, and the console's Evaluation and Scaling pages
+  read verified reports and offer no launch control. Evidence:
+  `test_evaluation_*.py`, `test_scaling_*.py`, `test_training_mixture.py`,
+  `test_laboratory_cli.py`, and `test_laboratory_control.py`, plus a local
+  end-to-end run on a scratch build of project-owned files whose every number
+  is a harness-fixture, proxy-scale, or host measurement. No benchmark score,
+  scaling claim, or safety claim follows from them: no tiny model has learned
+  enough for a benchmark to mean anything, no local sweep spans enough of `N`
+  or `D` for a trustworthy fit, and no projection uses real quotes or a
+  measured 1B-pilot MFU. See [`EVALUATION.md`](EVALUATION.md) and
+  [`SCALING.md`](SCALING.md). v0.0.6 performs no target-scale or GPU training,
+  benchmark download, paid compute, price fetching, or model release, and no
+  target-size run has been proposed or approved.
 - **v0.0.7 — Knowledge transfer and alignment:** Add teacher-data provenance,
   response/logit distillation, SFT, pairwise preferences, a DPO baseline,
   constitutional critique/revision, AI-judged preferences with human audits,
@@ -583,7 +630,8 @@ epor config validate
 epor data ingest|build|remove|audit
 epor tokenizer train|shard|evaluate
 epor train pretrain|resume|kernel|kernel-resume|sft|preference|grpo
-epor eval run|kernel|compare
+epor eval run|kernel|suite|contamination|compare|reports
+epor scale ladder|profile|sweep|mixture|fit|project|reports
 epor export hf|gguf
 epor serve
 epor api
@@ -594,10 +642,14 @@ epor ui
 The control API lives under `/api/v1` and supplies health/capabilities, typed
 allowlisted jobs, job listing/detail/cancellation/events/artifacts, read-only
 data, tokenizer, and training-run summaries (`/data`, `/tokenizers`,
-`/training/runs`), and the stable error envelope
+`/training/runs`), verified evaluation and scaling reports
+(`/evaluation/reports[/{id}]`, `/evaluation/compare`, `/scaling/ladder`,
+`/scaling/reports[/{id}]`), and the stable error envelope
 `{code, message, details, request_id}`. `train kernel` is the training kernel on
 token shards (local `ddp`/`fsdp2` via `--strategy` and `--world-size`);
-`train pretrain|resume` and `eval run` remain the v0.0.1 debug path.
+`train pretrain|resume` and `eval run` remain the v0.0.1 debug path. `eval
+suite --allow-code-execution`, `scale fit`, and `scale project` have no job
+equivalent.
 
 The eventual inference API supplies `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`, including streaming, cancellation, token usage,

@@ -29,6 +29,7 @@ file swapped *after* verification is outside this check (same as any reader).
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -176,6 +177,31 @@ class ShardCorpus:
             pieces=tuple(pieces),
             shards=tuple(shards),
             max_context=None if model_config is None else model_config.configured_max_context,
+        )
+
+    def select(self, document_ids: Sequence[str]) -> ShardCorpus:
+        """A view holding only ``document_ids``, kept in this split's stable order.
+
+        Used by domain-mixture subsets and per-domain evaluation.  Every ID
+        must belong to the split; duplicates are refused (a view never
+        repeats a document).
+        """
+
+        wanted = set(document_ids)
+        if len(wanted) != len(document_ids):
+            raise ValueError("a corpus selection must not repeat documents")
+        unknown = wanted.difference(self.document_ids)
+        if unknown:
+            raise ValueError(f"{len(unknown)} selected document(s) are not in this split")
+        keep = [index for index, item in enumerate(self.document_ids) if item in wanted]
+        return ShardCorpus(
+            tokenized_id=self.tokenized_id,
+            manifest=self.manifest,
+            split=self.split,
+            document_ids=tuple(self.document_ids[index] for index in keep),
+            pieces=tuple(self._pieces[index] for index in keep),
+            shards=self._shards,
+            max_context=self.max_context,
         )
 
     def framed_tokens(self, document: int, start: int = 0, stop: int | None = None) -> Tensor:

@@ -7,6 +7,8 @@ import type {
   DocumentRead,
   DocumentSummary,
   ErrorEnvelope,
+  EvaluationReportList,
+  EvaluationReportView,
   Escalation,
   EscalationState,
   Health,
@@ -16,9 +18,13 @@ import type {
   JobEvent,
   JobType,
   JobTypeDefinition,
+  Ladder,
   ModelFamily,
   Operator,
+  ReportComparison,
   ResearchCatalog,
+  ScalingReport,
+  ScalingReportList,
   TokenizerSummary,
   TrainingSummary,
 } from './types'
@@ -66,6 +72,17 @@ export const api = {
   data: () => request<DataSummary>('/data'),
   tokenizers: () => request<TokenizerSummary>('/tokenizers'),
   trainingRuns: () => request<TrainingSummary>('/training/runs'),
+  evaluationReports: () => request<EvaluationReportList>('/evaluation/reports'),
+  evaluationReport: (id: string) =>
+    request<EvaluationReportView>(`/evaluation/reports/${encodeURIComponent(id)}`),
+  compareReports: (baseline: string, candidate: string) =>
+    request<ReportComparison>(
+      `/evaluation/compare?baseline=${encodeURIComponent(baseline)}&candidate=${encodeURIComponent(candidate)}`,
+    ),
+  scalingReports: () => request<ScalingReportList>('/scaling/reports'),
+  scalingReport: (id: string) =>
+    request<ScalingReport[]>(`/scaling/reports/${encodeURIComponent(id)}`),
+  ladder: () => request<Ladder>('/scaling/ladder'),
   models: async () => (await request<{ items: ModelFamily[] }>('/models')).items,
   jobTypes: async () =>
     (await request<{ items: JobTypeDefinition[] }>('/job-types')).items,

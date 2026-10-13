@@ -617,6 +617,26 @@ code.hash {
 .scope-field .checkbox-field span { display: grid; gap: 1px; font-size: 13px; }
 .scope-field .checkbox-field small { color: var(--text-faint); font-size: 12px; }
 
+.evaluation-task { border-top: 1px solid var(--line); }
+.evaluation-task .panel-heading { border-bottom: 0; }
+.evaluation-task > .plan-warning, .evaluation-task > .error-banner,
+.evaluation-task > .report-footnote { margin: 4px 20px 12px; }
+.evaluation-task details { margin: 0 20px 16px; }
+.evaluation-task summary { cursor: pointer; color: var(--text-dim); font-size: 13px; }
+.metric-inline { display: grid; gap: 2px; justify-items: end; min-width: 0; }
+.metric-inline span { color: var(--text-dim); font: 12px var(--mono); overflow-wrap: anywhere; }
+.metric-inline strong { font: 600 20px var(--mono); }
+.plain-list { margin: 12px 20px; padding-left: 18px; color: var(--text-dim); font-size: 13px; }
+.compare-row {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: end;
+  padding: 16px 20px; border-top: 1px solid var(--line);
+}
+.compare-row .form-field { margin: 0; flex: 1 1 220px; min-width: 0; }
+.compare-row select { width: 100%; max-width: 100%; }
+.approval-banner { margin: 12px 20px; }
+.estimate-label { color: var(--text-faint); font-size: 12px; }
+.reason-cell { min-width: 220px; }
+
 @media (max-width: 1100px) {
   .split-grid, .docs-layout { grid-template-columns: 1fr; }
   .docs-index { position: static; }
@@ -664,14 +684,29 @@ code.hash {
   .source-cell { min-width: 280px; }
 }
 
+@media (min-width: 601px) and (max-width: 780px) {
+  /* Twelve pages in two rows of six; one row would crush their labels. */
+  .app-shell { padding-bottom: calc(116px + env(safe-area-inset-bottom)); }
+  .sidebar { height: calc(116px + env(safe-area-inset-bottom)); }
+  .sidebar nav {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 2px;
+  }
+  .nav-group { display: contents; }
+}
+
 @media (max-width: 600px) {
   .app-shell { padding-bottom: calc(168px + env(safe-area-inset-bottom)); }
   .sidebar {
     height: calc(168px + env(safe-area-inset-bottom));
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   }
-  .sidebar nav { display: grid; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 2px; }
-  .nav-group { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+  /* Every page in one five-column grid, whatever its group: twelve pages, three rows. */
+  .sidebar nav {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 2px;
+  }
+  .nav-group { display: contents; }
   .nav-item { min-height: 48px; font-size: 10px; }
 }
 

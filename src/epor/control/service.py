@@ -169,6 +169,22 @@ class JobService:
                     )
                     if not input_path.is_file() or input_path.is_symlink():
                         raise InvalidJobSpecError("data inputs must be regular non-symlink files")
+            elif job_type in {JobType.EVAL_SUITE, JobType.EVAL_CONTAMINATION}:
+                if job_type is JobType.EVAL_SUITE:
+                    assert self.settings.artifact_root is not None
+                    contained_path(self.settings.artifact_root, value["checkpoint_path"])
+                for source in value.get("sources", []):
+                    source_path = contained_path(
+                        self.settings.project_root, source["path"], must_exist=True
+                    )
+                    if not source_path.is_file() or source_path.is_symlink():
+                        raise InvalidJobSpecError(
+                            "benchmark sources must be regular non-symlink files"
+                        )
+                if len({source["source_id"] for source in value.get("sources", [])}) != len(
+                    value.get("sources", [])
+                ):
+                    raise InvalidJobSpecError("each benchmark source may be named only once")
         except (FileNotFoundError, OSError, PathOutsideRootError) as exc:
             raise InvalidJobSpecError(str(exc)) from exc
         return value

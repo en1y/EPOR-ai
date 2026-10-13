@@ -117,3 +117,15 @@ class CapabilityUnavailableError(ControlError):
 
     status_code = 503
     code = "capability_unavailable"
+
+
+class ReportNotFoundError(ControlError):
+    status_code = 404
+    code = "report_not_found"
+
+
+class ReportIntegrityError(ControlError):
+    """A stored report does not verify against its content address."""
+
+    status_code = 409
+    code = "report_integrity_error"

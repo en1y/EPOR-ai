@@ -40,7 +40,7 @@ jobs:
         run: |
           uv python install 3.11.15
           uv lock --check
-          uv sync --frozen --extra dev --extra research --extra data --extra train-cpu
+          uv sync --frozen --extra dev --extra research --extra data --extra train-cpu --extra eval
           uv run --frozen --no-sync python -c "import platform; assert platform.python_version() == '3.11.15'"
 
       - name: Run capability doctor

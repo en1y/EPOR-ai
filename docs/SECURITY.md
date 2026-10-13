@@ -33,6 +33,29 @@ bind to loopback. It is not an internet-facing multi-tenant service.
   ranks rendezvous through a private `0700` file store and bind gloo sockets to
   loopback only; no EPOR surface opens a `TCPStore` server. Fault injection is a
   test instrument that no CLI option or job spec accepts.
+- The v0.0.6 evaluation harness never `eval`s model output or answer keys:
+  math answers are parsed by a closed grammar with bounded size, nesting, and
+  powers. Benchmark files are local, registered for evaluation, and
+  hash-pinnable; nothing is downloaded.
+- Model-generated code is the one place EPOR executes untrusted code. It is off
+  by default, is its own covenant action (`eval_code_execution`), and is
+  reachable only from the owner's CLI with `--allow-code-execution`; no control
+  job can request it. Each candidate runs in a fresh isolated-mode Python
+  process with a private working directory, a stripped environment, rlimits, a
+  process-group kill, and — where the kernel permits — a user and network
+  namespace and Landlock write confinement. The run is refused when the network
+  cannot be isolated unless `--allow-unisolated-network` is also passed. This is
+  **defense in depth, not a security boundary**: reads are not confined, there
+  is no seccomp, cgroup, PID, or mount isolation, and kernel vulnerabilities are
+  out of scope, so code evaluation belongs on a machine and account the operator
+  is prepared to lose (see [`EVALUATION.md`](EVALUATION.md)).
+- Evaluation and scaling job results carry a report ID and a fixed summary;
+  their exact language-model keys (for example `tokens_per_second`) are
+  allowlisted individually and their values are still scanned for credentials.
+  Full reports are served read-only after content-address verification, with
+  string values scanned and per-item generated text omitted.
+- Scaling projections take prices and hardware figures only from an
+  operator-written file, never fetch them, and never provision anything.
 - The worker dispatches typed allowlisted jobs and never executes a supplied
   shell string.
 - Every job passes covenant admission before its specification is parsed, and
@@ -56,8 +79,8 @@ strict byte limits and without scripts, macros, external references, or active
 content. Data ingestion reports finding kinds/counts while keeping matched PII
 and credential values out of events and artifacts; unsafe or executable inputs
 are quarantined. These are deterministic heuristics, not a sandbox or complete
-malware/PII detector. Future compiler/test evaluation must use a separate
-sandbox with resource limits and no ambient credentials.
+malware/PII detector. Code evaluation uses the separate v0.0.6 sandbox above,
+with resource limits and no ambient credentials.
 
 ## Local authorization threat model
 

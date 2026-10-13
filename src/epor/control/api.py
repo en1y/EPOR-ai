@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+from fastapi import Path as FastApiPath
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,6 +41,8 @@ from .errors import (
     AuthorizationDeniedError,
     CapabilityUnavailableError,
     ControlError,
+    ReportIntegrityError,
+    ReportNotFoundError,
 )
 from .models import JobStatus, JobType
 from .safety_view import covenant_payload, declared_action_payload
@@ -58,6 +61,7 @@ from .schemas import (
     EscalationDecide,
     EscalationList,
     EscalationRead,
+    EvaluationReportList,
     EventList,
     EventRead,
     HealthRead,
@@ -68,6 +72,8 @@ from .schemas import (
     JobRead,
     JobTypeList,
     JobTypeRead,
+    LadderRead,
+    LadderRungRead,
     ModelFamilyList,
     ModelFamilyRead,
     OperatorCreate,
@@ -75,11 +81,12 @@ from .schemas import (
     OperatorRead,
     ResearchCatalogRead,
     ResearchSourceRead,
+    ScalingReportList,
     SessionCreate,
     TokenizerSummaryRead,
     TrainingSummaryRead,
 )
-from .security import redact, redact_text
+from .security import redact, redact_text, redact_values
 from .service import JobService
 from .settings import ControlSettings
 
@@ -90,6 +97,10 @@ JobTypeQuery = Annotated[JobType | None, Query(alias="type")]
 JobLimitQuery = Annotated[int, Query(ge=1, le=500)]
 EventAfterQuery = Annotated[int, Query(ge=0)]
 EventLimitQuery = Annotated[int, Query(ge=1, le=1_000)]
+ReportIdPath = Annotated[str, FastApiPath(pattern=r"^[0-9a-f]{64}$")]
+ReportIdQuery = Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")]
+ResamplesQuery = Annotated[int, Query(ge=1, le=10_000)]
+SeedQuery = Annotated[int, Query(ge=0, le=2**32 - 1)]
 _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
     JobType.SYSTEM_PROBE: (
         "System probe",
@@ -134,6 +145,26 @@ _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
     JobType.KERNEL_EVALUATE: (
         "Kernel evaluation",
         "Measure a kernel checkpoint's loss, perplexity, and MTP losses on one split.",
+    ),
+    JobType.EVAL_SUITE: (
+        "Evaluation suite",
+        "Score a kernel checkpoint on a versioned suite; code tasks stay on the owner's CLI.",
+    ),
+    JobType.EVAL_CONTAMINATION: (
+        "Contamination scan",
+        "Measure n-gram overlap of a suite's items with a training build (a lower bound).",
+    ),
+    JobType.SCALE_PROFILE: (
+        "Host profile",
+        "Measure training-step throughput and memory on this host; MFU needs a supplied peak.",
+    ),
+    JobType.SCALE_SWEEP: (
+        "Scaling sweep",
+        "Train rung x token-budget x seed points; rungs above the local bound are projection-only.",
+    ),
+    JobType.SCALE_MIXTURE: (
+        "Mixture ablation",
+        "Train one small model per domain mixture and compare per-domain validation loss.",
     ),
     JobType.TINY_TRAIN: (
         "Tiny pretraining",
@@ -433,6 +464,94 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
         return TrainingSummaryRead.model_validate(
             training_summary(settings.artifact_root, settings.project_root)
         )
+
+    @router.get("/evaluation/reports", response_model=EvaluationReportList, tags=["evaluation"])
+    async def evaluation_reports() -> EvaluationReportList:
+        from epor.evaluation.summary import list_reports
+
+        assert settings.data_root is not None
+        return EvaluationReportList.model_validate(redact_values(list_reports(settings.data_root)))
+
+    @router.get(
+        "/evaluation/reports/{report_id}", response_model=dict[str, Any], tags=["evaluation"]
+    )
+    async def evaluation_report(report_id: ReportIdPath) -> dict[str, Any]:
+        from epor.evaluation.summary import report_view
+
+        return redact_values(report_view(_evaluation_report(report_id)))
+
+    @router.get("/evaluation/compare", response_model=dict[str, Any], tags=["evaluation"])
+    async def evaluation_compare(
+        baseline: ReportIdQuery,
+        candidate: ReportIdQuery,
+        resamples: ResamplesQuery = 1_000,
+        seed: SeedQuery = 0,
+    ) -> dict[str, Any]:
+        from epor.evaluation import compare_reports
+
+        comparison = compare_reports(
+            _evaluation_report(baseline),
+            _evaluation_report(candidate),
+            resamples=resamples,
+            seed=seed,
+        )
+        return redact_values(comparison.model_dump(mode="json"))
+
+    @router.get("/scaling/ladder", response_model=LadderRead, tags=["scaling"])
+    async def scaling_ladder() -> LadderRead:
+        from epor.scaling.summary import ladder_table
+
+        return LadderRead(
+            rungs=[LadderRungRead.model_validate(row) for row in ladder_table(None)],
+            note=(
+                "Rung files are architecture contracts, not trained models; projection-only "
+                "rungs are never allocated on this machine."
+            ),
+        )
+
+    @router.get("/scaling/reports", response_model=ScalingReportList, tags=["scaling"])
+    async def scaling_reports() -> ScalingReportList:
+        from epor.scaling.summary import list_scaling_reports
+
+        assert settings.data_root is not None
+        return ScalingReportList.model_validate(
+            redact_values(list_scaling_reports(settings.data_root))
+        )
+
+    @router.get(
+        "/scaling/reports/{report_id}", response_model=list[dict[str, Any]], tags=["scaling"]
+    )
+    async def scaling_report(report_id: ReportIdPath) -> list[dict[str, Any]]:
+        from epor.data.store import DataStore
+        from epor.scaling import ScalingReportError
+        from epor.scaling.summary import load_verified_scaling_reports, scaling_summary
+
+        assert settings.data_root is not None
+        if not DataStore(settings.data_root).scaling_report_directory(report_id).is_dir():
+            raise ReportNotFoundError(f"scaling report not found: {report_id}")
+        try:
+            reports = load_verified_scaling_reports(settings.data_root, report_id)
+        except ScalingReportError as exc:
+            raise ReportIntegrityError(str(exc)) from exc
+        return redact_values(
+            [
+                {**report.model_dump(mode="json"), "summary": scaling_summary(report)}
+                for report in reports
+            ]
+        )
+
+    def _evaluation_report(report_id: str) -> Any:
+        from epor.data.store import DataStore
+        from epor.evaluation import ReportError
+        from epor.evaluation.summary import load_verified_report
+
+        assert settings.data_root is not None
+        if not DataStore(settings.data_root).evaluation_report_path(report_id).is_file():
+            raise ReportNotFoundError(f"evaluation report not found: {report_id}")
+        try:
+            return load_verified_report(settings.data_root, report_id)
+        except ReportError as exc:
+            raise ReportIntegrityError(str(exc)) from exc
 
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])
     async def models() -> ModelFamilyList:

@@ -476,6 +476,24 @@ def _kernel_handler(name: str) -> JobHandler:
     return run
 
 
+def _laboratory_handler(name: str) -> JobHandler:
+    """Load the evaluation harness or scaling laboratory lazily; both need torch."""
+
+    def run(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            if name.startswith("eval_"):
+                from epor.evaluation.control import run_evaluation_job as run_job
+            else:
+                from epor.scaling.control import run_scaling_job as run_job
+        except ImportError as exc:
+            raise RuntimeError(
+                "laboratory support is unavailable; sync the train-cpu, data, and eval profiles"
+            ) from exc
+        return run_job(name, spec, context)
+
+    return run
+
+
 DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.SYSTEM_PROBE: _system_probe,
     JobType.RESEARCH_SYNC: _research_sync,
@@ -488,6 +506,12 @@ DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.TOKENIZER_EVALUATE: _tokenizer_evaluate,
     JobType.KERNEL_TRAIN: _kernel_handler("kernel_train"),
     JobType.KERNEL_EVALUATE: _kernel_handler("kernel_evaluate"),
+    # Code execution is deliberately absent: it is CLI-only.
+    JobType.EVAL_SUITE: _laboratory_handler("eval_suite"),
+    JobType.EVAL_CONTAMINATION: _laboratory_handler("eval_contamination"),
+    JobType.SCALE_PROFILE: _laboratory_handler("scale_profile"),
+    JobType.SCALE_SWEEP: _laboratory_handler("scale_sweep"),
+    JobType.SCALE_MIXTURE: _laboratory_handler("scale_mixture"),
     JobType.TINY_TRAIN: _training_handler("tiny_train"),
     JobType.TINY_EVAL: _training_handler("tiny_eval"),
 }

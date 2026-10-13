@@ -320,6 +320,97 @@ def test_kernel_declarations_state_their_boundaries() -> None:
         assert phrase in rationale, phrase
 
 
+def test_laboratory_commands_map_to_reviewed_declarations() -> None:
+    from epor.actions import CLI_ACTIONS
+
+    assert {
+        "eval suite": "eval_suite",
+        "eval contamination": "eval_contamination",
+        "eval compare": "report_review",
+        "eval reports": "report_review",
+        "scale ladder": "report_review",
+        "scale reports": "report_review",
+        "scale profile": "scale_profile",
+        "scale sweep": "scale_sweep",
+        "scale mixture": "scale_mixture",
+        "scale fit": "scale_fit",
+        "scale project": "scale_project",
+    }.items() <= CLI_ACTIONS.items()
+    # Code execution is reached only through its own action, never as a command
+    # mapping of its own that could be invoked without an evaluation around it.
+    assert "eval_code_execution" not in CLI_ACTIONS.values()
+    assert "eval_code_execution" in DECLARED_ACTIONS
+
+
+def test_laboratory_work_requires_its_own_delegated_scope(covenant: Covenant) -> None:
+    from epor.control.authority import Actor, Role
+
+    trainer = Actor(id="trainer", role=Role.DELEGATED_OPERATOR, scopes=frozenset({"kernel_train"}))
+    evaluator = Actor(id="eval", role=Role.DELEGATED_OPERATOR, scopes=frozenset({"eval_suite"}))
+    for actor, action_id in (
+        (trainer, "scale_sweep"),
+        (trainer, "scale_mixture"),
+        (trainer, "scale_profile"),
+        (evaluator, "eval_contamination"),
+        (evaluator, "scale_project"),
+    ):
+        refused = resolve_action(action_id, covenant, actor=actor)
+        assert refused.outcome == "refuse", (actor.id, action_id)
+        assert refused.binding_priority == 2
+    for action_id in (
+        "eval_suite",
+        "eval_contamination",
+        "eval_code_execution",
+        "report_review",
+        "scale_profile",
+        "scale_sweep",
+        "scale_mixture",
+        "scale_fit",
+        "scale_project",
+    ):
+        scoped = Actor(id="lab", role=Role.DELEGATED_OPERATOR, scopes=frozenset({action_id}))
+        assert resolve_action(action_id, covenant, actor=scoped).outcome == "allow", action_id
+
+
+def test_code_execution_needs_its_own_scope_beyond_evaluation(covenant: Covenant) -> None:
+    from epor.control.authority import Actor, Role
+
+    # A delegate trusted to evaluate checkpoints is not thereby trusted to run
+    # the code a model generates.
+    evaluator = Actor(
+        id="eval",
+        role=Role.DELEGATED_OPERATOR,
+        scopes=frozenset({"eval_suite", "eval_contamination", "kernel_evaluate"}),
+    )
+    refused = resolve_action("eval_code_execution", covenant, actor=evaluator)
+    assert refused.outcome == "refuse"
+    assert refused.binding_priority == 2
+    assert resolve_action("eval_suite", covenant, actor=evaluator).outcome == "allow"
+
+
+def test_laboratory_declarations_state_their_boundaries() -> None:
+    def rationale(action_id: str) -> str:
+        return " ".join(item.rationale for item in DECLARED_ACTIONS[action_id].assessments)
+
+    code = rationale("eval_code_execution")
+    for phrase in (
+        "not a security boundary",
+        "defense in depth",
+        "network namespace",
+        "Landlock",
+        "separately opts in to unisolated network",
+        "reads are not confined",
+        "job API cannot request it",
+    ):
+        assert phrase in code, phrase
+    projection = rationale("scale_project")
+    for phrase in ("never provisions compute", "explicit approval", "(G5)", "unknown"):
+        assert phrase in projection, phrase
+    for action_id in ("scale_sweep", "scale_mixture", "scale_profile"):
+        assert "no paid compute" in rationale(action_id), action_id
+    assert "never gated" in rationale("scale_sweep")
+
+
 def test_undeclared_work_escalates_instead_of_running(covenant: Covenant) -> None:
     resolution = resolve_action("model_serve", covenant)
     assert resolution.outcome == "escalate"

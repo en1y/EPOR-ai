@@ -78,7 +78,15 @@ lineage; a resume that changes any of them is refused, naming the fields:
 `tokenized_id`, `train_split`, `seq_len`, `tokens_per_batch`, `data_seed`,
 `model_seed`, `precision`, and the optimizer (`learning_rate`, `min_lr_ratio`,
 `warmup_steps`, `total_steps`, `beta1`, `beta2`, `eps`, `weight_decay`,
-`gradient_clip`). The model config is checked by hash in the same way.
+`gradient_clip`), and, since v0.0.6, `train_mixture` when it is set. The model
+config is checked by hash in the same way.
+
+`train_mixture` (default unset) trains on a deterministic, non-repeating
+domain-weighted subset of the training split; unset, it selects the original
+data and stays out of the trajectory hash, so no earlier checkpoint changed.
+It is used by `epor scale mixture` and `scale_mixture` jobs; the `kernel_train`
+job specification has no such field and rejects it. See
+[`SCALING.md`](SCALING.md#data-mixtures).
 
 **Runtime** settings change speed, memory, or bookkeeping only and may differ
 on resume: `micro_batch_size`, `activation_checkpointing`, `checkpoint_every`,
