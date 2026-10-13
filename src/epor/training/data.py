@@ -1,4 +1,9 @@
-"""Offline, deterministic data utilities for reference-model smoke training."""
+"""Offline, deterministic data utilities for reference-model smoke training.
+
+This debug path windows one in-memory byte-tokenized fixture and backs the
+``epor-tiny`` smoke runs.  Real training data comes from verified token shards
+through :mod:`epor.training.shard_data` and :mod:`epor.training.packing`.
+"""
 
 from __future__ import annotations
 

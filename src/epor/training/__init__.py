@@ -23,6 +23,17 @@ from .loop import (
     generate,
     pretrain,
 )
+from .packing import (
+    PIPELINE_VERSION,
+    BatchGeometry,
+    DataPipelineSettings,
+    PackedBatch,
+    PackedBatchStream,
+    PackedStep,
+    RowSegment,
+    evaluation_steps,
+)
+from .shard_data import ShardCorpus
 
 
 def resume_pretraining(
@@ -46,13 +57,22 @@ def resume_pretraining(
 
 __all__ = [
     "DEFAULT_FIXTURE_CORPUS",
+    "PIPELINE_VERSION",
+    "BatchGeometry",
+    "DataPipelineSettings",
     "EvaluationResult",
     "GenerationResult",
+    "PackedBatch",
+    "PackedBatchStream",
+    "PackedStep",
     "RandomBatchStream",
+    "RowSegment",
+    "ShardCorpus",
     "TrainingCancelled",
     "TrainingResult",
     "TrainingSettings",
     "evaluate",
+    "evaluation_steps",
     "generate",
     "load_checkpoint",
     "load_model_config",
