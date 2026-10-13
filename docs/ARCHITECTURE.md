@@ -77,7 +77,20 @@ dataset cards are immutable children rather than mutable views of a corpus.
 Detectors retain finding kinds and counts, never the matched PII or credential
 value in job events or reports. The rules are explicit proxy-scale heuristics
 with human-audit and scale-revalidation requirements, not learned classifier or
-malware-sandbox claims. Tokenized shards begin in v0.0.4.
+malware-sandbox claims.
+
+## Tokenizer and token shards
+
+`epor.tokenizer` (v0.0.4) trains an original byte-level BPE from one build's
+train split only, rewritten into a frozen layout: 256 reserved control IDs, one
+ID per byte, then learned merges. Artifacts are content-addressed directories
+whose manifest pins the reserved-spec hash, the tokenizer bytes, and the source
+build, so IDs cannot drift silently. Token shards pin one tokenizer to one build
+and store each split as little-endian `uint16` arrays framed by document
+boundary tokens, with per-shard span indexes; they are staged and published
+atomically and re-apply current removal tombstones. Fertility reports measure a
+held-out split and fail their gate on any byte round-trip mismatch. See
+[`TOKENIZER.md`](TOKENIZER.md); every artifact so far is proxy-scale.
 
 ## Research archive safety
 
@@ -113,8 +126,9 @@ CPU fallback. It is not a required PyTorch training device.
 ## Local control plane
 
 The API, worker, and UI are separate processes. Typed job specifications include
-the original probe/research/reference-training jobs and v0.0.3's `data_ingest`,
-`data_build`, `data_remove`, and `data_audit`. The API never evaluates a client
+the original probe/research/reference-training jobs, v0.0.3's `data_ingest`,
+`data_build`, `data_remove`, and `data_audit`, and v0.0.4's `tokenizer_train`,
+`tokenizer_shard`, and `tokenizer_evaluate`. The API never evaluates a client
 command, fetches an arbitrary data URL, or exposes a general filesystem browser.
 
 Admission is the covenant chokepoint. `JobService.create_job` resolves the

@@ -1,8 +1,9 @@
 # Provenance-first data engine
 
 Version 0.0.3 implements the offline data contract that precedes tokenizer and
-training-dataset work. It does not crawl, call a model API, tokenize data, or
-publish a dataset. Every input is a reviewed local file beneath
+training-dataset work. It does not crawl, call a model API, or publish a
+dataset; tokenization of its builds arrived in v0.0.4 and is described in
+[`TOKENIZER.md`](TOKENIZER.md). Every input is a reviewed local file beneath
 `EPOR_PROJECT_ROOT`, and every mutation passes the same covenant and authority
 checks as other EPOR work.
 
@@ -86,5 +87,6 @@ The offline detectors are deterministic gates, not claims of production-grade
 language identification, PII discovery, malware analysis, or contamination
 proof. Dataset cards state this explicitly and sampled human review remains
 required for both accepted and rejected material. SimHash must be revalidated
-before target-scale ingestion. Token shards and the original tokenizer remain
-v0.0.4 work; trained weights and dataset publication are outside v0.0.3.
+before target-scale ingestion. The original tokenizer and token shards built on
+these splits are documented in [`TOKENIZER.md`](TOKENIZER.md); trained weights
+and dataset publication remain out of scope.

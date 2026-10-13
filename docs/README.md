@@ -8,6 +8,9 @@
   removals, teacher data, and release requirements.
 - [Provenance-first data engine](DATA_ENGINE.md) — v0.0.3 registration,
   immutable layers, policy sequence, commands, evidence, and limitations.
+- [Original tokenizer and token shards](TOKENIZER.md) — v0.0.4 reserved-ID
+  layout, train-split-only training, shard and report formats, removal, and
+  evidence boundaries.
 - [Compute policy](COMPUTE_POLICY.md) — cheap-first experiments, approval gates,
   abort rules, and hardware profiles.
 - [Contributing](CONTRIBUTING.md) — environment, tests, claim discipline, and
@@ -21,6 +24,6 @@ The tracked research ledger is [`research/catalog.yaml`](../research/catalog.yam
 Downloaded bytes, extracted text, and local indexes live under ignored
 `research/raw/`, `research/extracted/`, and `research/cache/` directories.
 
-No target-size model has been trained or released by v0.0.3. Parameter counts,
-context lengths, and architecture descriptions are plans until their named gates
-produce measured artifacts.
+No target-size model or target-scale tokenizer has been trained or released by
+v0.0.4. Parameter counts, context lengths, vocabulary targets, and architecture
+descriptions are plans until their named gates produce measured artifacts.

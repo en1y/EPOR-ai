@@ -2,7 +2,7 @@
 
 <!-- project-version:start -->
 > [!IMPORTANT]
-> **Current project version: `v0.0.3`**
+> **Current project version: `v0.0.4`**
 >
 > This identifies the code in this checkout; it does not imply a formal release.
 > Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -14,10 +14,11 @@ language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
-The v0.0.x program is intentionally small. Through v0.0.3 it validates research
+The v0.0.x program is intentionally small. Through v0.0.4 it validates research
 provenance, the executable safety covenant and local authorization boundary,
-configuration, tiny-model correctness and exact resume, and a provenance-first
-offline data engine before any target-size run is considered. The 30B/12B/8B
+configuration, tiny-model correctness and exact resume, a provenance-first
+offline data engine, and an original byte-level BPE tokenizer with
+content-addressed token shards before any target-size run is considered. The 30B/12B/8B
 family descriptions are gated research destinations, not bundled checkpoints
 or fabricated performance claims.
 
@@ -81,7 +82,7 @@ once. A refusal is never approvable.
 
 What this is not: a harm detector. The resolver enforces ordering, citation,
 justification, and fail-closed escalation over assessments supplied to it.
-Through v0.0.3, those assessments are reviewed per-action declarations over a
+Through v0.0.4, those assessments are reviewed per-action declarations over a
 closed allowlist, which is only sound because that action space is small and
 fixed.
 The authorization model is local and single-machine: it verifies a bearer
@@ -99,7 +100,7 @@ Install the frozen Python and UI dependencies once after cloning or whenever a
 lockfile changes:
 
 ```bash
-uv sync --frozen --extra dev --extra research --extra train-cpu
+uv sync --frozen --extra dev --extra research --extra data --extra train-cpu
 cd ui
 npm ci
 cd ..
@@ -169,6 +170,20 @@ uv run --frozen --no-sync epor data audit
 See [`docs/DATA_ENGINE.md`](docs/DATA_ENGINE.md) for immutable layers, removal
 tombstones, detector limitations, dataset cards, and control-job equivalents.
 
+A build then feeds the v0.0.4 tokenizer, which trains on its train split only,
+writes document-preserving token shards, and measures fertility on a held-out
+split:
+
+```bash
+uv run --frozen --no-sync epor tokenizer train my-dataset-v1 <build-id>
+uv run --frozen --no-sync epor tokenizer shard my-dataset-v1 <build-id> <tokenizer-id>
+uv run --frozen --no-sync epor tokenizer evaluate <tokenizer-id> my-dataset-v1 <build-id>
+```
+
+Every tokenizer so far is proxy-scale; the 65,536-ID vocabulary is a declared
+target, not a trained result. See [`docs/TOKENIZER.md`](docs/TOKENIZER.md) for
+the reserved-ID table, artifact and shard formats, removal, and boundaries.
+
 The tiny reference path can be checked independently:
 
 ```bash
@@ -190,16 +205,19 @@ allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary
 URL.
 
-The console separates its work into nine pages: **Overview**, **Training**,
-**Data engine**, **Jobs**, **Safety covenant**, **Access**, **Model families**,
-**Research ledger**, and **Documentation**. The data page shows reviewed source
-registrations, immutable-layer counts, quarantines, removals, builds, and audit
-state without exposing document content. The documentation reader serves
+The console separates its work into ten pages: **Overview**, **Training**,
+**Data engine**, **Tokenizer**, **Jobs**, **Safety covenant**, **Access**,
+**Model families**, **Research ledger**, and **Documentation**. The data page
+shows reviewed source registrations, immutable-layer counts, quarantines,
+removals, builds, and audit state without exposing document content. The
+tokenizer page lists tokenizers with declared and learned vocabulary kept
+apart, tokenized builds, and fertility reports with their scope and any
+in-sample or round-trip warning. The documentation reader serves
 tracked first-party Markdown only. Ignored
 third-party research downloads are never rendered as console content; the
 research ledger links those sources at their canonical URL instead.
 
-Version 0.0.3 is operated from a source checkout. The wheel and source archive
+Version 0.0.4 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository
 resources until the v0.1.0 packaging contract is finalized.
@@ -223,6 +241,8 @@ public evaluation command works without another profile.
 - [`research/catalog.yaml`](research/catalog.yaml) — canonical source ledger;
   downloaded and extracted content remains ignored.
 - `src/epor/data/` — rights registration, immutable layers, policy, builds, and audit.
+- `src/epor/tokenizer/` — reserved-ID spec, BPE training, codec, token shards,
+  and fertility reports.
 - `src/epor/models/` and `src/epor/training/` — canonical PyTorch reference.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.

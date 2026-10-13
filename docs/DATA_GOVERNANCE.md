@@ -27,13 +27,23 @@ Data moves through immutable, content-addressed layers:
 4. **rejected/quarantined** — retained only where lawful and necessary for audit;
 5. **tokenized** — tokenizer-pinned shards preserving document boundaries.
 
+Since v0.0.4 the tokenized layer is implemented: `tokenizers/`, `tokenized/`,
+and `evaluations/` beneath the same private data root hold content-addressed
+tokenizer artifacts, `uint16` token shards with span indexes, and fertility
+reports. A tokenizer records the build and train-split hash it learned from and
+refuses a build whose train split has since been tombstoned. Shards and reports
+re-apply every current tombstone and record the excluded count and tombstone
+IDs; `affected_tokenized_builds` lists the stored shards containing a removed
+document so they can be rebuilt and retired. See [`TOKENIZER.md`](TOKENIZER.md).
+
 A derived build records all parent hashes, tool versions, policy/config hashes,
 timestamps, counts, and reason-coded removals. Rebuilding creates a new manifest;
 it never overwrites a parent.
 
 The implemented v0.0.3 root is private `.epor/data` by default. Registrations,
 raw objects, normalized records, quarantines, tombstones, filtered indexes,
-split JSONL, manifests, and cards are ignored runtime data. Only schemas,
+split JSONL, manifests, cards, tokenizers, token shards, and fertility reports
+are ignored runtime data. Only schemas,
 examples, tests, and aggregate documentation belong in Git.
 
 ## Required controls

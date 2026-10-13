@@ -6,7 +6,7 @@ provenance, reproducibility, and local safety over speculative scale features.
 ## Development workflow
 
 ```bash
-uv sync --frozen --extra dev --extra research --extra train-cpu
+uv sync --frozen --extra dev --extra research --extra data --extra train-cpu
 uv run pytest
 uv run ruff check .
 uv run pyright

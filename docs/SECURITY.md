@@ -21,7 +21,9 @@ bind to loopback. It is not an internet-facing multi-tenant service.
   path must never escape via `..`, an absolute path, or a symlink.
 - Data acquisition accepts reviewed local registrations and contained regular
   files only. Raw and quarantined content lives beneath a private `0700` data
-  root; the v0.0.3 engine has no crawler or arbitrary URL fetcher.
+  root; the data engine and v0.0.4 tokenizer have no crawler or arbitrary URL
+  fetcher, and tokenizer encoding never turns literal control strings in content
+  into reserved control tokens.
 - Standalone reference execution uses the same 50M-model, corpus, checkpoint,
   step, evaluation, and batch-token limits as control jobs. Its inputs and
   outputs resolve beneath `EPOR_PROJECT_ROOT` before any allocation or write.

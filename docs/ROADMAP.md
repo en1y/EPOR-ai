@@ -262,11 +262,35 @@ The initial archive covers:
   proxy-scale heuristics requiring sampled human review and target-scale
   revalidation. v0.0.3 performs no crawl, tokenization, training, paid API call,
   dataset publication, or claim of complete PII/malware/contamination detection.
-- **v0.0.4 — Tokenizer and dataset v0:** Train an original 65,536-ID byte-level
+- **v0.0.4 — Tokenizer and dataset v0 (implementation complete; formal release
+  pending):** Train an original 65,536-ID byte-level
   BPE with 256 reserved IDs for roles, tools, FIM, documents, retrieval, and
   future extensions. Preserve whitespace/code exactly, guarantee byte fallback,
   measure domain fertility, and write content-addressed token shards with
   document boundaries.
+  The frozen `epor-reserved-v1` table fixes IDs 0-255, byte `b` at `256 + b`,
+  and merges from 512, and every artifact pins its hash. Training reads only a
+  build's train split, runs single-threaded into a canonical layout, records
+  declared and learned vocabulary separately, and refuses a build whose train
+  split has been tombstoned since it was made. Token shards are little-endian
+  `uint16` arrays framed by document-boundary tokens with span indexes, staged
+  and published atomically, idempotent on rebuild, and re-apply current
+  tombstones; `affected_tokenized_builds` lists the shards a removal touches.
+  Fertility reports measure a held-out split per domain and language, flag
+  in-sample runs, and fail their gate on any byte round-trip mismatch. Direct
+  `epor tokenizer train|shard|evaluate` commands and typed control jobs share
+  reviewed covenant declarations, actor scope, cooperative cancellation, and
+  sanitized report artifacts; the console lists tokenizers, tokenized builds,
+  and fertility reports. G2 evidence covers byte-identical retraining, pinned
+  reserved IDs and drift refusal, arbitrary-byte, invalid-UTF-8, and
+  code/whitespace round-trip, refusal of literal control strings as reserved
+  IDs, train-split isolation, shard determinism, tamper detection, and removal
+  propagation, all on fixture or local proxy-scale builds. No target-scale
+  tokenizer has been trained, so whether 65,536 IDs suit the target mixture
+  remains a **`[hypothesis]`**, and every fertility number so far is a
+  measurement of a named local split rather than a validated result. v0.0.4
+  performs no crawl, model training, paid API call, or tokenizer, shard, or
+  dataset publication.
 - **v0.0.5 — Training kernel:** Add token-based batching, AdamW (`β1=.9`,
   `β2=.95`, weight decay `.1`, clip `1.0`), warmup/cosine scheduling, sequence
   packing, BF16 mixed precision, activation checkpointing, DDP, FSDP2,
@@ -513,8 +537,8 @@ CLI surface:
 epor doctor
 epor research sync|verify|index
 epor config validate
-epor data ingest|build|audit
-epor tokenizer train|evaluate
+epor data ingest|build|remove|audit
+epor tokenizer train|shard|evaluate
 epor train pretrain|resume|sft|preference|grpo
 epor eval run|compare
 epor export hf|gguf
