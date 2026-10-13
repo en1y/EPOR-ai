@@ -1,0 +1,113 @@
+# EPOR evaluation harness fixtures.
+#
+# Every item below is original, project-authored text written to exercise the
+# evaluation code paths (multiple choice with calibration, exact match, safe
+# math equivalence, sandboxed code tests, validation loss). These are harness
+# fixtures, NOT a benchmark: scores on them say nothing about model capability,
+# and no public benchmark content is reproduced here. External benchmarks are
+# evaluated only from operator-registered local files (see
+# src/epor/evaluation/sources.py).
+schema_version: 1
+id: epor-harness-fixtures
+version: 1
+scope: harness-fixture
+title: EPOR evaluation harness fixtures
+description: >-
+  Tiny project-authored items that check the harness end to end. Not a
+  benchmark; results are harness-fixture measurements only.
+seed: 0
+tasks:
+  - id: fixture-multiple-choice
+    type: multiple-choice
+    calibration_bins: 10
+    items:
+      - id: mc-add-small
+        question: What is 7 + 5?
+        choices: ["10", "12", "13", "15"]
+        answer: 1
+      - id: mc-even
+        question: Which of these numbers is even?
+        choices: ["7", "9", "14", "21"]
+        answer: 2
+      - id: mc-multiply
+        question: What is 6 times 4?
+        choices: ["24", "20", "28", "18"]
+        answer: 0
+      - id: mc-divide
+        question: What is 100 divided by 4?
+        choices: ["20", "40", "25", "50"]
+        answer: 2
+      - id: mc-next-token
+        question: At each position, what does a decoder-only language model predict?
+        choices: ["the next token", "the first token", "a random token", "the previous token"]
+        answer: 0
+      - id: mc-checkpoint-hash
+        question: A checkpoint whose recorded file hashes do not match its files should be
+        choices: ["loaded anyway", "refused", "renamed", "compressed"]
+        answer: 1
+  - id: fixture-exact-match
+    type: exact-match
+    max_new_tokens: 8
+    stop: ["\n"]
+    normalization: [strip, lower, collapse_whitespace, strip_punctuation]
+    items:
+      - id: em-reverse
+        prompt: "Write the word cat backwards:"
+        answers: ["tac"]
+      - id: em-count
+        prompt: "Continue the list: one, two, three,"
+        answers: ["four"]
+      - id: em-letter
+        prompt: "Which letter comes after B in the alphabet?"
+        answers: ["C"]
+  - id: fixture-math
+    type: math
+    max_new_tokens: 24
+    items:
+      - id: math-fractions
+        problem: What is 3/4 + 1/8?
+        answer: 7/8
+      - id: math-expand
+        problem: Simplify (x+1)^2 - x^2.
+        answer: 2x+1
+      - id: math-speed
+        problem: A cart travels 120 metres in 2 minutes. What is its average speed in metres per minute?
+        answer: "60"
+      - id: math-root
+        problem: Write the square root of 50 in simplest radical form.
+        answer: 5\sqrt{2}
+  - id: fixture-code
+    type: code
+    max_new_tokens: 48
+    items:
+      - id: code-add
+        prompt: |
+          def add_numbers(a, b):
+              """Return the sum of a and b."""
+        test: |
+          def check(candidate):
+              assert candidate(2, 3) == 5
+              assert candidate(-1, 1) == 0
+        entry_point: add_numbers
+      - id: code-reverse-words
+        prompt: |
+          def reverse_words(sentence):
+              """Return the words of sentence in reverse order, joined by single spaces."""
+        test: |
+          def check(candidate):
+              assert candidate("alpha beta gamma") == "gamma beta alpha"
+              assert candidate("solo") == "solo"
+        entry_point: reverse_words
+      - id: code-palindrome
+        prompt: |
+          def is_palindrome(text):
+              """Return True when text reads the same forwards and backwards."""
+        test: |
+          def check(candidate):
+              assert candidate("level") is True
+              assert candidate("levels") is False
+        entry_point: is_palindrome
+  - id: fixture-validation-loss
+    type: validation-loss
+    split: validation
+    max_steps: 4
