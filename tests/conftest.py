@@ -211,3 +211,43 @@ def trained_tokenizer(tmp_path_factory: pytest.TempPathFactory) -> Any:
         root / "data", build.dataset_id, build.build_id, vocab_size=TOKENIZER_FIXTURE_VOCAB
     )
     return load_tokenizer(root / "data", trained.tokenizer_id)
+
+
+@dataclass(frozen=True, slots=True)
+class TokenShardFixture:
+    """A tiny real tokenized build: data root, IDs, and the build's vocabulary."""
+
+    data_root: Path
+    tokenized_id: str
+    tokenizer_id: str
+    vocab_size: int
+
+
+def make_token_shards(
+    root: Path, *, max_shard_tokens: int = 64, extra_train_text: str | None = None
+) -> TokenShardFixture:
+    """Build, train a tokenizer on, and shard the fixture corpus under ``root``.
+
+    The small default shard limit forces multi-part documents.
+    """
+
+    from epor.tokenizer import build_token_shards, train_tokenizer
+
+    build = make_tokenizer_build(root, extra_train_text=extra_train_text)
+    data = root / "data"
+    trained = train_tokenizer(
+        data, build.dataset_id, build.build_id, vocab_size=TOKENIZER_FIXTURE_VOCAB
+    )
+    shards = build_token_shards(
+        data,
+        build.dataset_id,
+        build.build_id,
+        trained.tokenizer_id,
+        max_shard_tokens=max_shard_tokens,
+    )
+    return TokenShardFixture(
+        data_root=data,
+        tokenized_id=shards.tokenized_id,
+        tokenizer_id=trained.tokenizer_id,
+        vocab_size=shards.manifest.vocab_size,
+    )

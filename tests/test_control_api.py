@@ -96,6 +96,8 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "tokenizer_train",
                 "tokenizer_shard",
                 "tokenizer_evaluate",
+                "kernel_train",
+                "kernel_evaluate",
                 "tiny_train",
                 "tiny_eval",
             }
@@ -124,6 +126,15 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "fertility_reports": [],
                 "integrity_errors": [],
             }
+            training = (await client.get("/api/v1/training/runs")).json()
+            assert set(training) == {
+                "schema_version",
+                "scope",
+                "runs",
+                "evaluations",
+                "integrity_errors",
+            }
+            assert not [run for run in training["runs"] if run["source"] == "job"]
 
             # Reading is public; every mutation requires a verified identity.
             anonymous = await client.post(

@@ -168,3 +168,39 @@ def test_resume_helper_preserves_a_custom_corpus(tmp_path: Path) -> None:
     )
 
     assert resumed.steps_completed == 2
+
+
+def test_debug_evaluate_reports_main_loss_not_mtp_objective(tmp_path: Path) -> None:
+    from epor.models import ModelConfig, dump_model_config, load_model_config
+    from epor.training.data import DEFAULT_FIXTURE_CORPUS, load_token_corpus, sequential_batches
+    from epor.training.loop import _model_from_checkpoint  # pyright: ignore[reportPrivateUsage]
+
+    base = load_model_config(TINY_CONFIG)
+    recipe = tmp_path / "tiny-mtp.yaml"
+    dump_model_config(
+        ModelConfig.model_validate(
+            {**base.model_dump(mode="json"), "mtp_depth": 1, "mtp_loss_weight": 0.5}
+        ),
+        recipe,
+    )
+    trained = pretrain(recipe, tmp_path / "run", max_steps=1, batch_size=1, sequence_length=8)
+    result = evaluate(trained.checkpoint_path, batch_size=1, sequence_length=8, max_batches=2)
+
+    _, model = _model_from_checkpoint(load_checkpoint(trained.checkpoint_path))
+    model.eval()
+    main_total = objective_total = 0.0
+    tokens = 0
+    with torch.no_grad():
+        for inputs, targets in sequential_batches(
+            load_token_corpus(DEFAULT_FIXTURE_CORPUS),
+            batch_size=1,
+            sequence_length=8,
+            max_batches=2,
+        ):
+            output = model(inputs, targets)
+            assert output.main_loss is not None and output.loss is not None
+            main_total += float(output.main_loss) * targets.numel()
+            objective_total += float(output.loss) * targets.numel()
+            tokens += targets.numel()
+    assert result.loss == pytest.approx(main_total / tokens)
+    assert result.loss != pytest.approx(objective_total / tokens)

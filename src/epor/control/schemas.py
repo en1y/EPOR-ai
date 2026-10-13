@@ -142,6 +142,67 @@ class TinyEvalSpec(StrictSchema):
     max_batches: int | None = Field(default=None, ge=1, le=10_000)
 
 
+class KernelTrainSpec(StrictSchema):
+    """A bounded kernel pretraining job; distributed runs stay on the CLI."""
+
+    tokenized_id: str = Field(pattern=_SHA256, description="Verified tokenized build.")
+    config_path: TinyModelConfigPath = Field(
+        default="configs/models/epor-tiny.yaml",
+        alias="model_config",
+        serialization_alias="model_config",
+    )
+    vocab_from_build: bool = Field(
+        default=False,
+        description="Train a derived config with the build's vocabulary; the recipe is unchanged.",
+    )
+    qk_norm: bool | None = Field(default=None, description="Override the recipe's QK-norm flag.")
+    mtp_depth: int | None = Field(default=None, ge=0, le=4)
+    output_name: str = Field(default="kernel", pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    resume_from: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Artifact-root-relative run or checkpoint directory to continue from.",
+    )
+    max_steps: int = Field(default=200, ge=1, le=100_000)
+    seq_len: int = Field(default=128, ge=1, le=8_192)
+    tokens_per_batch: int = Field(default=4_096, ge=1, le=1_048_576)
+    micro_batch_size: int | None = Field(default=None, ge=1, le=8_192)
+    precision: Literal["bf16", "fp32"] = "bf16"
+    strategy: Literal["none"] = Field(
+        default="none",
+        description="Control jobs train in one process; use the CLI for local ddp/fsdp2.",
+    )
+    learning_rate: float = Field(default=3e-4, gt=0, le=1.0)
+    min_lr_ratio: float = Field(default=0.1, ge=0, le=1)
+    warmup_steps: int = Field(default=0, ge=0, le=100_000)
+    total_steps: int | None = Field(default=None, ge=1, le=100_000)
+    weight_decay: float = Field(default=0.1, ge=0, le=1.0)
+    gradient_clip: float = Field(default=1.0, gt=0, le=1_000.0)
+    data_seed: int = Field(default=23, ge=0, le=2**32 - 1)
+    model_seed: int = Field(default=17, ge=0, le=2**32 - 1)
+    activation_checkpointing: bool = False
+    checkpoint_every: int = Field(default=50, ge=1, le=100_000)
+    keep_checkpoints: int = Field(default=3, ge=1, le=100)
+    validation_split: Literal["validation", "test"] | None = "validation"
+    eval_max_steps: int | None = Field(default=None, ge=1, le=100_000)
+
+    @model_validator(mode="after")
+    def schedule_fits(self) -> KernelTrainSpec:
+        if self.tokens_per_batch % self.seq_len:
+            raise ValueError("tokens_per_batch must be a multiple of seq_len")
+        if self.warmup_steps > (self.total_steps or self.max_steps):
+            raise ValueError("warmup_steps must not exceed the schedule length")
+        return self
+
+
+class KernelEvaluateSpec(StrictSchema):
+    checkpoint_path: str = Field(
+        max_length=512, description="Artifact-root-relative run or checkpoint directory."
+    )
+    split: Literal["validation", "test", "train"] = "validation"
+    max_steps: int | None = Field(default=None, ge=1, le=100_000)
+
+
 JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.SYSTEM_PROBE: SystemProbeSpec,
     JobType.RESEARCH_SYNC: ResearchSyncSpec,
@@ -152,6 +213,8 @@ JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.TOKENIZER_TRAIN: TokenizerTrainSpec,
     JobType.TOKENIZER_SHARD: TokenizerShardSpec,
     JobType.TOKENIZER_EVALUATE: TokenizerEvaluateSpec,
+    JobType.KERNEL_TRAIN: KernelTrainSpec,
+    JobType.KERNEL_EVALUATE: KernelEvaluateSpec,
     JobType.TINY_TRAIN: TinyTrainSpec,
     JobType.TINY_EVAL: TinyEvalSpec,
 }
@@ -546,6 +609,79 @@ class TokenizerSummaryRead(BaseModel):
     tokenizers: list[TokenizerRead]
     tokenized_builds: list[TokenizedBuildRead]
     fertility_reports: list[FertilityReportRead]
+    integrity_errors: list[str]
+
+
+class KernelEvaluationRead(BaseModel):
+    split: str
+    main_loss: float
+    perplexity: float
+    mtp_losses: list[float]
+    target_tokens: int
+    steps: int
+
+
+class KernelCheckpointRead(BaseModel):
+    name: str
+    step: int
+    world_size: int | None
+    checkpoint_sha256: str
+
+
+class KernelRunRead(BaseModel):
+    run_id: str
+    lineage_id: str | None
+    parent_run_id: str | None
+    source: Literal["job", "cli"]
+    location: str
+    status: str
+    termination_reason: str | None
+    started_at: str | None
+    finished_at: str | None
+    model_id: str | None
+    config_sha256: str | None
+    qk_norm: bool
+    mtp_depth: int
+    precision: str | None
+    strategy: str | None
+    world_size: int | None
+    tokenized_id: str | None
+    seq_len: int | None
+    tokens_per_batch: int | None
+    start_step: int | None
+    target_steps: int | None
+    step: int | None
+    training_loss: float | None
+    main_loss: float | None
+    mtp_losses: list[float]
+    learning_rate: float | None
+    tokens_seen: int | None
+    tokens_per_second: float | None
+    evaluation: KernelEvaluationRead | None
+    checkpoint: KernelCheckpointRead | None
+    manifest_sha256: str
+
+
+class KernelEvaluationReportRead(BaseModel):
+    location: str
+    report_sha256: str
+    checkpoint_step: int | None
+    model_id: str | None
+    tokenized_id: str | None
+    split: str | None
+    main_loss: float | None
+    perplexity: float | None
+    mtp_losses: list[float]
+    target_tokens: int | None
+    steps: int | None
+    created_at: str | None
+
+
+class TrainingSummaryRead(BaseModel):
+    schema_version: int
+    scope: str
+    runs: list[KernelRunRead]
+    evaluations: list[KernelEvaluationReportRead]
     integrity_errors: list[str]
 
 

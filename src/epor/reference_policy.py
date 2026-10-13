@@ -104,3 +104,27 @@ def validate_reference_generation(max_new_tokens: int) -> int:
     if not 0 <= max_new_tokens <= REFERENCE_MAX_NEW_TOKENS:
         raise ValueError(f"max_new_tokens must be between 0 and {REFERENCE_MAX_NEW_TOKENS}")
     return max_new_tokens
+
+
+# Training-kernel bounds (v0.0.5).  The kernel trains on verified token shards
+# with the build's own vocabulary, so the debug 260-token requirement does not
+# apply, but the local machine's parameter, step, and batch ceilings do.
+KERNEL_MAX_STEPS = 100_000
+KERNEL_MAX_TOKENS_PER_BATCH = 1_048_576
+
+
+def validate_kernel_model(config: ModelConfig) -> ModelConfig:
+    """Reject recipes the local training kernel must not allocate."""
+
+    if config.architecture != "dense-decoder":
+        raise ValueError("the local training kernel supports dense decoders only")
+    if structural_parameter_count(config) > REFERENCE_MODEL_MAX_PARAMETERS:
+        raise ValueError("model exceeds the 50,000,000-parameter local execution limit")
+    return config
+
+
+def validate_kernel_run(max_steps: int, tokens_per_batch: int) -> None:
+    if not 1 <= max_steps <= KERNEL_MAX_STEPS:
+        raise ValueError(f"max_steps must be between 1 and {KERNEL_MAX_STEPS:,}")
+    if not 1 <= tokens_per_batch <= KERNEL_MAX_TOKENS_PER_BATCH:
+        raise ValueError(f"tokens_per_batch must be between 1 and {KERNEL_MAX_TOKENS_PER_BATCH:,}")

@@ -543,10 +543,12 @@ def evaluate(
         if should_cancel is not None and should_cancel():
             raise TrainingCancelled("evaluation cancellation requested")
         output = model(inputs, targets)
-        if output.loss is None:
+        # Perplexity is defined by the next-token objective alone; with MTP
+        # enabled ``output.loss`` also carries the weighted auxiliary losses.
+        if output.main_loss is None:
             raise RuntimeError("reference decoder did not return evaluation loss")
         tokens = targets.numel()
-        weighted_loss += float(output.loss) * tokens
+        weighted_loss += float(output.main_loss) * tokens
         evaluated_tokens += tokens
         batches += 1
         if on_batch is not None:

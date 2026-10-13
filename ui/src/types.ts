@@ -8,6 +8,8 @@ export type JobType =
   | 'tokenizer_train'
   | 'tokenizer_shard'
   | 'tokenizer_evaluate'
+  | 'kernel_train'
+  | 'kernel_evaluate'
   | 'tiny_train'
   | 'tiny_eval'
 export type JobStatus =
@@ -167,6 +169,79 @@ export interface TokenizerSummary {
   tokenizers: TokenizerArtifact[]
   tokenized_builds: TokenizedBuild[]
   fertility_reports: FertilityReport[]
+  integrity_errors: string[]
+}
+
+export interface KernelEvaluation {
+  split: string
+  main_loss: number
+  perplexity: number
+  mtp_losses: number[]
+  target_tokens: number
+  steps: number
+}
+
+export interface KernelCheckpoint {
+  name: string
+  step: number
+  world_size: number | null
+  checkpoint_sha256: string
+}
+
+export interface KernelRun {
+  run_id: string
+  lineage_id: string | null
+  parent_run_id: string | null
+  source: 'job' | 'cli'
+  location: string
+  status: string
+  termination_reason: string | null
+  started_at: string | null
+  finished_at: string | null
+  model_id: string | null
+  config_sha256: string | null
+  qk_norm: boolean
+  mtp_depth: number
+  precision: string | null
+  strategy: string | null
+  world_size: number | null
+  tokenized_id: string | null
+  seq_len: number | null
+  tokens_per_batch: number | null
+  start_step: number | null
+  target_steps: number | null
+  step: number | null
+  training_loss: number | null
+  main_loss: number | null
+  mtp_losses: number[]
+  learning_rate: number | null
+  tokens_seen: number | null
+  tokens_per_second: number | null
+  evaluation: KernelEvaluation | null
+  checkpoint: KernelCheckpoint | null
+  manifest_sha256: string
+}
+
+export interface KernelEvaluationReport {
+  location: string
+  report_sha256: string
+  checkpoint_step: number | null
+  model_id: string | null
+  tokenized_id: string | null
+  split: string | null
+  main_loss: number | null
+  perplexity: number | null
+  mtp_losses: number[]
+  target_tokens: number | null
+  steps: number | null
+  created_at: string | null
+}
+
+export interface TrainingSummary {
+  schema_version: number
+  scope: string
+  runs: KernelRun[]
+  evaluations: KernelEvaluationReport[]
   integrity_errors: string[]
 }
 

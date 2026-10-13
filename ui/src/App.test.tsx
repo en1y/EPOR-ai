@@ -441,6 +441,38 @@ describe('training page', () => {
   })
 })
 
+describe('training page kernel jobs', () => {
+  it('labels kernel jobs and hands their run directory to kernel evaluation', async () => {
+    const user = userEvent.setup()
+    const onEvaluate = vi.fn()
+    const onNew = vi.fn()
+    const kernelRun: Job = {
+      ...job,
+      id: 'cccccccc-1234-1234-1234-123456789abc',
+      type: 'kernel_train',
+      status: 'succeeded',
+      progress: 1,
+      result: { steps_completed: 4, final_loss: 6.25, output_path: 'cccccccc/kernel' },
+    }
+    render(
+      <TrainingPage
+        jobs={[kernelRun]}
+        onSelect={() => undefined}
+        onTrain={() => undefined}
+        onEvaluate={onEvaluate}
+        onNew={onNew}
+      />,
+    )
+
+    const row = screen.getByRole('button', { name: /Open kernel train run/ }).closest('tr')!
+    expect(within(row).getByText('Kernel training')).toBeInTheDocument()
+    expect(within(row).getByText('6.2500')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Evaluate' }))
+    expect(onNew).toHaveBeenCalledWith('kernel_evaluate', { checkpoint_path: 'cccccccc/kernel' })
+    expect(onEvaluate).not.toHaveBeenCalled()
+  })
+})
+
 describe('prefilled job form', () => {
   it('seeds the requested type with supplied values and keeps schema defaults', async () => {
     const user = userEvent.setup()

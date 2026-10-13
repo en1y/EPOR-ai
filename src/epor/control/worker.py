@@ -461,6 +461,21 @@ def _training_handler(name: str) -> JobHandler:
     return run
 
 
+def _kernel_handler(name: str) -> JobHandler:
+    """Load the training kernel lazily; it needs the train-cpu and data profiles."""
+
+    def run(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            from epor.training.control import run_control_job
+        except ImportError as exc:
+            raise RuntimeError(
+                "training-kernel support is unavailable; sync the train-cpu and data profiles"
+            ) from exc
+        return run_control_job(name, spec, context)
+
+    return run
+
+
 DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.SYSTEM_PROBE: _system_probe,
     JobType.RESEARCH_SYNC: _research_sync,
@@ -471,6 +486,8 @@ DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.TOKENIZER_TRAIN: _tokenizer_train,
     JobType.TOKENIZER_SHARD: _tokenizer_shard,
     JobType.TOKENIZER_EVALUATE: _tokenizer_evaluate,
+    JobType.KERNEL_TRAIN: _kernel_handler("kernel_train"),
+    JobType.KERNEL_EVALUATE: _kernel_handler("kernel_evaluate"),
     JobType.TINY_TRAIN: _training_handler("tiny_train"),
     JobType.TINY_EVAL: _training_handler("tiny_eval"),
 }

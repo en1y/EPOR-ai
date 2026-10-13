@@ -2,7 +2,7 @@
 
 <!-- project-version:start -->
 > [!IMPORTANT]
-> **Current project version: `v0.0.4`**
+> **Current project version: `v0.0.5`**
 >
 > This identifies the code in this checkout; it does not imply a formal release.
 > Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -14,11 +14,13 @@ language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
-The v0.0.x program is intentionally small. Through v0.0.4 it validates research
+The v0.0.x program is intentionally small. Through v0.0.5 it validates research
 provenance, the executable safety covenant and local authorization boundary,
 configuration, tiny-model correctness and exact resume, a provenance-first
-offline data engine, and an original byte-level BPE tokenizer with
-content-addressed token shards before any target-size run is considered. The 30B/12B/8B
+offline data engine, an original byte-level BPE tokenizer with
+content-addressed token shards, and a CPU training kernel with exact resume
+across single-process, DDP, and FSDP2 runs before any target-size run is
+considered. The 30B/12B/8B
 family descriptions are gated research destinations, not bundled checkpoints
 or fabricated performance claims.
 
@@ -82,7 +84,7 @@ once. A refusal is never approvable.
 
 What this is not: a harm detector. The resolver enforces ordering, citation,
 justification, and fail-closed escalation over assessments supplied to it.
-Through v0.0.4, those assessments are reviewed per-action declarations over a
+Through v0.0.5, those assessments are reviewed per-action declarations over a
 closed allowlist, which is only sound because that action space is small and
 fixed.
 The authorization model is local and single-machine: it verifies a bearer
@@ -184,6 +186,25 @@ Every tokenizer so far is proxy-scale; the 65,536-ID vocabulary is a declared
 target, not a trained result. See [`docs/TOKENIZER.md`](docs/TOKENIZER.md) for
 the reserved-ID table, artifact and shard formats, removal, and boundaries.
 
+The v0.0.5 training kernel then trains a bounded dense model on those shards.
+The shipped tiny recipe has a 260-ID debug vocabulary, so `--vocab-from-build`
+trains an explicitly derived config with the build's vocabulary instead of
+resizing the recipe:
+
+```bash
+uv run --frozen --no-sync epor train kernel configs/models/epor-tiny.yaml \
+  --tokenized-id <tokenized-id> --output runs/kernel-tiny --max-steps 200 --vocab-from-build
+uv run --frozen --no-sync epor train kernel-resume runs/kernel-tiny --max-steps 400
+uv run --frozen --no-sync epor eval kernel runs/kernel-tiny
+```
+
+Add `--strategy ddp|fsdp2 --world-size 2` for a local loopback-only process
+group. Ctrl-C checkpoints the last completed step and exits `130`; resume
+continues the same lineage exactly. Every kernel result so far is a proxy-scale
+local measurement, not a trained or validated model. See
+[`docs/TRAINING.md`](docs/TRAINING.md) for settings, the exact-resume contract,
+DDP/FSDP2 findings, and limitations.
+
 The tiny reference path can be checked independently:
 
 ```bash
@@ -212,12 +233,15 @@ shows reviewed source registrations, immutable-layer counts, quarantines,
 removals, builds, and audit state without exposing document content. The
 tokenizer page lists tokenizers with declared and learned vocabulary kept
 apart, tokenized builds, and fertility reports with their scope and any
-in-sample or round-trip warning. The documentation reader serves
+in-sample or round-trip warning. The training page lists verified
+training-kernel runs with their losses, MTP losses, throughput, precision,
+topology, features, checkpoint, and validation result, labelled as proxy-scale
+measurements, beside the training and evaluation jobs. The documentation reader serves
 tracked first-party Markdown only. Ignored
 third-party research downloads are never rendered as console content; the
 research ledger links those sources at their canonical URL instead.
 
-Version 0.0.4 is operated from a source checkout. The wheel and source archive
+Version 0.0.5 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository
 resources until the v0.1.0 packaging contract is finalized.
@@ -243,7 +267,8 @@ public evaluation command works without another profile.
 - `src/epor/data/` — rights registration, immutable layers, policy, builds, and audit.
 - `src/epor/tokenizer/` — reserved-ID spec, BPE training, codec, token shards,
   and fertility reports.
-- `src/epor/models/` and `src/epor/training/` — canonical PyTorch reference.
+- `src/epor/models/` and `src/epor/training/` — canonical PyTorch reference and
+  the v0.0.5 training kernel.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.
 
