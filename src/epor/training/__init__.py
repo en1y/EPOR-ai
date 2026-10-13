@@ -13,6 +13,14 @@ from epor.models.config import load_model_config, validate_config
 
 from .checkpoint import load_checkpoint
 from .data import DEFAULT_FIXTURE_CORPUS, RandomBatchStream, load_token_corpus
+from .distributed import (
+    DistributedContext,
+    DistributedStrategy,
+    destroy_distributed,
+    init_distributed,
+    launch_local,
+)
+from .faults import FaultPlan, InjectedFault, fault_plan_from_env
 from .loop import (
     EvaluationResult,
     GenerationResult,
@@ -23,6 +31,7 @@ from .loop import (
     generate,
     pretrain,
 )
+from .optim import OptimizerSettings, learning_rate_at
 from .packing import (
     PIPELINE_VERSION,
     BatchGeometry,
@@ -33,6 +42,7 @@ from .packing import (
     RowSegment,
     evaluation_steps,
 )
+from .run_checkpoint import CheckpointError, latest_checkpoint, read_kernel_checkpoint
 from .shard_data import ShardCorpus
 
 
@@ -59,9 +69,15 @@ __all__ = [
     "DEFAULT_FIXTURE_CORPUS",
     "PIPELINE_VERSION",
     "BatchGeometry",
+    "CheckpointError",
     "DataPipelineSettings",
+    "DistributedContext",
+    "DistributedStrategy",
     "EvaluationResult",
+    "FaultPlan",
     "GenerationResult",
+    "InjectedFault",
+    "OptimizerSettings",
     "PackedBatch",
     "PackedBatchStream",
     "PackedStep",
@@ -71,13 +87,20 @@ __all__ = [
     "TrainingCancelled",
     "TrainingResult",
     "TrainingSettings",
+    "destroy_distributed",
     "evaluate",
     "evaluation_steps",
+    "fault_plan_from_env",
     "generate",
+    "init_distributed",
+    "latest_checkpoint",
+    "launch_local",
+    "learning_rate_at",
     "load_checkpoint",
     "load_model_config",
     "load_token_corpus",
     "pretrain",
+    "read_kernel_checkpoint",
     "resume_pretraining",
     "validate_config",
 ]
