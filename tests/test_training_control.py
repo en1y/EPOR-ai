@@ -321,7 +321,7 @@ def test_training_summary_lists_verified_runs_and_flags_tampering(harness: Harne
     run(fetch)
     summary = summaries[-1]
     assert summary["integrity_errors"] == []
-    assert "proxy-scale" in summary["scope"]
+    assert "proxy-scale" in summary["scope"].lower()
     [listed] = [item for item in summary["runs"] if item["source"] == "job"]
     assert listed["location"] == "job-1/kernel"
     assert listed["status"] == "succeeded"

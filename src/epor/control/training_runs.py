@@ -205,8 +205,8 @@ def training_summary(artifact_root: Path, project_root: Path) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "scope": (
-            "proxy-scale local measurements on named tokenized builds; none is a trained or "
-            "validated model result"
+            "Proxy-scale local measurements on named tokenized builds; none is a trained or "
+            "validated model result."
         ),
         "runs": runs[:MAX_RUNS],
         "evaluations": reports[:MAX_REPORTS],

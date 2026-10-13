@@ -20,6 +20,7 @@ import type {
   Operator,
   ResearchCatalog,
   TokenizerSummary,
+  TrainingSummary,
 } from './types'
 
 const API = '/api/v1'
@@ -64,6 +65,7 @@ export const api = {
   research: () => request<ResearchCatalog>('/research'),
   data: () => request<DataSummary>('/data'),
   tokenizers: () => request<TokenizerSummary>('/tokenizers'),
+  trainingRuns: () => request<TrainingSummary>('/training/runs'),
   models: async () => (await request<{ items: ModelFamily[] }>('/models')).items,
   jobTypes: async () =>
     (await request<{ items: JobTypeDefinition[] }>('/job-types')).items,
