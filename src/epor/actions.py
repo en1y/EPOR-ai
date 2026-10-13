@@ -314,6 +314,154 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
             "atomically written report, and cooperative cancellation"
         ),
     ),
+    "eval_suite": _declared(
+        "score a kernel checkpoint on a versioned evaluation suite",
+        people=(
+            "scores a hash-verified local proxy-scale checkpoint on project-authored items or on "
+            "local benchmark files whose registration allows evaluation and that no tombstone "
+            "removes; generated text is only compared against references and stored in a local "
+            "report, never shown as advice or acted on, and nothing is published or downloaded; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; item and benchmark text is always data and never an "
+            "instruction, code tasks are skipped unless code execution is separately "
+            "authorized, and every metric carries its harness-fixture or proxy-scale scope "
+            "and the report's claim boundary"
+        ),
+        system=(
+            "read-only over the checkpoint, builds, and benchmark files; single process on the "
+            "CPU, a content-addressed report written once, safe answer parsing without eval, and "
+            "cooperative cancellation between and inside tasks"
+        ),
+    ),
+    "eval_code_execution": _declared(
+        "execute model-generated code candidates in the evaluation sandbox",
+        people=(
+            "runs untrusted model-generated Python only for code tasks, each candidate in a "
+            "fresh python -I -S -B process with a private 0700 working directory deleted "
+            "afterwards, a stripped environment that inherits no secret, /dev/null stdin, "
+            "rlimits on CPU, address space, file size, open files, and processes, no core "
+            "dumps, and a wall-clock kill of its process group; where the kernel permits it "
+            "the candidate also gets an unprivileged user and network namespace with no "
+            "network, and Landlock confining writes to its working directory. These layers "
+            "are defense in depth against accidents, not a security boundary: reads are not "
+            "confined and there is no seccomp filter, cgroup, PID, or mount namespace. When "
+            "the network namespace is unavailable the run is refused unless the operator "
+            "separately opts in to unisolated network with its own flag, and the layers "
+            "actually achieved are recorded in the report"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; off by default everywhere, it is a separate declared action "
+            "so a delegation scoped to evaluation never implies it, and it is available only "
+            "from the owner's own shell: the control-plane job API cannot request it"
+        ),
+        system=(
+            "candidates are bounded in count, time, memory, output, and processes; their "
+            "results are scored, never executed further, and a refusal or a candidate failure "
+            "is recorded rather than retried around the sandbox"
+        ),
+    ),
+    "eval_contamination": _declared(
+        "measure n-gram overlap between evaluation items and a training build",
+        people=(
+            "compares local evaluation items with a verified tokenized build and records "
+            "aggregate overlap rates and per-item coverage, not training text; it runs no "
+            f"model and publishes nothing; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; benchmark files must be registered for evaluation, and a "
+            "finding is a lower bound reported for human review, never a clearance"
+        ),
+        system=(
+            "read-only over the build and items, bounded n-gram settings, a content-addressed "
+            "report written once, and cooperative cancellation"
+        ),
+    ),
+    "report_review": _declared(
+        "read, list, and compare stored evaluation and scaling reports",
+        people=(
+            f"reads local content-addressed reports and the shipped ladder; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every report is verified against its content address before "
+            "it is shown, and comparisons warn when reports are not comparable"
+        ),
+        system="read-only and side-effect free apart from printed output",
+    ),
+    "scale_profile": _declared(
+        "measure training-step throughput and memory for one local configuration",
+        people=(
+            "trains a freshly initialized local model on seeded synthetic tokens for a bounded "
+            "number of steps and records only timings and memory; no data, model, or text "
+            f"leaves the machine; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; only configurations within the local kernel bound are "
+            "allocated, and MFU stays unknown unless the operator supplies a device peak"
+        ),
+        system=(
+            "local CPU only with no paid compute, at most 1,000 profiled steps, thread and "
+            "determinism settings restored afterwards, and cooperative cancellation between steps"
+        ),
+    ),
+    "scale_sweep": _declared(
+        "train a bounded model-size by token-budget by seed sweep on one tokenized build",
+        people=(
+            "trains local proxy-scale models of at most 50M parameters on a verified, "
+            "reviewed tokenized build exactly as kernel_train does; rungs above the bound are "
+            "recorded as projection-only and never allocated; nothing is released or "
+            f"served; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every point is bounded by the kernel policy, failed points are "
+            "kept in the report, and losses are labelled proxy-scale measurements"
+        ),
+        system=(
+            "local CPU only with no paid compute, one checkpoint kept per point, resumable "
+            "points, and cooperative cancellation that is never gated"
+        ),
+    ),
+    "scale_mixture": _declared(
+        "train one small model per domain mixture and measure per-domain validation loss",
+        people=(
+            "selects deterministic subsets of an already reviewed tokenized build's training "
+            "split and trains local proxy-scale models of at most 50M parameters; no build, "
+            "tokenizer, or shard is rewritten and nothing is released or served; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; mixtures are matched on training tokens and the report "
+            "decides nothing on its own: a human chooses a mixture from measured losses"
+        ),
+        system=(
+            "local CPU only with no paid compute, one checkpoint kept per mixture, resumable "
+            "points, and cooperative cancellation that is never gated"
+        ),
+    ),
+    "scale_fit": _declared(
+        "fit scaling-law forms to a stored sweep report",
+        people=f"arithmetic over a verified local report; {_LOCAL_AND_OFFLINE}",
+        direction=(
+            f"{_OPERATOR_REQUEST}; applying the published forms to EPOR is labelled a "
+            "hypothesis and small-span or under-determined fits carry warnings"
+        ),
+        system="deterministic, bounded arithmetic and a content-addressed report written once",
+    ),
+    "scale_project": _declared(
+        "project compute, storage, energy, and cost for a target-size run",
+        people=(
+            "arithmetic over operator-written inputs and a model config; it never fetches a "
+            "price or hardware number, never provisions compute, and never calls a paid API; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; a projection is not an approval: every target run still "
+            "requires a named human's explicit approval of the exact immutable proposal (G5), "
+            "and every quantity with a missing input is reported as unknown"
+        ),
+        system="read-only over its inputs and a content-addressed report written once",
+    ),
     "owner_bootstrap": _declared(
         "mint the single local owner credential on first run",
         people=(
@@ -355,6 +503,17 @@ CLI_ACTIONS: dict[str, str] = {
     "train kernel-resume": "kernel_train",
     "eval run": "tiny_eval",
     "eval kernel": "kernel_evaluate",
+    "eval suite": "eval_suite",
+    "eval contamination": "eval_contamination",
+    "eval compare": "report_review",
+    "eval reports": "report_review",
+    "scale ladder": "report_review",
+    "scale reports": "report_review",
+    "scale profile": "scale_profile",
+    "scale sweep": "scale_sweep",
+    "scale mixture": "scale_mixture",
+    "scale fit": "scale_fit",
+    "scale project": "scale_project",
     "generate": "generate",
     "api": "control_api_start",
     "worker": "job_worker_start",
