@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from epor.data.models import DatasetBuild
+from epor.data.service import is_tombstoned
 from epor.data.store import DataStore, canonical_json_bytes, sha256_bytes, sha256_file
 
 Split = Literal["train", "validation", "test"]
@@ -93,3 +94,27 @@ def iter_split_documents(
             )
     if seen != allowed:
         raise CorpusError(f"{split} shard is missing documents listed in the manifest")
+
+
+def tombstoned_documents(
+    store: DataStore, build: DatasetBuild
+) -> tuple[frozenset[str], frozenset[str]]:
+    """Build documents covered by a tombstone now, and the tombstone IDs that matched.
+
+    A build applies the tombstones that existed when it was made; this applies
+    the current set, so removals recorded after the build also reach derived
+    layers. Matching is the data engine's own rule (``is_tombstoned``).
+    """
+
+    tombstones = store.tombstones()
+    if not tombstones:
+        return frozenset(), frozenset()
+    excluded: set[str] = set()
+    applied: set[str] = set()
+    for item in build.documents:
+        record = store.document(item.document_id)
+        matched = [tombstone.id for tombstone in tombstones if is_tombstoned(record, [tombstone])]
+        if matched:
+            excluded.add(item.document_id)
+            applied.update(matched)
+    return frozenset(excluded), frozenset(applied)
