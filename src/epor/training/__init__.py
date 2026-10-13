@@ -39,6 +39,7 @@ from .loop import (
     generate,
     pretrain,
 )
+from .mixture import DomainMixture, MixtureSelection, select_mixture_documents
 from .optim import OptimizerSettings, learning_rate_at
 from .packing import (
     PIPELINE_VERSION,
@@ -81,10 +82,12 @@ __all__ = [
     "DataPipelineSettings",
     "DistributedContext",
     "DistributedStrategy",
+    "DomainMixture",
     "EvaluationResult",
     "FaultPlan",
     "GenerationResult",
     "InjectedFault",
+    "MixtureSelection",
     "OptimizerSettings",
     "PackedBatch",
     "PackedBatchStream",
@@ -116,5 +119,6 @@ __all__ = [
     "pretrain_packed",
     "read_kernel_checkpoint",
     "resume_pretraining",
+    "select_mixture_documents",
     "validate_config",
 ]

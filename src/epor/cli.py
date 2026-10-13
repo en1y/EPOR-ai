@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from epor import __version__
+from epor.lab_cli import register_evaluation_commands, scale_app
 from epor.research.cli import research_app
 from epor.system import probe_system
 
@@ -33,7 +34,7 @@ tokenizer_app = typer.Typer(
     help="Train, shard with, and measure original byte-level BPE tokenizers."
 )
 train_app = typer.Typer(help="Reference pretraining and later alignment workflows.")
-eval_app = typer.Typer(help="Evaluate reference checkpoints and compare reports.")
+eval_app = typer.Typer(help="Evaluate checkpoints on suites, scan contamination, compare reports.")
 export_app = typer.Typer(help="Export release artifacts (post-v0.0.1).")
 
 app.add_typer(research_app, name="research")
@@ -43,6 +44,7 @@ app.add_typer(data_app, name="data")
 app.add_typer(tokenizer_app, name="tokenizer")
 app.add_typer(train_app, name="train")
 app.add_typer(eval_app, name="eval")
+app.add_typer(scale_app, name="scale")
 app.add_typer(export_app, name="export")
 
 console = Console()
@@ -52,7 +54,6 @@ class FutureCommand(StrEnum):
     train_sft = "train sft"
     train_preference = "train preference"
     train_grpo = "train grpo"
-    eval_compare = "eval compare"
     export_hf = "export hf"
     export_gguf = "export gguf"
     serve = "serve"
@@ -1118,11 +1119,6 @@ def train_grpo() -> None:
     _planned(FutureCommand.train_grpo, "v0.0.7")
 
 
-@eval_app.command("compare")
-def eval_compare() -> None:
-    _planned(FutureCommand.eval_compare, "v0.0.6")
-
-
 @export_app.command("hf")
 def export_hf() -> None:
     _planned(FutureCommand.export_hf, "v0.0.9")
@@ -1131,6 +1127,9 @@ def export_hf() -> None:
 @export_app.command("gguf")
 def export_gguf() -> None:
     _planned(FutureCommand.export_gguf, "v0.0.9")
+
+
+register_evaluation_commands(eval_app)
 
 
 if __name__ == "__main__":

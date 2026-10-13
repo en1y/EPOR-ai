@@ -135,6 +135,49 @@ describe('schema-driven job form', () => {
       })
     })
   })
+
+  it('takes nested templates and lists of objects as JSON and refuses invalid JSON', async () => {
+    const user = userEvent.setup()
+    const createJob = vi.spyOn(api, 'createJob').mockResolvedValue({ ...job, type: 'scale_sweep' })
+    const sweepDefinition: JobTypeDefinition = {
+      type: 'scale_sweep',
+      title: 'Scaling sweep',
+      description: 'Train rung x token-budget x seed points.',
+      schema: {
+        properties: {
+          token_budgets: { type: 'array', items: { type: 'integer' }, title: 'Token Budgets' },
+          training: { $ref: '#/$defs/KernelTemplateSpec', title: 'Training' },
+          sources: { type: 'array', items: { $ref: '#/$defs/Source' }, default: [], title: 'Sources' },
+        },
+        required: ['token_budgets', 'training'],
+      },
+    }
+
+    render(
+      <JobForm
+        definitions={[sweepDefinition]}
+        initialType="scale_sweep"
+        initialValues={{ training: '{"tokenized_id": "abc"' }}
+        onClose={() => undefined}
+        onCreated={() => undefined}
+      />,
+    )
+    expect(screen.getByLabelText('Sources (JSON)')).toHaveValue('[]')
+    await user.type(screen.getByLabelText('Token Budgets'), '32, 64')
+    await user.click(screen.getByRole('button', { name: 'Queue job' }))
+    expect(await screen.findByText('Training must be valid JSON')).toBeInTheDocument()
+    expect(createJob).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('Training (JSON)'), '}')
+    await user.click(screen.getByRole('button', { name: 'Queue job' }))
+    await waitFor(() => {
+      expect(createJob).toHaveBeenCalledWith('scale_sweep', {
+        token_budgets: ['32', '64'],
+        training: { tokenized_id: 'abc' },
+        sources: [],
+      })
+    })
+  })
 })
 
 describe('keyboard-accessible dialogs', () => {

@@ -25,6 +25,21 @@ compute.
    Material change in provider, scale, duration, architecture, data mixture, or
    budget requires a new approval.
 
+## Projection defaults
+
+`epor scale project` turns operator-written inputs into the step-4 target
+proposal quantities (see [`SCALING.md`](SCALING.md)); it fetches nothing and
+provisions nothing, and every quantity with a missing input is `unknown`. Two
+defaults apply only when the operator leaves the field empty, and each is
+labelled in the report:
+
+| Default | Value | Evidence label | Basis |
+| --- | --- | --- | --- |
+| Failure reserve fraction | 0.25 | `EPOR-adaptation` | This policy requires a reserve and requires failed runs to be counted, but no published source fixes the fraction. |
+| Training tokens per parameter | 20 | `hypothesis` | Hoffmann et al. 2022's reported compute-optimal ratio (`disclosed` there), applied to EPOR only when no token budget is given. |
+
+A projection is never an approval: every target run still requires step 5.
+
 ## Mandatory abort conditions
 
 Stop or decline a run when loss is non-finite or outside the approved envelope,
@@ -44,7 +59,9 @@ kernel packages, image digest, and hardware SKU together. JAX and
 accelerator-specific kernels stay separate from the default environment.
 
 The reference Ryzen 5/RX 5700 XT/32 GiB machine certifies only explicitly
-measured local profiles. The RX 5700 XT is expected to serve GGUF through
+measured local profiles. `epor scale profile` records such a profile as a
+host measurement; its MFU stays `unknown` unless the operator supplies the
+device peak. The RX 5700 XT is expected to serve GGUF through
 llama.cpp/Vulkan with CPU fallback; it is not a required PyTorch training GPU.
 
 ## Reports

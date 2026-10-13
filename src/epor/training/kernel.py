@@ -34,6 +34,15 @@ One optimizer step
    that order, so the logged loss is the same number for every topology that
    computes the same per-micro-batch values.
 
+Data mixtures
+-------------
+``train_mixture`` (default ``None``: the whole split) restricts the training
+split to a deterministic domain-weighted subset
+(:func:`~epor.training.mixture.select_mixture_documents`).  It is trajectory,
+so a resume must keep it; at ``None`` it is left out of
+:meth:`PackedTrainingSettings.trajectory`, so every pre-existing trajectory
+hash and checkpoint stays compatible.  Validation is never re-weighted.
+
 Precision is ``bf16`` (CPU autocast around the forward; FP32 parameters,
 gradients, optimizer state, and loss) or ``fp32``.  FP8 is not implemented:
 it is a cloud-only ablation in the roadmap.
@@ -72,6 +81,7 @@ from .loop import (
     _write_manifest,  # pyright: ignore[reportPrivateUsage]
 )
 from .manifest import new_manifest, resource_usage, utc_now
+from .mixture import DomainMixture, MixtureSelection, document_domains, select_from_corpus
 from .optim import (
     OptimizerSettings,
     build_optimizer,
@@ -131,13 +141,19 @@ class PackedTrainingSettings(BaseModel):
     checkpoint_every: int = Field(default=50, ge=1)
     keep_checkpoints: int = Field(default=3, ge=1)
     eval_max_steps: int | None = Field(default=None, ge=1)
+    train_mixture: DomainMixture | None = None
 
     def trajectory(self) -> dict[str, Any]:
-        return {
+        payload = {
             key: value
             for key, value in self.model_dump(mode="json").items()
             if key not in RUNTIME_FIELDS
         }
+        # Added after trajectories were hashed into checkpoints; at its
+        # default it selects the original data and stays out of the hash.
+        if payload["train_mixture"] is None:
+            del payload["train_mixture"]
+        return payload
 
     @property
     def trajectory_sha256(self) -> str:
@@ -441,6 +457,10 @@ def pretrain_packed(
         model_config=config,
         verify=verify_data,
     )
+    selection: MixtureSelection | None = None
+    if settings.train_mixture is not None:
+        selection = apply_mixture(Path(data_root), corpus, settings.train_mixture)
+        corpus = corpus.select(selection.document_ids)
     stream = PackedBatchStream(
         corpus,
         seq_len=settings.seq_len,
@@ -517,6 +537,7 @@ def pretrain_packed(
                 "tie_embeddings": config.tie_embeddings,
             },
             activation_checkpointing=settings.activation_checkpointing,
+            train_mixture=None if selection is None else selection.summary(),
             start_step=start_step,
             target_steps=max_steps,
             counters={"tokens_seen": tokens_seen, "target_tokens_seen": target_tokens_seen},
@@ -773,6 +794,14 @@ def pretrain_packed(
     )
 
 
+def apply_mixture(data_root: Path, corpus: ShardCorpus, mixture: DomainMixture) -> MixtureSelection:
+    """The deterministic training subset ``mixture`` selects from ``corpus``."""
+
+    manifest = corpus.manifest
+    domains = document_domains(data_root, manifest.dataset_id, manifest.build_id)
+    return select_from_corpus(corpus, domains, mixture)
+
+
 def _throughput(tokens: int, seconds: float, steps: int) -> dict[str, Any]:
     """Measured local step throughput (forward, backward, optimizer, data)."""
 
@@ -793,12 +822,15 @@ def evaluate_packed_checkpoint(
     report_dir: str | Path | None = None,
     should_cancel: Callable[[], bool] | None = None,
     on_batch: Callable[[int], None] | None = None,
+    document_ids: Sequence[str] | None = None,
 ) -> PackedEvaluationResult:
     """Evaluate a kernel checkpoint on one split in a single process.
 
     Uses the checkpoint's own model config and data geometry; reports main
     loss, perplexity (from main loss only), and per-depth MTP losses.  With
     ``report_dir`` a JSON report is written there atomically.
+    ``document_ids`` restricts the pass to those documents of the split (for
+    example one domain's validation documents).
     """
 
     trainer = read_kernel_checkpoint(checkpoint)
@@ -806,6 +838,8 @@ def evaluate_packed_checkpoint(
     config = validate_kernel_model(model_config_from_mapping(trainer["model_config"]))
     settings = PackedTrainingSettings.model_validate(trainer["settings"])
     corpus = ShardCorpus.open(Path(data_root), settings.tokenized_id, split, model_config=config)
+    if document_ids is not None:
+        corpus = corpus.select(document_ids)
     context = DistributedContext()
     model = EporDecoder(config, seed=0, device="cpu", dtype=torch.float32, initialize=False)
     load_kernel_checkpoint(
@@ -862,10 +896,12 @@ def final_model_state(run_dir: str | Path) -> dict[str, Tensor]:
 
 __all__ = [
     "RUNTIME_FIELDS",
+    "DomainMixture",
     "PackedEvaluation",
     "PackedEvaluationResult",
     "PackedTrainingResult",
     "PackedTrainingSettings",
+    "apply_mixture",
     "evaluate_packed_checkpoint",
     "final_model_state",
     "micro_objective",

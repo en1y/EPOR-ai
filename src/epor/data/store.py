@@ -82,6 +82,8 @@ class DataStore:
             "tokenizers",
             "tokenized",
             "evaluations",
+            "evaluation-reports",
+            "scaling-reports",
             "audit/ingest",
             "tmp",
         ):
@@ -261,6 +263,47 @@ class DataStore:
         target = self.evaluation_path(report_id)
         self._write_immutable(target, payload)
         return report_id, target
+
+    def evaluation_report_path(self, report_id: str) -> Path:
+        """Location of a sealed :mod:`epor.evaluation` suite report.
+
+        Distinct from ``evaluations/`` (tokenizer fertility reports, addressed
+        by the hash of their bytes): a suite report is addressed by the
+        ``report_id`` sealed inside it, which excludes the ID field itself.
+        """
+
+        _require_sha256(report_id, "evaluation report IDs")
+        return self.root / "evaluation-reports" / f"{report_id}.json"
+
+    def evaluation_report_ids(self) -> list[str]:
+        return sorted(path.stem for path in (self.root / "evaluation-reports").glob("*.json"))
+
+    def write_evaluation_report(self, report_id: str, payload: bytes) -> Path:
+        target = self.evaluation_report_path(report_id)
+        self._write_immutable(target, payload)
+        return target
+
+    def scaling_report_directory(self, report_id: str) -> Path:
+        """Directory of one sealed :mod:`epor.scaling` report.
+
+        A scaling report's ID excludes its ``measured`` section (timings,
+        host snapshot), so repeated measurements of the same experiment share
+        an ID; each is stored as ``<content_sha256>.json`` beneath it.
+        """
+
+        _require_sha256(report_id, "scaling report IDs")
+        return self.root / "scaling-reports" / report_id
+
+    def scaling_report_ids(self) -> list[str]:
+        return sorted(
+            path.name for path in (self.root / "scaling-reports").iterdir() if path.is_dir()
+        )
+
+    def write_scaling_report(self, report_id: str, content_sha256: str, payload: bytes) -> Path:
+        _require_sha256(content_sha256, "scaling report content hashes")
+        target = self.scaling_report_directory(report_id) / f"{content_sha256}.json"
+        self._write_immutable(target, payload)
+        return target
 
     @contextmanager
     def staging_directory(self, prefix: str) -> Iterator[Path]:

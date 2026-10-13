@@ -39,6 +39,9 @@ _LANGUAGE_MODEL_TOKEN_KEYS = frozenset(
         "tokens_seen",
         "tokens_per_batch",
         "target_tokens",
+        # Scaling-laboratory job results (v0.0.6): a host-profile throughput.
+        # Every other laboratory summary key was chosen to avoid the pattern.
+        "tokens_per_second",
     }
 )
 _INLINE_SECRET_PATTERNS = (
@@ -120,6 +123,23 @@ def redact(value: Any) -> Any:
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [redact(item) for item in value]
+    if isinstance(value, str):
+        return redact_text(value)
+    return value
+
+
+def redact_values(value: Any) -> Any:
+    """Scan every string value for inline credentials, leaving keys untouched.
+
+    For verified, content-addressed reports served read-only: their keys are
+    fixed by a schema (many name language-model tokens), while their string
+    values can carry operator- or benchmark-supplied text.
+    """
+
+    if isinstance(value, Mapping):
+        return {str(key): redact_values(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [redact_values(item) for item in value]
     if isinstance(value, str):
         return redact_text(value)
     return value
