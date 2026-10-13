@@ -98,6 +98,11 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "tokenizer_evaluate",
                 "kernel_train",
                 "kernel_evaluate",
+                "eval_suite",
+                "eval_contamination",
+                "scale_profile",
+                "scale_sweep",
+                "scale_mixture",
                 "tiny_train",
                 "tiny_eval",
             }

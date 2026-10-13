@@ -420,7 +420,7 @@ def _template(
         optimizer=OptimizerSettings(
             learning_rate=learning_rate,
             min_lr_ratio=min_lr_ratio,
-            warmup_steps=min(warmup_steps, total_steps),
+            warmup_steps=warmup_steps,
             total_steps=total_steps,
             weight_decay=weight_decay,
             gradient_clip=gradient_clip,

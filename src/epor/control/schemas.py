@@ -143,7 +143,12 @@ class TinyEvalSpec(StrictSchema):
 
 
 class KernelTrainSpec(StrictSchema):
-    """A bounded kernel pretraining job; distributed runs stay on the CLI."""
+    """A bounded kernel pretraining job; distributed runs stay on the CLI.
+
+    ``train_mixture`` is deliberately not a field, so a specification naming it
+    is rejected: domain-weighted subsets train only through ``scale_mixture``,
+    whose report records the mixture, its selection, and per-domain losses.
+    """
 
     tokenized_id: str = Field(pattern=_SHA256, description="Verified tokenized build.")
     config_path: TinyModelConfigPath = Field(
@@ -203,6 +208,164 @@ class KernelEvaluateSpec(StrictSchema):
     max_steps: int | None = Field(default=None, ge=1, le=100_000)
 
 
+# ---------------------------------------------------------------- v0.0.6 laboratory jobs
+
+_SUITE = r"^(?:fixtures|safety|configs/evaluation/[A-Za-z0-9._-]{1,120}\.ya?ml)$"
+_MODEL_CONFIG = r"^configs/models/(?:ladder/)?[A-Za-z0-9._-]{1,120}\.ya?ml$"
+_REPORT_DIRECTORY = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+LADDER_CONFIGS = (
+    "configs/models/ladder/epor-ladder-10m.yaml",
+    "configs/models/ladder/epor-ladder-100m.yaml",
+    "configs/models/ladder/epor-ladder-300m.yaml",
+    "configs/models/ladder/epor-ladder-1b.yaml",
+)
+
+
+class EvaluationSourceFile(StrictSchema):
+    source_id: str = Field(pattern=_DATASET_ID)
+    path: str = Field(
+        min_length=1,
+        max_length=512,
+        description="Project-root-relative local file registered for evaluation.",
+    )
+
+
+class EvalSuiteSpec(StrictSchema):
+    """Score a kernel checkpoint on a suite. Code tasks are always skipped here.
+
+    There is no code-execution field: running model-generated code is a
+    separate declared action available only from the owner's CLI, so a job
+    specification that asks for it is rejected as invalid.
+    """
+
+    checkpoint_path: str = Field(
+        max_length=512, description="Artifact-root-relative run or checkpoint directory."
+    )
+    suite: str = Field(
+        default="fixtures",
+        pattern=_SUITE,
+        description="'fixtures', 'safety', or a suite file under configs/evaluation/.",
+    )
+    sources: list[EvaluationSourceFile] = Field(default_factory=list, max_length=16)
+    training_data: str | None = Field(
+        default=None,
+        pattern=_SHA256,
+        description="Tokenized build for contamination/memorization (default: the checkpoint's).",
+    )
+    batch_size: int = Field(default=8, ge=1, le=256)
+    max_length: int | None = Field(default=None, ge=2, le=8_192)
+
+
+class EvalContaminationSpec(StrictSchema):
+    training_data: str = Field(pattern=_SHA256, description="Tokenized build to scan against.")
+    suite: str = Field(default="fixtures", pattern=_SUITE)
+    sources: list[EvaluationSourceFile] = Field(default_factory=list, max_length=16)
+
+
+class ScaleProfileSpec(StrictSchema):
+    config_path: str = Field(
+        default="configs/models/epor-tiny.yaml",
+        pattern=_MODEL_CONFIG,
+        alias="model_config",
+        serialization_alias="model_config",
+    )
+    vocab_from_build: str | None = Field(
+        default=None, pattern=_SHA256, description="Use this tokenized build's vocabulary."
+    )
+    batch_size: int = Field(default=4, ge=1, le=256)
+    seq_len: int = Field(default=128, ge=2, le=8_192)
+    warmup_steps: int = Field(default=2, ge=0, le=100)
+    timed_steps: int = Field(default=5, ge=1, le=900)
+    precision: Literal["fp32", "bf16"] = "fp32"
+    seed: int = Field(default=0, ge=0, le=2**32 - 1)
+    threads: int | None = Field(default=None, ge=1, le=512)
+    peak_flops_per_second: float | None = Field(
+        default=None, gt=0, le=1e21, description="Operator-supplied device peak; else MFU unknown."
+    )
+    device_label: str = Field(default="cpu", min_length=1, max_length=120)
+
+
+class KernelTemplateSpec(StrictSchema):
+    """Training settings shared by every sweep point or mixture run."""
+
+    tokenized_id: str = Field(pattern=_SHA256, description="Verified tokenized build.")
+    seq_len: int = Field(default=128, ge=1, le=8_192)
+    tokens_per_batch: int = Field(default=4_096, ge=1, le=1_048_576)
+    micro_batch_size: int | None = Field(default=None, ge=1, le=8_192)
+    precision: Literal["bf16", "fp32"] = "bf16"
+    learning_rate: float = Field(default=3e-4, gt=0, le=1.0)
+    min_lr_ratio: float = Field(default=0.1, ge=0, le=1)
+    warmup_steps: int = Field(default=0, ge=0, le=100_000)
+    weight_decay: float = Field(default=0.1, ge=0, le=1.0)
+    gradient_clip: float = Field(default=1.0, gt=0, le=1_000.0)
+    data_seed: int = Field(default=23, ge=0, le=2**32 - 1)
+    model_seed: int = Field(default=17, ge=0, le=2**32 - 1)
+    checkpoint_every: int = Field(default=50, ge=1, le=100_000)
+    validation_split: Literal["validation", "test"] | None = "validation"
+    eval_max_steps: int | None = Field(default=None, ge=1, le=100_000)
+
+    @model_validator(mode="after")
+    def batch_fits(self) -> KernelTemplateSpec:
+        if self.tokens_per_batch % self.seq_len:
+            raise ValueError("tokens_per_batch must be a multiple of seq_len")
+        return self
+
+
+MAX_SWEEP_POINTS = 64
+
+
+class ScaleSweepSpec(StrictSchema):
+    rungs: list[Annotated[str, Field(pattern=_MODEL_CONFIG)]] = Field(
+        default_factory=lambda: list(LADDER_CONFIGS), min_length=1, max_length=8
+    )
+    token_budgets: list[Annotated[int, Field(ge=1, le=10**10)]] = Field(min_length=1, max_length=16)
+    seeds: list[Annotated[int, Field(ge=0, le=2**32 - 1)]] = Field(
+        default_factory=lambda: [0], min_length=1, max_length=8
+    )
+    training: KernelTemplateSpec
+    output_name: str = Field(default="sweep", pattern=_REPORT_DIRECTORY)
+
+    @model_validator(mode="after")
+    def bounded_points(self) -> ScaleSweepSpec:
+        for axis in (self.rungs, self.token_budgets, self.seeds):
+            if len(set(axis)) != len(axis):
+                raise ValueError("sweep axes must not repeat values")
+        if len(self.rungs) * len(self.token_budgets) * len(self.seeds) > MAX_SWEEP_POINTS:
+            raise ValueError(f"a sweep job runs at most {MAX_SWEEP_POINTS} points")
+        return self
+
+
+class MixtureEntrySpec(StrictSchema):
+    mixture_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    weights: dict[Annotated[str, Field(pattern=_DATASET_ID)], float] = Field(
+        min_length=1, max_length=32
+    )
+    seed: int = Field(default=0, ge=0, le=2**32 - 1)
+
+
+class ScaleMixtureSpec(StrictSchema):
+    config_path: str = Field(
+        default="configs/models/epor-tiny.yaml",
+        pattern=_MODEL_CONFIG,
+        alias="model_config",
+        serialization_alias="model_config",
+    )
+    mixtures: list[MixtureEntrySpec] = Field(min_length=1, max_length=8)
+    max_steps: int = Field(ge=1, le=100_000)
+    evaluation_split: Literal["validation", "test", "train"] = "validation"
+    evaluation_max_steps: int | None = Field(default=None, ge=1, le=100_000)
+    training: KernelTemplateSpec
+    output_name: str = Field(default="mixture", pattern=_REPORT_DIRECTORY)
+
+    @model_validator(mode="after")
+    def schedule_fits(self) -> ScaleMixtureSpec:
+        if len({item.mixture_id for item in self.mixtures}) != len(self.mixtures):
+            raise ValueError("mixture IDs must be unique")
+        if self.training.warmup_steps > self.max_steps:
+            raise ValueError("warmup_steps must not exceed max_steps")
+        return self
+
+
 JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.SYSTEM_PROBE: SystemProbeSpec,
     JobType.RESEARCH_SYNC: ResearchSyncSpec,
@@ -215,6 +378,11 @@ JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.TOKENIZER_EVALUATE: TokenizerEvaluateSpec,
     JobType.KERNEL_TRAIN: KernelTrainSpec,
     JobType.KERNEL_EVALUATE: KernelEvaluateSpec,
+    JobType.EVAL_SUITE: EvalSuiteSpec,
+    JobType.EVAL_CONTAMINATION: EvalContaminationSpec,
+    JobType.SCALE_PROFILE: ScaleProfileSpec,
+    JobType.SCALE_SWEEP: ScaleSweepSpec,
+    JobType.SCALE_MIXTURE: ScaleMixtureSpec,
     JobType.TINY_TRAIN: TinyTrainSpec,
     JobType.TINY_EVAL: TinyEvalSpec,
 }
@@ -683,6 +851,72 @@ class TrainingSummaryRead(BaseModel):
     runs: list[KernelRunRead]
     evaluations: list[KernelEvaluationReportRead]
     integrity_errors: list[str]
+
+
+class PrimaryMetricRead(BaseModel):
+    task_id: str
+    task_type: str
+    metric: str
+    value: float | None
+    scope: str
+
+
+class EvaluationReportSummaryRead(BaseModel):
+    report_id: str
+    suite_id: str
+    suite_version: int
+    scope: str
+    claim_boundary: str
+    model_kind: str
+    model_id: str
+    checkpoint_step: int | None
+    parameter_count: int | None
+    task_count: int
+    skipped_task_count: int
+    primary_metrics: list[PrimaryMetricRead]
+    code_executed: bool
+
+
+class EvaluationReportList(BaseModel):
+    schema_version: int = 1
+    reports: list[EvaluationReportSummaryRead]
+    integrity_errors: list[str]
+
+
+class ScalingReportSummaryRead(BaseModel):
+    """Common summary fields plus the kind's headline figures (extra keys)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    report_id: str
+    content_sha256: str
+    kind: str
+    scope: str
+    claim_boundary: str
+    warning_count: int
+    recorded_at: str | None
+
+
+class ScalingReportList(BaseModel):
+    schema_version: int = 1
+    reports: list[ScalingReportSummaryRead]
+    integrity_errors: list[str]
+
+
+class LadderRungRead(BaseModel):
+    slug: str
+    config_sha256: str
+    nominal_non_embedding: int | None
+    total_parameters: int
+    non_embedding_parameters: int
+    vocab_size: int
+    execution: Literal["local", "projection-only"]
+    reason: str
+
+
+class LadderRead(BaseModel):
+    rungs: list[LadderRungRead]
+    note: str
 
 
 class DocumentSummary(BaseModel):
