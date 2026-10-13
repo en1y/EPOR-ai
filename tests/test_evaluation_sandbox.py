@@ -177,3 +177,25 @@ def test_a_failed_namespace_setup_falls_back_and_still_needs_the_opt_in(
     assert result.isolation.notes[0].startswith("user namespace setup failed")
     with pytest.raises(CodeExecutionRefusedError, match="allow_unisolated_network"):
         require_isolation(result.isolation, allow_unisolated_network=False)
+
+
+def test_degraded_process_limit_counts_the_callers_threads(tmp_path: Path) -> None:
+    # Without a user namespace RLIMIT_NPROC counts every task (thread) of the
+    # user, so a caller with many threads (PyTorch pools, pytest) must not
+    # leave the candidate unable to start even one child process.
+    import threading
+
+    stop = threading.Event()
+    threads = [threading.Thread(target=stop.wait, daemon=True) for _ in range(48)]
+    for thread in threads:
+        thread.start()
+    try:
+        sandbox = CodeSandbox(use_namespaces=False, scratch_root=tmp_path / "scratch")
+        result = sandbox.run(
+            "import os\npid = os.fork()\nif pid == 0:\n    os._exit(0)\nos.waitpid(pid, 0)\n"
+            "print('forked')\n"
+        )
+    finally:
+        stop.set()
+    assert result.isolation.process_limit_scope == "global-user"
+    assert result.stdout.strip() == "forked", result.stderr

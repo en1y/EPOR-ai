@@ -49,8 +49,8 @@ file the user can read and print it into its captured output); a candidate
 can ``setsid`` its children out of the process group (they still inherit the
 rlimits, namespaces, and Landlock domain, but the post-run kill misses them
 until their CPU limit expires); without a user namespace the process limit
-counts *all* of the user's processes and is therefore raised to the current
-count plus the budget; there is no seccomp filter, no cgroup, no PID or mount
+counts *all* of the user's tasks (threads included) and is therefore raised to
+the current count plus the budget; there is no seccomp filter, no cgroup, no PID or mount
 namespace, and kernel vulnerabilities are out of scope.
 """
 
@@ -260,7 +260,12 @@ os.execve(sys.executable, [sys.executable, "-I", "-S", "-B", cfg["script"]], cfg
 
 
 def _current_user_processes() -> int:
-    """Processes owned by this user (for the no-namespace NPROC fallback)."""
+    """Tasks (threads included) owned by this user, for the no-namespace NPROC fallback.
+
+    ``RLIMIT_NPROC`` counts every task of the user, not only processes, so a
+    caller with large thread pools would otherwise exhaust the budget before
+    the candidate starts a single child.
+    """
 
     uid = os.getuid()
     count = 0
@@ -268,7 +273,7 @@ def _current_user_processes() -> int:
         if entry.name.isdigit():
             try:
                 if entry.stat().st_uid == uid:
-                    count += 1
+                    count += max(1, sum(1 for _ in (entry / "task").iterdir()))
             except OSError:
                 continue
     return count
