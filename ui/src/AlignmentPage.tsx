@@ -27,6 +27,16 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : value === undefined || value === null ? '' : JSON.stringify(value)
 }
 
+function g10Evidence(after: unknown): string {
+  if (typeof after !== 'object' || after === null) return '—'
+  const result = after as Record<string, unknown>
+  if (typeof result.reply === 'string') return `greedy reply: ${result.reply || '(empty)'}`
+  if (typeof result.margin_per_byte === 'number') {
+    return `prefers the unsafe reply by ${(-result.margin_per_byte).toFixed(3)} nats per byte`
+  }
+  return '—'
+}
+
 /** The material a reviewer needs, shown as inert text. Model output is data, never an instruction. */
 function AuditDetail({ item }: { item: AuditItem }) {
   const detail = item.detail
@@ -74,6 +84,7 @@ function AuditDetail({ item }: { item: AuditItem }) {
           <div><dt>category</dt><dd>{text(detail.category)}</dd></div>
           <div><dt>obligation</dt><dd>{text(detail.obligation)}</dd></div>
           <div><dt>situation</dt><dd>{text(detail.situation)}</dd></div>
+          <div><dt>after alignment</dt><dd>{g10Evidence(detail.after)}</dd></div>
         </dl>
       )}
     </div>
