@@ -317,3 +317,25 @@ def test_unknown_audit_items_and_outside_paths_are_refused(env: Pipeline, tmp_pa
     )
     rights = _invoke(["align", "teacher", "register", "teacher.yaml"])
     assert rights.exit_code == 3 and "no data-engine registration" in unstyle(rights.stdout)
+
+
+def test_a_fresh_student_needs_the_explicit_vocabulary_opt_in(env: Pipeline) -> None:
+    arguments = [
+        "train",
+        "sft",
+        "--recipe",
+        "configs/models/epor-tiny.yaml",
+        "--tokenized-id",
+        env.shards.tokenized_id,
+        "--dataset",
+        env.values["sft_dataset"],
+        "--max-steps",
+        "1",
+        *SFT_ARGS,
+    ]
+    refused = _invoke([*arguments, "--output", "runs/student-refused"])
+    assert refused.exit_code == 2 and "--vocab-from-build" in unstyle(refused.stdout)
+    student = _json([*arguments, "--output", "runs/student", "--vocab-from-build"])
+    assert student["objective"] == "sft" and student["steps_completed"] == 1
+    manifest = json.loads((env.root / "runs" / "student" / "manifest.json").read_text())
+    assert manifest["init_checkpoint"] is None

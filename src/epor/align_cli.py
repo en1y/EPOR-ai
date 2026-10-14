@@ -691,6 +691,13 @@ def train_sft(
     tokenized_id: Annotated[
         str | None, typer.Option(help="Tokenized build fixing the tokenizer (with --recipe).")
     ] = None,
+    vocab_from_build: Annotated[
+        bool,
+        typer.Option(
+            "--vocab-from-build",
+            help="With --recipe: train a derived config with the build's vocabulary.",
+        ),
+    ] = False,
     logit_teacher: Annotated[
         list[Path] | None,
         typer.Option("--logit-teacher", help="EPOR teacher checkpoint for logit distillation."),
@@ -719,7 +726,7 @@ def train_sft(
 
     cli = _cli()
     cli.authorize_command("train sft")
-    from epor.models.config import load_model_config, model_config_from_mapping
+    from epor.models.config import model_config_from_mapping
     from epor.training import OptimizerSettings, PackedTrainingSettings
     from epor.training.kernel import LogitDistillation, resolve_model_config
     from epor.training.run_checkpoint import read_kernel_checkpoint
@@ -742,8 +749,15 @@ def train_sft(
             assert recipe is not None
             if tokenized_id is None:
                 raise ValueError("--tokenized-id is required with --recipe")
+            from epor.training.runner import derive_kernel_model
+
             recipe_path = cli._reference_path(recipe, label="recipe path", must_exist=True)[1]
-            model = resolve_model_config(load_model_config(recipe_path))
+            model = derive_kernel_model(
+                recipe_path,
+                data_root=cli._data_root(),
+                tokenized_id=tokenized_id,
+                vocab_from_build=vocab_from_build,
+            )
             build = tokenized_id
         distillation = None
         if logit_teacher:
