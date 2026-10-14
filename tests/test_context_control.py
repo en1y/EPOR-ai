@@ -246,5 +246,8 @@ def test_the_context_endpoint_is_read_only_and_verified(harness: Harness) -> Non
     assert captured["get"].status_code == 200
     body = captured["get"].json()
     assert "only a G6 certificate raises validated context" in body["scope"]
-    assert body["runs"] == [] and body["integrity_errors"] == []
+    # The harness shares the real project root, whose ignored runs/ may hold an
+    # operator's own CLI runs; nothing may come from this harness's job outputs.
+    assert [row for row in body["runs"] if row["source"] == "job"] == []
+    assert [e for e in body["integrity_errors"] if not e.startswith("cli run")] == []
     assert captured["post"].status_code == 405
