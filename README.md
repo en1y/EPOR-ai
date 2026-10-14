@@ -288,7 +288,8 @@ removals, builds, and audit state without exposing document content. The
 tokenizer page lists tokenizers with declared and learned vocabulary kept
 apart, tokenized builds, and fertility reports with their scope and any
 in-sample or round-trip warning. The training page lists verified
-training-kernel runs with their losses, MTP losses, throughput, precision,
+training-kernel runs, including nested sweep, mixture, and alignment outputs
+under their location, with their losses, MTP losses, throughput, precision,
 topology, features, checkpoint, and validation result, labelled as proxy-scale
 measurements, beside the training and evaluation jobs. The evaluation page
 shows verified suite reports with scoped metrics, calibration, contamination,

@@ -116,7 +116,9 @@ derived config and trajectory; completed points are written under
 last checkpoint, and failed points are kept with their error because the
 compute policy requires failed runs in scaling analysis. Losses, tokens, and
 loss curves are report content; wall time, throughput, RSS, and run
-directories are `measured`.
+directories are `measured`. Each attempt
+(`<output>/runs/<point_id>/attempt-<n>`) is an ordinary kernel run, so the
+console's Training page lists it under that location.
 
 ## Data mixtures
 
