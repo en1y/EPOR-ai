@@ -411,6 +411,93 @@ def test_laboratory_declarations_state_their_boundaries() -> None:
     assert "never gated" in rationale("scale_sweep")
 
 
+ALIGNMENT_ACTIONS = (
+    "align_register",
+    "align_generate",
+    "align_judge",
+    "align_dataset",
+    "align_sft",
+    "align_preference",
+    "align_audit",
+    "align_evaluate",
+)
+
+
+def test_alignment_commands_map_to_reviewed_declarations() -> None:
+    from epor.actions import CLI_ACTIONS
+
+    assert {
+        "train sft": "align_sft",
+        "train preference": "align_preference",
+        "align teacher register": "align_register",
+        "align teacher sample": "align_generate",
+        "align critique": "align_generate",
+        "align judge": "align_judge",
+        "align dataset": "align_dataset",
+        "align audit sample": "align_audit",
+        "align audit verdict": "align_audit",
+        "align monitor": "align_evaluate",
+        "align g10": "align_evaluate",
+    }.items() <= CLI_ACTIONS.items()
+    assert "train grpo" not in CLI_ACTIONS  # still a gated placeholder (v0.5.0)
+    # Registering external teacher material is the owner's CLI only.
+    assert "align_register" not in {job_type.value for job_type in JobType}
+    assert "align_audit" not in {job_type.value for job_type in JobType}
+    for action_id in ALIGNMENT_ACTIONS:
+        assert action_id in DECLARED_ACTIONS, action_id
+
+
+def test_alignment_work_requires_its_own_delegated_scope(covenant: Covenant) -> None:
+    from epor.control.authority import Actor, Role
+
+    def actor(*scopes: str) -> Actor:
+        return Actor(id="-".join(scopes), role=Role.DELEGATED_OPERATOR, scopes=frozenset(scopes))
+
+    # Pretraining authority does not stretch to fine-tuning or preference
+    # optimization; training authority never implies authority to audit, and
+    # auditing never implies authority to train or to build datasets.
+    for holder, action_id in (
+        (actor("kernel_train"), "align_sft"),
+        (actor("align_sft"), "align_preference"),
+        (actor("align_sft", "align_preference"), "align_audit"),
+        (actor("align_judge"), "align_audit"),
+        (actor("align_audit"), "align_sft"),
+        (actor("align_audit"), "align_dataset"),
+        (actor("align_generate"), "align_register"),
+        (actor("eval_suite"), "align_evaluate"),
+    ):
+        refused = resolve_action(action_id, covenant, actor=holder)
+        assert refused.outcome == "refuse", (holder.id, action_id)
+        assert refused.binding_priority == 2
+    for action_id in ALIGNMENT_ACTIONS:
+        assert resolve_action(action_id, covenant, actor=actor(action_id)).outcome == "allow"
+
+
+def test_alignment_declarations_state_their_boundaries() -> None:
+    def rationale(action_id: str) -> str:
+        return " ".join(item.rationale for item in DECLARED_ACTIONS[action_id].assessments)
+
+    register = rationale("align_register")
+    for phrase in ("does not allow training", "cost-approval", "calls no model API", "no"):
+        assert phrase in register, phrase
+    assert "loads no external weights" in register
+    generate = rationale("align_generate")
+    for phrase in ("candidate", "audited", "by key", "does not survive a capable model"):
+        assert phrase in generate, phrase
+    assert "admit nothing to training on their own" in rationale("align_judge")
+    sft = rationale("align_sft")
+    for phrase in ("no external weights", "sharing the student's tokenizer", "never gated"):
+        assert phrase in sft, phrase
+    preference = rationale("align_preference")
+    for phrase in ("never writes", "hypothesis abort threshold", "not evidence of alignment"):
+        assert phrase in preference, phrase
+    audit = rationale("align_audit")
+    for phrase in ("verified", "nothing is ever marked audited except by a human verdict"):
+        assert phrase in audit, phrase
+    assert "separate from training" in audit
+    assert "fail closed" in rationale("align_evaluate")
+
+
 def test_undeclared_work_escalates_instead_of_running(covenant: Covenant) -> None:
     resolution = resolve_action("model_serve", covenant)
     assert resolution.outcome == "escalate"

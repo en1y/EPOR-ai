@@ -103,6 +103,12 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "scale_profile",
                 "scale_sweep",
                 "scale_mixture",
+                "align_generate",
+                "align_judge",
+                "align_dataset",
+                "align_sft",
+                "align_preference",
+                "align_evaluate",
                 "tiny_train",
                 "tiny_eval",
             }

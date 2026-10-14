@@ -117,6 +117,35 @@ the result can be audited. Compiler/test/SymPy verification is preferred for
 code and math. Human review samples both accepted and rejected records. External
 model weights are never copied into EPOR.
 
+v0.0.7 implements this as immutable, content-addressed alignment records under
+`<data-root>/alignment/records/` (see [`ALIGNMENT.md`](ALIGNMENT.md)). Records
+come from four places:
+
+- local EPOR checkpoints, identified by checkpoint, config, and tokenizer hash,
+  with the exact sampled tokens;
+- operator-registered teacher output files;
+- operator-registered training sources;
+- project-authored fixtures.
+
+A registered teacher needs two things. First, a data-engine registration that
+allows `train`, has media type `application/jsonl`, and no tombstone. Second, a
+teacher registration stating its provider, model, version, licence, that the
+licence permits training on its outputs, and its cost basis; a paid source
+must name its cost-approval record. Registration is CLI-only and immutable,
+and EPOR never calls a model API.
+
+AI judge decisions and model-written evaluation items are candidates. A judging
+run's candidates reach a dataset only after a verified human has audited a
+seeded sample of both its accepted and rejected decisions, and the judge-human
+disagreement rate is within a threshold labelled `hypothesis`. A human
+rejection excludes its own candidate.
+
+Removal propagates. The data engine's `alignment_record` tombstone, and any
+source, document, or raw-hash tombstone in a record's lineage, removes that
+record and everything derived from it. Dataset builds exclude removed records
+and count them, and training refuses a dataset that holds a record removed
+after the dataset was built.
+
 ## Privacy and removals
 
 Minimize personal data at acquisition, restrict access by layer, avoid writing

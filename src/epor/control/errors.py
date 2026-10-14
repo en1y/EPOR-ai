@@ -129,3 +129,8 @@ class ReportIntegrityError(ControlError):
 
     status_code = 409
     code = "report_integrity_error"
+
+
+class AuditItemNotFoundError(ControlError):
+    status_code = 404
+    code = "audit_item_not_found"

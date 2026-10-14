@@ -153,3 +153,30 @@ describe('training kernel panel', () => {
     expect(latestTokenizedBuild([], {})).toBeNull()
   })
 })
+
+describe('alignment runs in the kernel listing', () => {
+  it('labels SFT and DPO runs and shows DPO accuracy and monitor alerts', () => {
+    const sft: KernelRun = { ...run, run_id: 'kernel-sft', objective: 'sft', chat_dataset_id: '1'.repeat(64) }
+    const dpo: KernelRun = {
+      ...run,
+      run_id: 'dpo-0123',
+      location: 'job-3/dpo',
+      objective: 'dpo',
+      evaluation: null,
+      preference_evaluation: { split: 'validation', pairs: 4, accuracy: 0.75, loss: 0.6 },
+      alerts: ['step 3: policy_logratio above alert threshold'],
+    }
+    render(
+      <KernelRunsPanel
+        summary={summary({ runs: [sft, dpo] })}
+        error={null}
+        tokenized={tokenized}
+        onNew={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('SFT')).toBeInTheDocument()
+    expect(screen.getByText('DPO')).toBeInTheDocument()
+    expect(screen.getByText('pref. accuracy 0.7500')).toBeInTheDocument()
+    expect(screen.getByText('1 monitor alert(s)')).toBeInTheDocument()
+  })
+})

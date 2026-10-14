@@ -84,6 +84,7 @@ class DataStore:
             "evaluations",
             "evaluation-reports",
             "scaling-reports",
+            "alignment",
             "audit/ingest",
             "tmp",
         ):
@@ -302,6 +303,19 @@ class DataStore:
     def write_scaling_report(self, report_id: str, content_sha256: str, payload: bytes) -> Path:
         _require_sha256(content_sha256, "scaling report content hashes")
         target = self.scaling_report_directory(report_id) / f"{content_sha256}.json"
+        self._write_immutable(target, payload)
+        return target
+
+    def alignment_path(self, relative: str) -> Path:
+        """A path beneath ``alignment/``, the v0.0.7 alignment-record layer."""
+
+        parts = Path(relative).parts
+        if not parts or relative.startswith("/") or ".." in parts:
+            raise DataStoreError("alignment paths must remain inside the alignment layer")
+        return self.root / "alignment" / relative
+
+    def write_alignment_file(self, relative: str, payload: bytes) -> Path:
+        target = self.alignment_path(relative)
         self._write_immutable(target, payload)
         return target
 

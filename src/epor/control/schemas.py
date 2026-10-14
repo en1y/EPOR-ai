@@ -58,7 +58,7 @@ class DataBuildSpec(StrictSchema):
 
 
 class DataRemoveSpec(StrictSchema):
-    target_kind: Literal["source_id", "document_id", "raw_sha256"]
+    target_kind: Literal["source_id", "document_id", "raw_sha256", "alignment_record"]
     target: str = Field(min_length=1, max_length=200)
     reason: str = Field(min_length=1, max_length=2_000)
     requested_at: datetime | None = None
@@ -366,6 +366,151 @@ class ScaleMixtureSpec(StrictSchema):
         return self
 
 
+_ARTIFACT_PATH = Field(
+    min_length=1, max_length=512, description="Artifact-root-relative run or checkpoint directory."
+)
+_OBLIGATION = r"^[a-z][a-z0-9-]{0,63}$"
+_RecordId = Annotated[str, Field(pattern=_SHA256)]
+
+
+class AlignGenerateSpec(StrictSchema):
+    """Sample teacher outputs, critique/revision candidates, or model-written G10 items."""
+
+    mode: Literal["teacher-sample", "critique", "eval-items"]
+    checkpoint_path: str = _ARTIFACT_PATH
+    fixture_prompts: bool = True
+    prompt_records: list[_RecordId] = Field(default_factory=list, max_length=500)
+    examples: list[_RecordId] = Field(default_factory=list, max_length=500)
+    obligations: list[Annotated[str, Field(pattern=_OBLIGATION)]] = Field(
+        default_factory=list, max_length=16
+    )
+    count: int = Field(default=6, ge=1, le=600)
+    temperature: float = Field(default=0.0, ge=0.0, le=10.0)
+    top_k: int | None = Field(default=None, ge=1, le=65_536)
+    max_new_tokens: int = Field(default=48, ge=1, le=512)
+    seed: int = Field(default=0, ge=0, le=2**32 - 1)
+
+    @model_validator(mode="after")
+    def mode_inputs(self) -> AlignGenerateSpec:
+        if self.mode == "critique" and not (self.examples and self.obligations):
+            raise ValueError("critique needs examples and covenant obligation keys")
+        return self
+
+
+class AlignJudgeSpec(StrictSchema):
+    checkpoint_path: str = _ARTIFACT_PATH
+    subject: Literal["preference", "revision", "eval-item"]
+    pairs: list[Annotated[list[_RecordId], Field(min_length=2, max_length=2)]] = Field(
+        default_factory=list, max_length=500
+    )
+    items: list[_RecordId] = Field(default_factory=list, max_length=600)
+    all_unjudged: bool = False
+    obligation: str = Field(default="no-harmful-output", pattern=_OBLIGATION)
+    min_margin: float = Field(default=0.05, ge=0.0, le=100.0)
+
+
+class AlignDatasetSpec(StrictSchema):
+    kind: Literal["sft", "preference"]
+    checkpoint_path: str | None = Field(default=None, min_length=1, max_length=512)
+    tokenizer_id: str | None = Field(default=None, pattern=_SHA256)
+    include: list[
+        Literal["fixtures", "teacher-outputs", "revisions", "registered", "ai-judge", "human"]
+    ] = Field(default_factory=list, max_length=6)
+    records: list[_RecordId] = Field(default_factory=list, max_length=10_000)
+    validation_percent: int = Field(default=10, ge=0, le=99)
+
+    @model_validator(mode="after")
+    def one_tokenizer(self) -> AlignDatasetSpec:
+        if (self.checkpoint_path is None) == (self.tokenizer_id is None):
+            raise ValueError("name exactly one of checkpoint_path or tokenizer_id")
+        return self
+
+
+class AlignSftSpec(StrictSchema):
+    """Fine-tune on a chat dataset in one process; local ddp/fsdp2 stay on the CLI."""
+
+    init_path: str | None = Field(default=None, min_length=1, max_length=512)
+    dataset_id: str | None = Field(default=None, pattern=_SHA256)
+    resume_from: str | None = Field(default=None, min_length=1, max_length=512)
+    logit_teachers: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(
+        default_factory=list, max_length=4
+    )
+    distill_weight: float = Field(default=1.0, gt=0.0, le=10.0)
+    distill_temperature: float = Field(default=1.0, ge=0.25, le=10.0)
+    output_name: str = Field(default="sft", pattern=_REPORT_DIRECTORY)
+    max_steps: int = Field(default=50, ge=1, le=100_000)
+    seq_len: int = Field(default=128, ge=1, le=8_192)
+    tokens_per_batch: int = Field(default=1_024, ge=1, le=1_048_576)
+    micro_batch_size: int | None = Field(default=None, ge=1, le=8_192)
+    precision: Literal["bf16", "fp32"] = "bf16"
+    learning_rate: float = Field(default=1e-4, gt=0, le=1.0)
+    warmup_steps: int = Field(default=0, ge=0, le=100_000)
+    weight_decay: float = Field(default=0.0, ge=0, le=1.0)
+    checkpoint_every: int = Field(default=50, ge=1, le=100_000)
+    keep_checkpoints: int = Field(default=2, ge=1, le=100)
+    validation: bool = True
+
+    @model_validator(mode="after")
+    def start_or_resume(self) -> AlignSftSpec:
+        if self.resume_from is None and (self.init_path is None or self.dataset_id is None):
+            raise ValueError("a new fine-tune needs init_path and dataset_id")
+        if self.tokens_per_batch % self.seq_len:
+            raise ValueError("tokens_per_batch must be a multiple of seq_len")
+        return self
+
+
+class AlignPreferenceSpec(StrictSchema):
+    init_path: str = _ARTIFACT_PATH
+    dataset_id: str = Field(pattern=_SHA256)
+    reference_path: str | None = Field(default=None, min_length=1, max_length=512)
+    resume_from: str | None = Field(default=None, min_length=1, max_length=512)
+    output_name: str = Field(default="dpo", pattern=_REPORT_DIRECTORY)
+    max_steps: int = Field(default=50, ge=1, le=100_000)
+    beta: float = Field(default=0.1, ge=1e-3, le=10.0)
+    pairs_per_step: int = Field(default=4, ge=1, le=64)
+    learning_rate: float = Field(default=1e-4, gt=0, le=1.0)
+    precision: Literal["bf16", "fp32"] = "fp32"
+    seed: int = Field(default=29, ge=0, le=2**32 - 1)
+    checkpoint_every: int = Field(default=25, ge=1, le=100_000)
+
+
+class AlignEvaluateSpec(StrictSchema):
+    mode: Literal["monitor", "g10", "calibration"]
+    policy_path: str | None = Field(default=None, min_length=1, max_length=512)
+    reference_path: str | None = Field(default=None, min_length=1, max_length=512)
+    dataset_id: str | None = Field(default=None, pattern=_SHA256)
+    beta: float = Field(default=0.1, gt=0.0, le=10.0)
+    before_path: str | None = Field(default=None, min_length=1, max_length=512)
+    after_path: str | None = Field(default=None, min_length=1, max_length=512)
+    tolerance: float = Field(default=0.0, ge=0.0, le=1.0)
+    judging_run: str | None = Field(default=None, pattern=_SHA256)
+    max_new_tokens: int = Field(default=32, ge=1, le=512)
+
+    @model_validator(mode="after")
+    def mode_inputs(self) -> AlignEvaluateSpec:
+        needed = {
+            "monitor": ("policy_path", "reference_path", "dataset_id"),
+            "g10": ("before_path", "after_path"),
+            "calibration": ("judging_run",),
+        }[self.mode]
+        missing = [name for name in needed if getattr(self, name) is None]
+        if missing:
+            raise ValueError(f"{self.mode} needs {', '.join(missing)}")
+        return self
+
+
+# Artifact-root-relative checkpoint fields the service resolves at admission.
+ALIGNMENT_CHECKPOINT_FIELDS = (
+    "checkpoint_path",
+    "init_path",
+    "reference_path",
+    "resume_from",
+    "policy_path",
+    "before_path",
+    "after_path",
+)
+
+
 JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.SYSTEM_PROBE: SystemProbeSpec,
     JobType.RESEARCH_SYNC: ResearchSyncSpec,
@@ -383,6 +528,12 @@ JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.SCALE_PROFILE: ScaleProfileSpec,
     JobType.SCALE_SWEEP: ScaleSweepSpec,
     JobType.SCALE_MIXTURE: ScaleMixtureSpec,
+    JobType.ALIGN_GENERATE: AlignGenerateSpec,
+    JobType.ALIGN_JUDGE: AlignJudgeSpec,
+    JobType.ALIGN_DATASET: AlignDatasetSpec,
+    JobType.ALIGN_SFT: AlignSftSpec,
+    JobType.ALIGN_PREFERENCE: AlignPreferenceSpec,
+    JobType.ALIGN_EVALUATE: AlignEvaluateSpec,
     JobType.TINY_TRAIN: TinyTrainSpec,
     JobType.TINY_EVAL: TinyEvalSpec,
 }
@@ -394,6 +545,13 @@ class JobCreate(StrictSchema):
     # schema violation would decide the case before the covenant saw it.
     type: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     spec: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditVerdictCreate(StrictSchema):
+    """A human's verdict on one audit item; only a verified identity may send one."""
+
+    verdict: Literal["accept", "reject"]
+    note: str = Field(default="", max_length=2_000)
 
 
 class SessionCreate(StrictSchema):
@@ -828,6 +986,18 @@ class KernelRunRead(BaseModel):
     evaluation: KernelEvaluationRead | None
     checkpoint: KernelCheckpointRead | None
     manifest_sha256: str
+    # v0.0.7: SFT, distillation, and DPO runs share this listing.
+    objective: Literal["pretrain", "sft", "logit-distillation", "dpo"] = "pretrain"
+    chat_dataset_id: str | None = None
+    parent_checkpoint_sha256: str | None = None
+    reference_checkpoint_sha256: str | None = None
+    distill_teachers: int = 0
+    distill_kl: float | None = None
+    reward_margin: float | None = None
+    preference_accuracy: float | None = None
+    policy_logratio: float | None = None
+    alerts: list[str] = Field(default_factory=list)
+    preference_evaluation: dict[str, Any] | None = None
 
 
 class KernelEvaluationReportRead(BaseModel):

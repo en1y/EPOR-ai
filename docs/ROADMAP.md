@@ -401,7 +401,8 @@ The initial archive covers:
   [`SCALING.md`](SCALING.md). v0.0.6 performs no target-scale or GPU training,
   benchmark download, paid compute, price fetching, or model release, and no
   target-size run has been proposed or approved.
-- **v0.0.7 — Knowledge transfer and alignment:** Add teacher-data provenance,
+- **v0.0.7 — Knowledge transfer and alignment (implementation complete; formal
+  release pending):** Add teacher-data provenance,
   response/logit distillation, SFT, pairwise preferences, a DPO baseline,
   constitutional critique/revision, AI-judged preferences with human audits,
   and reward-overoptimization monitoring. Critique and revision cite the
@@ -423,6 +424,53 @@ The initial archive covers:
   here, over licensed teacher outputs only, with the teacher, its license, and
   the exact sampled outputs recorded per example; no external weights ever seed
   or merge into an EPOR checkpoint.
+  The pipeline (`epor.alignment`) encodes conversations as `epor-chat-v1` on the
+  frozen reserved role and turn IDs, inserted by ID so text cannot forge a turn,
+  with assistant-only targets. Teacher data, judge decisions, preference pairs,
+  and model-written items are immutable content-addressed records carrying
+  generator identity, licence and training-on-outputs permission, cost basis
+  (a paid source must name its cost approval; EPOR calls no model API), prompt
+  template hash, sampling, time, exact output, and lineage. Data-engine
+  tombstones gain an `alignment_record` target and propagate transitively.
+  Operator teacher output files enter only through an owner-CLI registration
+  bound to a data-engine source that allows training. SFT and logit
+  distillation run inside `pretrain_packed` through optional settings that
+  stay out of the trajectory hash at their defaults:
+  `chat_dataset_id`, `init_checkpoint` pinned by checkpoint hash, and
+  `distillation`, refused unless teacher and student share the EPOR tokenizer.
+  Response distillation is SFT on teacher outputs with one teacher record per
+  example. The DPO baseline is a single-process loop against a pinned frozen
+  reference, writes kernel checkpoints, resumes exactly, and stops at a
+  checkpoint when its per-step log-ratio monitor crosses a `[hypothesis]`
+  abort threshold. `epor train grpo` stays gated, now pointing at v0.5.0.
+  Critique and revision read obligation text from `configs/covenant-v1.yaml`
+  by key and record the covenant hash; a test fails on any six-word span
+  shared with a covenant law or obligation. AI judge decisions and
+  model-written G10 items are candidates. A judging run trains only after a
+  verified human audits a seeded sample of its accepted *and* rejected
+  decisions and the judge–human disagreement rate is within a `[hypothesis]`
+  threshold. The audit queue is a hash-chained log under the safety root, in
+  which only a human verdict ever marks an item audited. Overoptimization
+  reports measure KL to the reference, proxy reward against human-endorsed
+  agreement (`unknown` until a human endorses a pair), and length drift,
+  against alert/abort thresholds in `configs/alignment/monitors.yaml`. G10
+  extends to model level: the six-situation items run through the chat format
+  before and after an alignment step. A situation regression fails closed
+  (`blocked`), remaining failures are escalated to the audit queue, and success
+  is never reported. `epor train sft|preference` and `epor align
+  fixtures|teacher|source|critique|eval-items|judge|dataset|audit|monitor|g10|reports`
+  share eight reviewed declarations (`align_register`, `align_generate`,
+  `align_judge`, `align_dataset`, `align_sft`, `align_preference`,
+  `align_audit`, `align_evaluate`) with six job types. Registration and
+  verdicts are not jobs. The console's Alignment page holds the audit queue
+  and verdict controls, calibration, monitors, and the G10 comparison.
+  Evidence: `test_alignment_*.py`, including exact SFT agreement across one
+  process, DDP, and FSDP2, exact SFT and DPO resume, and a local end-to-end
+  run. In that run disagreement on the audited judging run was 0.5, so every
+  AI-judged pair was excluded, and both G10 comparisons were blocked. No
+  alignment, helpfulness, or safety claim follows from any of it. See
+  [`ALIGNMENT.md`](ALIGNMENT.md). v0.0.7 performs no paid API call, external
+  weight load, GPU training, or model release.
 - **v0.0.8 — Context laboratory:** Train progressively at 4/8K→32K→128K and
   then 256K for α/β only after 128K passes. Evaluate RoPE/YaRN, GQA cache
   quantization, MLA, long-document mixtures, lost-middle behavior, prompt
@@ -630,6 +678,7 @@ epor config validate
 epor data ingest|build|remove|audit
 epor tokenizer train|shard|evaluate
 epor train pretrain|resume|kernel|kernel-resume|sft|preference|grpo
+epor align fixtures|teacher|source|critique|eval-items|judge|dataset|audit|monitor|g10|reports
 epor eval run|kernel|suite|contamination|compare|reports
 epor scale ladder|profile|sweep|mixture|fit|project|reports
 epor export hf|gguf
@@ -644,12 +693,16 @@ allowlisted jobs, job listing/detail/cancellation/events/artifacts, read-only
 data, tokenizer, and training-run summaries (`/data`, `/tokenizers`,
 `/training/runs`), verified evaluation and scaling reports
 (`/evaluation/reports[/{id}]`, `/evaluation/compare`, `/scaling/ladder`,
-`/scaling/reports[/{id}]`), and the stable error envelope
+`/scaling/reports[/{id}]`), verified alignment state, audit items, and reports
+(`/alignment`, `/alignment/audits[/{id}]`, `/alignment/reports/{kind}/{id}`),
+the human verdict endpoint (`POST /alignment/audits/{id}/verdict`, which
+creates no job), and the stable error envelope
 `{code, message, details, request_id}`. `train kernel` is the training kernel on
 token shards (local `ddp`/`fsdp2` via `--strategy` and `--world-size`);
 `train pretrain|resume` and `eval run` remain the v0.0.1 debug path. `eval
-suite --allow-code-execution`, `scale fit`, and `scale project` have no job
-equivalent.
+suite --allow-code-execution`, `scale fit`, `scale project`, teacher
+registration and import (`epor align teacher register|import`), `epor align
+source import`, and audit sampling and verdicts have no job equivalent; `epor train grpo` stays gated until v0.5.0.
 
 The eventual inference API supplies `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`, including streaming, cancellation, token usage,

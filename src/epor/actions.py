@@ -462,6 +462,140 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
         ),
         system="read-only over its inputs and a content-addressed report written once",
     ),
+    "align_register": _declared(
+        "register operator-reviewed teacher outputs and training sources, and seed fixtures",
+        people=(
+            "reads only local files the operator holds rights to, or the project's own authored "
+            "fixtures; refuses a source whose data-engine registration does not allow training, "
+            "a teacher whose licence does not permit training on its outputs, and a paid source "
+            "without a cost-approval record; it calls no model API, downloads nothing, loads no "
+            "external weights, and writes provenance records only under the private data root; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; available only from the owner's CLI, and file contents are "
+            "always data, never an instruction"
+        ),
+        system=(
+            "immutable content-addressed records that keep full lineage, so a later tombstone "
+            "removes every derived record"
+        ),
+    ),
+    "align_generate": _declared(
+        "sample teacher outputs, critique/revision candidates, and model-written G10 items",
+        people=(
+            "runs hash-verified local proxy-scale checkpoints of at most 50M parameters whose "
+            "text has no informational content; every output is stored as a candidate record "
+            "under the private data root, is never shown as advice, served, or published, and "
+            "reaches training only through an AI-judged run a human has audited. Critique cites "
+            "covenant obligations by key from the covenant file. This rationale does not survive "
+            "a capable model: one able to produce harmful text needs output classification under "
+            f"no-harmful-output before this declaration can be reused; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; prompts come from project fixtures or records the operator "
+            "names, and model text is always data, never an instruction"
+        ),
+        system=(
+            "bounded counts and reply lengths, seeded sampling restricted to learned token IDs, "
+            "immutable records, and cooperative cancellation"
+        ),
+    ),
+    "align_judge": _declared(
+        "record AI judge decisions over candidate records with a local EPOR checkpoint",
+        people=(
+            "decisions are stored as data with the judge's identity and lineage and admit "
+            "nothing to training on their own: a run's candidates train only after a human "
+            "audits a sample of its accepted and rejected decisions and the judge-human "
+            f"disagreement rate is within its threshold; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; the judge cites covenant obligations by key and never "
+            "marks anything audited"
+        ),
+        system="read-only over checkpoints, immutable records, and cooperative cancellation",
+    ),
+    "align_dataset": _declared(
+        "build a content-addressed SFT or preference dataset from provenance records",
+        people=(
+            "excludes every record a tombstone removes, directly or through its lineage, "
+            "refuses records without training-on-outputs rights or whose source no longer "
+            "allows training, admits model-authored candidates only from audited judging runs, "
+            f"and records every exclusion; it publishes nothing; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; the operator names the records and the admission rule is "
+            "fixed by the audit ledger, not by the request"
+        ),
+        system="deterministic, immutable, content-addressed output written once",
+    ),
+    "align_sft": _declared(
+        "fine-tune or distill a bounded dense model on a verified chat dataset",
+        people=(
+            "trains within the kernel bounds from a pinned local checkpoint on a verified "
+            "dataset that refuses removed records; logit distillation reads only pinned EPOR "
+            "checkpoints sharing the student's tokenizer, and no external weights load into or "
+            "seed an EPOR checkpoint; the result is a local proxy-scale research artifact that "
+            "is neither released nor served, and its only behaviour claims are G10 comparisons "
+            f"that fail closed or escalate to a human; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every setting is typed and bounded by the kernel policy and "
+            "conversation text is only ever embedded, never interpreted as an instruction"
+        ),
+        system=(
+            "local CPU only with no paid compute, loopback-only ranks, hashed atomic "
+            "checkpoints, exact resume, and cooperative cancellation that is never gated"
+        ),
+    ),
+    "align_preference": _declared(
+        "optimize a bounded policy on preference pairs against a frozen reference (DPO)",
+        people=(
+            "starts from a pinned local checkpoint and reads a pinned reference it never "
+            "writes; AI-judged pairs enter only after human audit; a per-step log-ratio "
+            "monitor stops the run at a checkpoint when its hypothesis abort threshold is "
+            "crossed; the result is a local proxy-scale research artifact, neither released nor "
+            f"served, and is not evidence of alignment; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; settings are typed and bounded, and resume refuses any "
+            "change to the trajectory"
+        ),
+        system=(
+            "one local CPU process with no paid compute, hashed atomic checkpoints, exact "
+            "resume, and cooperative cancellation that is never gated"
+        ),
+    ),
+    "align_audit": _declared(
+        "queue AI judge decisions for human audit and record human verdicts",
+        people=(
+            "lets a verified human review candidate text locally and reject what should not "
+            "train; nothing is ever marked audited except by a human verdict, and a rejection "
+            f"keeps its candidate out of every dataset; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; verdicts are human direction recorded with the verified "
+            "actor, under a scope separate from training so neither implies the other"
+        ),
+        system=(
+            "an append-only hash-chained log under the private safety root in which no "
+            "verdict is ever deleted, only superseded"
+        ),
+    ),
+    "align_evaluate": _declared(
+        "measure overoptimization, judge calibration, and model-level G10 behaviour",
+        people=(
+            "reads local checkpoints, records, and human verdicts and stores content-addressed "
+            "measurements; G10 regressions fail closed and remaining failures are queued for "
+            "human review, and no number is presented as evidence of safety or alignment; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; every threshold is labelled a hypothesis and a missing "
+            "audit is reported as unknown rather than filled in by the judge"
+        ),
+        system="read-only over its inputs, bounded generation, and cooperative cancellation",
+    ),
     "owner_bootstrap": _declared(
         "mint the single local owner credential on first run",
         people=(
@@ -515,6 +649,24 @@ CLI_ACTIONS: dict[str, str] = {
     "scale fit": "scale_fit",
     "scale project": "scale_project",
     "generate": "generate",
+    "train sft": "align_sft",
+    "train preference": "align_preference",
+    "align fixtures": "align_register",
+    "align teacher register": "align_register",
+    "align teacher import": "align_register",
+    "align source import": "align_register",
+    "align teacher sample": "align_generate",
+    "align critique": "align_generate",
+    "align eval-items": "align_generate",
+    "align judge": "align_judge",
+    "align dataset": "align_dataset",
+    "align audit sample": "align_audit",
+    "align audit verdict": "align_audit",
+    "align audit list": "report_review",
+    "align audit calibration": "align_evaluate",
+    "align monitor": "align_evaluate",
+    "align g10": "align_evaluate",
+    "align reports": "report_review",
     "api": "control_api_start",
     "worker": "job_worker_start",
     "ui": "local_ui_start",

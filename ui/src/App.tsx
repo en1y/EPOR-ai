@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccessPage, SignInDialog } from './AccessPage'
+import { AlignmentPage } from './AlignmentPage'
 import { DocsPage } from './DocsPage'
 import { EvaluationPage } from './EvaluationPage'
 import { ScalingPage } from './ScalingPage'
@@ -48,6 +49,7 @@ type Page =
   | 'overview'
   | 'training'
   | 'evaluation'
+  | 'alignment'
   | 'scaling'
   | 'data'
   | 'tokenizer'
@@ -70,6 +72,10 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   evaluation: {
     title: 'Evaluation',
     summary: 'Suite reports with scoped metrics, calibration, contamination, memorization, and G10 behaviour.',
+  },
+  alignment: {
+    title: 'Alignment',
+    summary: 'Teacher provenance, the human audit queue, judge calibration, overoptimization monitors, and G10 before and after.',
   },
   scaling: {
     title: 'Scaling',
@@ -112,7 +118,7 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
 const navGroups: { label: string; pages: Page[] }[] = [
   {
     label: 'Workspace',
-    pages: ['overview', 'training', 'evaluation', 'scaling', 'data', 'tokenizer', 'jobs'],
+    pages: ['overview', 'training', 'evaluation', 'alignment', 'scaling', 'data', 'tokenizer', 'jobs'],
   },
   { label: 'Governance', pages: ['safety', 'access'] },
   { label: 'Reference', pages: ['models', 'research', 'docs'] },
@@ -125,8 +131,15 @@ const terminalStatuses = new Set<JobStatus>([
   'interrupted',
 ])
 
-const trainingTypes = new Set<JobType>(['kernel_train', 'kernel_evaluate', 'tiny_train', 'tiny_eval'])
-const trainJobTypes = new Set<JobType>(['kernel_train', 'tiny_train'])
+const trainingTypes = new Set<JobType>([
+  'kernel_train',
+  'kernel_evaluate',
+  'tiny_train',
+  'tiny_eval',
+  'align_sft',
+  'align_preference',
+])
+const trainJobTypes = new Set<JobType>(['kernel_train', 'tiny_train', 'align_sft', 'align_preference'])
 const jobDetailPollMilliseconds = 1_800
 const healthPollMilliseconds = 5_000
 
@@ -271,6 +284,9 @@ function Icon({ name }: { name: Page }) {
   }
   if (name === 'evaluation') {
     return <path d="M5 4h14v16H5zM8 9l2 2 4-4M8 15h8" />
+  }
+  if (name === 'alignment') {
+    return <path d="M12 3 4 7v5c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V7l-8-4ZM8 12h8M12 8v8" />
   }
   if (name === 'scaling') {
     return <path d="M4 20h16M6 16v4M10 12v8M14 8v12M18 4v16" />
@@ -747,6 +763,8 @@ export function LossChart({ points }: { points: { step: number; loss: number }[]
 function runLabel(type: JobType): string {
   if (type === 'kernel_train') return 'Kernel training'
   if (type === 'kernel_evaluate') return 'Kernel evaluation'
+  if (type === 'align_sft') return 'Fine-tuning'
+  if (type === 'align_preference') return 'DPO baseline'
   return type === 'tiny_train' ? 'Training' : 'Evaluation'
 }
 
@@ -846,7 +864,11 @@ export function TrainingPage({
                 {runs.map((job) => {
                   const isTrain = trainJobTypes.has(job.type)
                   const isKernel = job.type === 'kernel_train' || job.type === 'kernel_evaluate'
-                  const checkpoint = textField(job.result, isKernel ? 'output_path' : 'checkpoint_path')
+                  const isAlignment = job.type === 'align_sft' || job.type === 'align_preference'
+                  const checkpoint = textField(
+                    job.result,
+                    isKernel || isAlignment ? 'output_path' : 'checkpoint_path',
+                  )
                   const steps = isTrain
                     ? numberField(job.result, 'steps_completed')
                     : numberField(job.result, isKernel ? 'steps' : 'batches')
@@ -880,7 +902,7 @@ export function TrainingPage({
                       </td>
                       <td className="numeric-cell">{formatDate(job.created_at)}</td>
                       <td className="action-cell">
-                        {isTrain && checkpoint && (
+                        {isTrain && !isAlignment && checkpoint && (
                           <button
                             type="button"
                             className="ghost-button"
@@ -1372,6 +1394,13 @@ export default function App() {
                   dataSummary?.latest_builds ?? {},
                 )?.tokenized_id ?? null
               }
+            />
+          )}
+          {page === 'alignment' && (
+            <AlignmentPage
+              canAudit={identity.authenticated}
+              onSignIn={() => setSigningIn(true)}
+              onNew={(type, values) => startJob({ type, values })}
             />
           )}
           {page === 'scaling' && (

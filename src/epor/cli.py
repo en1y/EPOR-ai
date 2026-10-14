@@ -17,6 +17,7 @@ from rich.console import Console
 from rich.table import Table
 
 from epor import __version__
+from epor.align_cli import register_alignment_commands
 from epor.lab_cli import register_evaluation_commands, scale_app
 from epor.research.cli import research_app
 from epor.system import probe_system
@@ -33,7 +34,9 @@ data_app = typer.Typer(help="Provenance-first data pipeline (post-v0.0.1).")
 tokenizer_app = typer.Typer(
     help="Train, shard with, and measure original byte-level BPE tokenizers."
 )
-train_app = typer.Typer(help="Reference pretraining and later alignment workflows.")
+train_app = typer.Typer(
+    help="Reference and kernel pretraining, supervised fine-tuning, distillation, and DPO."
+)
 eval_app = typer.Typer(help="Evaluate checkpoints on suites, scan contamination, compare reports.")
 export_app = typer.Typer(help="Export release artifacts (post-v0.0.1).")
 
@@ -51,8 +54,6 @@ console = Console()
 
 
 class FutureCommand(StrEnum):
-    train_sft = "train sft"
-    train_preference = "train preference"
     train_grpo = "train grpo"
     export_hf = "export hf"
     export_gguf = "export gguf"
@@ -586,8 +587,8 @@ def data_audit() -> None:
 @data_app.command("remove")
 def data_remove(
     target_kind: Annotated[
-        Literal["source_id", "document_id", "raw_sha256"],
-        typer.Argument(help="One of: source_id, document_id, raw_sha256."),
+        Literal["source_id", "document_id", "raw_sha256", "alignment_record"],
+        typer.Argument(help="One of: source_id, document_id, raw_sha256, alignment_record."),
     ],
     target: Annotated[str, typer.Argument()],
     reason: Annotated[str, typer.Option(prompt=True)],
@@ -1104,19 +1105,11 @@ def eval_kernel(
         typer.echo("warning: in-sample measurement on the training split", err=True)
 
 
-@train_app.command("sft")
-def train_sft() -> None:
-    _planned(FutureCommand.train_sft, "v0.0.7")
-
-
-@train_app.command("preference")
-def train_preference() -> None:
-    _planned(FutureCommand.train_preference, "v0.0.7")
-
-
 @train_app.command("grpo")
 def train_grpo() -> None:
-    _planned(FutureCommand.train_grpo, "v0.0.7")
+    """Reserved: scope-limited GRPO on verifiable rewards arrives with v0.5.0."""
+
+    _planned(FutureCommand.train_grpo, "v0.5.0")
 
 
 @export_app.command("hf")
@@ -1130,6 +1123,7 @@ def export_gguf() -> None:
 
 
 register_evaluation_commands(eval_app)
+register_alignment_commands(app, train_app)
 
 
 if __name__ == "__main__":
