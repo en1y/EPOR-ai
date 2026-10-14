@@ -89,7 +89,8 @@ describe('training kernel panel', () => {
 
     expect(screen.getByText(/Proxy-scale local measurements/)).toBeInTheDocument()
     expect(screen.getByText(/undecided until G3\/G5/)).toBeInTheDocument()
-    const row = screen.getByText('job · job-1/kernel').closest('tr')!
+    const row = screen.getByTitle('job-1/kernel').closest('tr')!
+    expect(row).toHaveTextContent('job · job-1/kernel')
     expect(within(row).getByText('60 / 60')).toBeInTheDocument()
     expect(within(row).getByText('6.2053')).toBeInTheDocument()
     expect(within(row).getByText('6.2034')).toBeInTheDocument()
@@ -144,6 +145,31 @@ describe('training kernel panel', () => {
     )
     expect(screen.getByRole('alert')).toHaveTextContent('did not verify')
     expect(screen.getByText(/No kernel run is stored/)).toBeInTheDocument()
+  })
+
+  it('shortens nested sweep locations and says when discovery was cut short', () => {
+    const point = 'ab'.repeat(32)
+    const attempt = (n: number): KernelRun => ({
+      ...run,
+      run_id: `kernel-${n}`,
+      location: `job-2/sweep/runs/${point}/attempt-${n}`,
+    })
+    const notice = 'job discovery: directories more than 8 levels deep were not searched; the listing may be incomplete'
+    render(
+      <KernelRunsPanel
+        summary={summary({ runs: [attempt(1), attempt(2)], notices: [notice] })}
+        error={null}
+        tokenized={tokenized}
+        onNew={vi.fn()}
+      />,
+    )
+    for (const n of [1, 2]) {
+      const location = screen.getByTitle(`job-2/sweep/runs/${point}/attempt-${n}`)
+      expect(location).toHaveTextContent(`job-2/sweep/runs/abababab…/attempt-${n}`)
+      expect(location).toHaveClass('run-location')
+    }
+    expect(screen.getByRole('status')).toHaveTextContent(notice)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('picks the tokenized build of the latest dataset build', () => {
