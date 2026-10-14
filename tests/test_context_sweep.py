@@ -68,6 +68,12 @@ def test_a_window_sweep_trains_the_control_and_reports_kv_bytes_and_retrieval(
         assert set(row["retrieval"]["passkey"]) == {"beginning", "middle", "end"}
     again = run_context_sweep(base, plan, data_root=shards.data_root, output_dir=tmp_path / "sweep")
     assert again.report_id == report.report_id  # finished points are reused, results identical
+    # An impossible point (no global layer left in two layers) is refused
+    # before the control or any other point trains.
+    impossible = _plan("ratio", (1, 3), shards.tokenized_id)
+    with pytest.raises(ValueError, match="no global attention layer"):
+        run_context_sweep(base, impossible, data_root=shards.data_root, output_dir=tmp_path / "x")
+    assert not (tmp_path / "x").exists()
 
 
 def test_projection_reports_kv_bytes_per_stage_and_keeps_unknowns_unknown() -> None:

@@ -110,13 +110,15 @@ def run_context_sweep(
     points: list[dict[str, Any]] = []
     measured: list[dict[str, Any]] = []
     values: Sequence[float | None] = [None, *plan.values]
-    for value in values:
+    # Every point is validated before any trains, so an impossible value is
+    # refused up front instead of after the points before it have run.
+    configs = [variant(base, plan, value) for value in values]
+    for value, config in zip(values, configs, strict=True):
         if should_cancel is not None and should_cancel():
             raise InterruptedError("context sweep cancelled")
         name = _name(plan, value)
         if on_point is not None:
             on_point(name)
-        config = variant(base, plan, value)
         run = output_dir / name
         began = time.perf_counter()
         manifest = run / "manifest.json"
