@@ -1,5 +1,7 @@
 import type {
   ActionRegistry,
+  AlignmentSummary,
+  AuditItem,
   Artifact,
   Capabilities,
   Covenant,
@@ -83,6 +85,11 @@ export const api = {
   scalingReport: (id: string) =>
     request<ScalingReport[]>(`/scaling/reports/${encodeURIComponent(id)}`),
   ladder: () => request<Ladder>('/scaling/ladder'),
+  alignment: () => request<AlignmentSummary>('/alignment'),
+  audits: (state?: 'pending' | 'audited') =>
+    request<AuditItem[]>(state ? `/alignment/audits?state=${state}` : '/alignment/audits'),
+  auditVerdict: (id: string, verdict: 'accept' | 'reject', note: string) =>
+    send<AuditItem>(`/alignment/audits/${encodeURIComponent(id)}/verdict`, { verdict, note }),
   models: async () => (await request<{ items: ModelFamily[] }>('/models')).items,
   jobTypes: async () =>
     (await request<{ items: JobTypeDefinition[] }>('/job-types')).items,

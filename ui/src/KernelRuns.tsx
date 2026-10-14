@@ -25,6 +25,12 @@ function topology(run: KernelRun): string {
   return strategy === 'none' ? '1 process' : `${strategy} ×${run.world_size ?? '?'}`
 }
 
+function objectiveLabel(run: KernelRun): string {
+  if (run.objective === 'dpo') return 'DPO'
+  if (run.objective === 'logit-distillation') return `logit distillation ×${run.distill_teachers ?? 0}`
+  return 'SFT'
+}
+
 /** The tokenized build of the most recent dataset build, else the first one listed. */
 export function latestTokenizedBuild(
   tokenized: TokenizedBuild[],
@@ -127,6 +133,12 @@ export function KernelRunsPanel({
                   <td>
                     <code className="hash" title={run.run_id}>{shortId(run.run_id.replace('kernel-', ''))}</code>{' '}
                     <small>{run.source === 'job' ? 'job' : 'CLI'} · {run.location}</small>
+                    {run.objective && run.objective !== 'pretrain' && (
+                      <>
+                        {' '}
+                        <small className="objective-tag">{objectiveLabel(run)}</small>
+                      </>
+                    )}
                     <br />
                     <small>{formatDate(run.started_at)}</small>
                   </td>
@@ -154,7 +166,10 @@ export function KernelRunsPanel({
                   <td className="numeric-cell">
                     {run.evaluation
                       ? `${loss(run.evaluation.main_loss)} · ppl ${loss(run.evaluation.perplexity)}`
-                      : '—'}
+                      : run.preference_evaluation
+                        ? `pref. accuracy ${loss(Number(run.preference_evaluation.accuracy))}`
+                        : '—'}
+                    {(run.alerts?.length ?? 0) > 0 && <><br /><small>{run.alerts?.length} monitor alert(s)</small></>}
                   </td>
                   <td className="action-cell">
                     {run.source === 'job' && run.checkpoint && (
