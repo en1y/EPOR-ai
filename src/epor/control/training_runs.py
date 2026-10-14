@@ -1,8 +1,17 @@
 """Read-only, torch-free summaries of training-kernel runs and evaluation reports.
 
-Runs are found in two fixed places only: control-job outputs
-(``<artifact_root>/<job id>/<name>/manifest.json``) and direct CLI runs under
-``<project_root>/runs/<name>/manifest.json``.  Only manifests whose
+Runs are found beneath two roots only: control-job outputs under the artifact
+root and direct CLI runs under ``<project_root>/runs``.  A run is any
+``manifest.json`` at most :data:`MAX_DEPTH` directories below its root, so
+nested layouts are listed too: ``<job id>/<name>``, scaling sweep and mixture
+attempts (``<output>/runs/<point_id>/attempt-<n>``), and any ``--output
+runs/<a>/<b>``.  Evaluation reports are the ``*.json`` files of any
+``evaluations`` or ``kernel-eval`` directory found by the same walk.  The walk
+never follows a symbolic link, keeps every path inside its root, does not enter
+``checkpoints`` or ``manifests`` directories (a run's checkpoints and immutable
+manifest copies, never another run), and stops at :data:`MAX_DIRECTORIES`
+directories and :data:`MAX_MANIFESTS` files of each kind per root; a bound that
+cuts the walk short is reported in ``notices``.  Only manifests whose
 ``command`` is ``kernel_train`` (pretraining, SFT, distillation) or
 ``alignment_dpo`` (the v0.0.7 DPO baseline) are listed; ``objective`` says
 which.
@@ -21,12 +30,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any
+
+from .security import PathOutsideRootError, contained_path
 
 MAX_RUNS = 100
 MAX_REPORTS = 200
 MAX_JSON_BYTES = 8 * 1024 * 1024
+# Discovery bounds, per root.  A job sweep attempt sits five levels down
+# (``<job>/<name>/runs/<point>/attempt-<n>``) and its reports six.
+MAX_DEPTH = 8
+MAX_DIRECTORIES = 5_000
+MAX_MANIFESTS = 1_000
+_NOT_ENTERED = frozenset({"checkpoints", "manifests"})
+_REPORT_DIRECTORIES = frozenset({"evaluations", "kernel-eval"})
 _CHECKPOINT_SCHEMA = "epor-kernel-checkpoint-v1"
 
 
@@ -50,15 +69,14 @@ def _read_json(path: Path) -> dict[str, Any]:
 def _verify_checkpoint(run_dir: Path) -> dict[str, Any] | None:
     """Return the latest checkpoint's step and digest, or ``None`` before the first one."""
 
-    root = run_dir / "checkpoints"
-    pointer_path = root / "latest.json"
+    pointer_path = contained_path(run_dir, "checkpoints/latest.json")
     if not pointer_path.is_file():
         return None
     pointer = _read_json(pointer_path)
     name = str(pointer.get("name", ""))
     if not name.startswith("step-") or "/" in name or name in {".", ".."}:
         raise ValueError("latest-checkpoint pointer names an invalid directory")
-    directory = root / name
+    directory = contained_path(run_dir, f"checkpoints/{name}")
     manifest_path = directory / "checkpoint.json"
     if not manifest_path.is_file():
         raise ValueError(f"latest checkpoint {name} is incomplete")
@@ -103,7 +121,10 @@ def _run_record(manifest_path: Path, *, source: str, location: str) -> dict[str,
     run_dir = manifest_path.parent
     status = str(manifest.get("status", "unknown"))
     if status != "running":
-        immutable = run_dir / "manifests" / f"{manifest.get('run_id')}.json"
+        run_id = str(manifest.get("run_id"))
+        if Path(run_id).name != run_id or run_id in {".", ".."}:
+            raise ValueError("run manifest has an invalid run_id")
+        immutable = contained_path(run_dir, f"manifests/{run_id}.json")
         if not immutable.is_file() or _read_json(immutable) != manifest:
             raise ValueError("finished run manifest differs from its immutable copy")
     settings = manifest.get("training_settings") or manifest.get("preference_settings") or {}
@@ -203,45 +224,96 @@ def _report_record(path: Path, *, location: str) -> dict[str, Any] | None:
     }
 
 
+def _discover(root: Path) -> tuple[list[Path], list[Path], list[str]]:
+    """Run manifests and evaluation reports beneath ``root``, within the bounds.
+
+    Directories are walked in sorted order without following symbolic links;
+    a symlinked file is skipped and every returned path is resolved and inside
+    the root.  Returns ``(manifests, reports, notices)``.
+    """
+
+    if not root.is_dir():
+        return [], [], []
+    base = root.resolve()
+    found: dict[str, list[Path]] = {"run manifests": [], "evaluation reports": []}
+    notices: set[str] = set()
+    for walked, (current, directories, files) in enumerate(os.walk(base), start=1):
+        if walked > MAX_DIRECTORIES:
+            notices.add(f"the search stopped after {MAX_DIRECTORIES} directories")
+            break
+        here = Path(current)
+        directories[:] = sorted(name for name in directories if name not in _NOT_ENTERED)
+        if directories and len(here.relative_to(base).parts) >= MAX_DEPTH:
+            notices.add(f"directories more than {MAX_DEPTH} levels deep were not searched")
+            directories.clear()
+        candidates = [("run manifests", "manifest.json")] if "manifest.json" in files else []
+        if here.name in _REPORT_DIRECTORIES:
+            candidates += [
+                ("evaluation reports", name)
+                for name in sorted(files)
+                if name.endswith(".json") and name != "manifest.json"
+            ]
+        for kind, name in candidates:
+            path = here / name
+            if path.is_symlink():
+                continue
+            if len(found[kind]) >= MAX_MANIFESTS:
+                notices.add(f"only the first {MAX_MANIFESTS} {kind} were read")
+                continue
+            try:
+                found[kind].append(contained_path(base, path, must_exist=True))
+            except (OSError, PathOutsideRootError):
+                continue
+    return found["run manifests"], found["evaluation reports"], sorted(notices)
+
+
 def training_summary(artifact_root: Path, project_root: Path) -> dict[str, Any]:
     """Kernel runs and evaluation reports, newest first, with integrity errors."""
 
     runs: list[dict[str, Any]] = []
     reports: list[dict[str, Any]] = []
     errors: list[str] = []
-    cli_root = project_root / "runs"
-    candidates = [
-        (path, "job", path.relative_to(artifact_root).parent.as_posix())
-        for path in artifact_root.glob("*/*/manifest.json")
-    ] + [
-        (path, "cli", path.relative_to(project_root).parent.as_posix())
-        for path in cli_root.glob("*/manifest.json")
-    ]
-    for path, source, location in candidates:
-        try:
-            record = _run_record(path, source=source, location=location)
-        except (OSError, ValueError, TypeError, AttributeError) as exc:
-            errors.append(f"{source} run {location}: {exc}")
-            continue
-        if record is not None:
-            runs.append(record)
-    report_paths = [
-        (path, path.relative_to(artifact_root).as_posix())
-        for path in artifact_root.glob("*/kernel-eval/*.json")
-    ] + [
-        (path, path.relative_to(project_root).as_posix())
-        for path in cli_root.glob("*/evaluations/*.json")
-    ]
-    for path, location in report_paths:
-        try:
-            report = _report_record(path, location=location)
-        except (OSError, ValueError, TypeError, AttributeError) as exc:
-            errors.append(f"evaluation report {location}: {exc}")
-            continue
-        if report is not None:
-            reports.append(report)
+    notices: list[str] = []
+    seen: set[Path] = set()
+    for source, root, prefix in (
+        ("job", artifact_root, ""),
+        ("cli", project_root / "runs", "runs/"),
+    ):
+        manifests, report_paths, cut = _discover(root)
+        notices += [
+            f"{source} discovery: {reason}; the listing may be incomplete" for reason in cut
+        ]
+        base = root.resolve()
+        for path in manifests:
+            if path in seen:
+                continue
+            seen.add(path)
+            location = prefix + path.parent.relative_to(base).as_posix()
+            try:
+                record = _run_record(path, source=source, location=location)
+            except (OSError, ValueError, TypeError, AttributeError) as exc:
+                errors.append(f"{source} run {location}: {exc}")
+                continue
+            if record is not None:
+                runs.append(record)
+        for path in report_paths:
+            if path in seen:
+                continue
+            seen.add(path)
+            location = prefix + path.relative_to(base).as_posix()
+            try:
+                report = _report_record(path, location=location)
+            except (OSError, ValueError, TypeError, AttributeError) as exc:
+                errors.append(f"evaluation report {location}: {exc}")
+                continue
+            if report is not None:
+                reports.append(report)
     runs.sort(key=lambda item: str(item.get("started_at") or ""), reverse=True)
     reports.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    if len(runs) > MAX_RUNS:
+        notices.append(f"showing the newest {MAX_RUNS} of {len(runs)} runs")
+    if len(reports) > MAX_REPORTS:
+        notices.append(f"showing the newest {MAX_REPORTS} of {len(reports)} evaluation reports")
     return {
         "schema_version": 1,
         "scope": (
@@ -251,4 +323,5 @@ def training_summary(artifact_root: Path, project_root: Path) -> dict[str, Any]:
         "runs": runs[:MAX_RUNS],
         "evaluations": reports[:MAX_REPORTS],
         "integrity_errors": sorted(errors),
+        "notices": notices,
     }
