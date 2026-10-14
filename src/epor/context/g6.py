@@ -212,7 +212,7 @@ def run_g6(
 
     settings = suite or load_g6_suite()
     longest = max(lengths)
-    if longest + 32 > model.max_length:
+    if longest > model.max_length:
         raise ValueError(
             f"G6 length {longest} does not fit the model's scoring window {model.max_length}; "
             "evaluate at or below the configured context"

@@ -68,7 +68,9 @@ def test_items_are_deterministic_bounded_and_place_the_needle_at_its_depth(lab: 
     assert items == generate_items(tokenizer, LENGTHS, items_per_cell=2, seed=3)
     assert len(items) == len(FAMILIES) * len(LENGTHS) * len(DEPTHS) * 2
     for item in items:
-        assert len(tokenizer.encode(f"{item.context}\n{item.question}")) <= item.context_length
+        prompt = len(tokenizer.encode(f"{item.context}\n{item.question}"))
+        answer = max(len(tokenizer.encode(f" {choice}")) for choice in item.choices)
+        assert prompt + answer <= item.context_length  # the scored positions, start token aside
         assert 0 <= item.answer < len(item.choices) and len(set(item.choices)) == len(item.choices)
     passkeys = [item for item in items if item.family == "passkey" and item.context_length == 256]
     for item in passkeys:
@@ -114,8 +116,12 @@ def test_run_g6_seals_a_position_resolved_report(lab: Lab) -> None:
         items_per_cell=1,
         perplexity=(lab.shards.data_root, lab.shards.tokenized_id, "train"),
     )
+    # The full scoring window is usable, so a checkpoint can be scored and
+    # certified at exactly its trained context.
+    at_window = run_g6(lab.model, lengths=[512], families=["passkey"], items_per_cell=1)
+    assert at_window.task("passkey").metric("accuracy.length-512.end").value is not None
     with pytest.raises(ValueError, match="scoring window"):
-        run_g6(lab.model, lengths=[1024])
+        run_g6(lab.model, lengths=[513])
 
 
 def _synthetic(lab: Lab, accuracy: float, *, loss: float = 2.0, checkpoint: bool = True) -> Any:

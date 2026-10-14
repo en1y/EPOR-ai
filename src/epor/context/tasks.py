@@ -98,8 +98,8 @@ _SPOTS = (
 )
 
 
-# Tokens kept free for merges across the joins between filler, needles, and
-# the question, so the encoded item never exceeds its stated length.
+# Tokens kept free for merges across the joins between filler, needles, the
+# question, and the answer, so the scored item never exceeds its stated length.
 _SLACK = 8
 
 
@@ -226,10 +226,13 @@ def _make(
         details = {"injected_answer": 1, "injection_depth": injection_depth}
     needle_cost = sum(len(tokenizer.encode(" " + text)) for _, text in needles)
     question_cost = len(tokenizer.encode("\n" + question))
-    budget = length - needle_cost - question_cost - _SLACK
+    # The scorer feeds the start token, context, question, and answer except
+    # its last token: as many positions as context, question, and answer hold.
+    answer_cost = max(len(tokenizer.encode(" " + choice)) for choice in choices)
+    budget = length - needle_cost - question_cost - answer_cost - _SLACK
     if budget < 0:
         raise ValueError(
-            f"{family} needs more than {length} tokens for its needles and question; "
+            f"{family} needs more than {length} tokens for its needles, question, and answer; "
             "use a longer context length"
         )
     sentences = _filler(rng, tokenizer, budget)

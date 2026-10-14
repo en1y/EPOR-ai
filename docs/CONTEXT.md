@@ -176,7 +176,9 @@ and passkey retrieval ([arXiv:2305.16300](https://arxiv.org/abs/2305.16300))
 define needle-style long-context tasks. **`[EPOR-adaptation]`**
 `epor.context.tasks` generates every item locally from project-authored,
 benign filler, with nothing downloaded. Items are seeded, and generation
-refuses a length too short for its needles and question.
+refuses a length too short for its needles, question, and answer;
+an item at length `L` occupies at most `L` scored positions, so the full
+scoring window, and therefore the trained context itself, can be evaluated.
 
 | Family | Item |
 | --- | --- |
