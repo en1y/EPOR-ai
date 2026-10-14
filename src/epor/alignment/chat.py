@@ -31,7 +31,17 @@ from typing import Final, Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from epor.data.store import canonical_json_bytes, sha256_bytes
-from epor.tokenizer.spec import BOS_ID, EOS_ID, RESERVED_SPEC_SHA256, SPECIAL_TOKEN_IDS
+from epor.tokenizer.spec import (
+    MODEL_SEQUENCE_END_ID,
+    MODEL_SEQUENCE_START_ID,
+    RESERVED_SPEC_SHA256,
+    SPECIAL_TOKEN_IDS,
+)
+
+# A conversation is a model sequence: it starts and ends exactly as the
+# training kernel frames every document.
+BOS_ID: Final = MODEL_SEQUENCE_START_ID
+EOS_ID: Final = MODEL_SEQUENCE_END_ID
 
 CHAT_FORMAT_VERSION: Final = "epor-chat-v1"
 Role = Literal["system", "user", "assistant", "tool"]

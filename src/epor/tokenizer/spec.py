@@ -103,6 +103,21 @@ EOS_ID: Final = SPECIAL_TOKEN_IDS["<|eos|>"]
 DOC_START_ID: Final = SPECIAL_TOKEN_IDS["<|doc_start|>"]
 DOC_END_ID: Final = SPECIAL_TOKEN_IDS["<|doc_end|>"]
 
+# The model-input framing contract, shared by every producer and consumer of
+# model sequences.  Token shards store documents framed by ``<|doc_start|>`` /
+# ``<|doc_end|>``; the training kernel feeds the model the same document framed
+# by ``<|bos|>`` / ``<|eos|>`` (``epor.training.shard_data``).  So a model only
+# ever sees BOS as a sequence's first input and only ever learns EOS as its end.
+# Scoring, generation, and chat prompts must start with
+# ``MODEL_SEQUENCE_START_ID`` and stop at ``MODEL_SEQUENCE_END_ID``; the storage
+# IDs never reach a model.  Not part of ``reserved_spec``: no ID changes.
+MODEL_SEQUENCE_START_ID: Final = BOS_ID
+MODEL_SEQUENCE_END_ID: Final = EOS_ID
+STORAGE_TO_MODEL_FRAMING: Final[dict[int, int]] = {
+    DOC_START_ID: MODEL_SEQUENCE_START_ID,
+    DOC_END_ID: MODEL_SEQUENCE_END_ID,
+}
+
 
 def reserved_spec() -> dict[str, object]:
     """The canonical, hashable description of the fixed vocabulary layout."""

@@ -49,7 +49,7 @@ from epor.tokenizer.shards import (
     load_tokenized_manifest,
     verify_tokenized_build,
 )
-from epor.tokenizer.spec import BOS_ID, DOC_END_ID, DOC_START_ID, EOS_ID, PAD_ID
+from epor.tokenizer.spec import BOS_ID, EOS_ID, PAD_ID, STORAGE_TO_MODEL_FRAMING
 
 
 class TrainingCorpus(Protocol):
@@ -247,8 +247,9 @@ class ShardCorpus:
                 parts.append(self._shards[piece.shard][begin : begin + high - low])
             base += piece.length
         tokens = torch.cat(parts).to(torch.int64) if parts else torch.empty(0, dtype=torch.int64)
-        tokens[tokens == DOC_START_ID] = BOS_ID
-        tokens[tokens == DOC_END_ID] = EOS_ID
+        stored = tokens.clone()
+        for storage_id, model_id in STORAGE_TO_MODEL_FRAMING.items():
+            tokens[stored == storage_id] = model_id
         return tokens
 
     def pairs(self, document: int, start: int, length: int) -> tuple[Tensor, Tensor]:
