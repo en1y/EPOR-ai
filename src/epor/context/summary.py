@@ -4,8 +4,9 @@ Context runs are listed here, separately from the Training page's listing:
 any kernel run whose manifest carries a ``context`` section (every run since
 v0.0.8), found under the artifact root's job outputs or anywhere up to three
 levels below the project's ``runs/``.  Each shows configured, trained, and
-validated context side by side; validated comes only from certificates for
-the run's latest checkpoint, whose ``checkpoint.json`` hash is re-derived.
+validated context side by side; trained and validated come only from the
+run's latest checkpoint, whose ``checkpoint.json`` hash is re-derived, so a
+run with no checkpoint yet shows neither.
 
 G6 reports are evaluation reports of suite ``epor-g6-context``; profiles,
 feasibility searches, sweeps, and projections are scaling reports of the four
@@ -35,7 +36,15 @@ def _runs(artifact_root: Path, project_root: Path) -> list[tuple[Path, str]]:
     return found
 
 
-def _latest_checkpoint_sha(run_dir: Path) -> str | None:
+def _latest_checkpoint(run_dir: Path) -> tuple[str, int] | None:
+    """The verified latest checkpoint's hash and the context its lineage trained at.
+
+    Trained context comes from the checkpoint, never the manifest: a run that
+    stopped before its first checkpoint has trained nothing at its length.
+    """
+
+    from epor.training.kernel import trained_context
+
     pointer = run_dir / "checkpoints" / "latest.json"
     if not pointer.is_file():
         return None
@@ -46,7 +55,8 @@ def _latest_checkpoint_sha(run_dir: Path) -> str | None:
     digest = hashlib.sha256((run_dir / "checkpoints" / name / "checkpoint.json").read_bytes())
     if digest.hexdigest() != latest.get("checkpoint_sha256"):
         raise ValueError(f"checkpoint {name} does not match its pointer")
-    return digest.hexdigest()
+    trainer = json.loads((run_dir / "checkpoints" / name / "trainer.json").read_text("utf-8"))
+    return digest.hexdigest(), trained_context(trainer)
 
 
 def g6_view(report: Any) -> dict[str, Any]:
@@ -114,7 +124,7 @@ def context_summary(data_root: Path, artifact_root: Path, project_root: Path) ->
             context = manifest.get("context")
             if manifest.get("command") != "kernel_train" or not isinstance(context, dict):
                 continue
-            checkpoint = _latest_checkpoint_sha(path.parent)
+            latest = _latest_checkpoint(path.parent)
         except (OSError, ValueError) as exc:
             errors.append(f"{source} run {path.parent.name}: {exc}")
             continue
@@ -128,15 +138,15 @@ def context_summary(data_root: Path, artifact_root: Path, project_root: Path) ->
                 "model_id": manifest.get("model_id"),
                 "started_at": manifest.get("started_at"),
                 "configured": context.get("configured"),
-                "trained": context.get("trained"),
-                "validated": validated.get(checkpoint or "", 0),
+                "trained": None if latest is None else latest[1],
+                "validated": 0 if latest is None else validated.get(latest[0], 0),
                 "rope_scaling": context.get("rope_scaling"),
                 "sliding_window": context.get("sliding_window"),
                 "local_layers_per_global": context.get("local_layers_per_global"),
                 "attention_variant": context.get("attention_variant"),
                 "sparse_attention": context.get("sparse_attention"),
                 "extension_of": context.get("extension_of"),
-                "checkpoint_sha256": checkpoint,
+                "checkpoint_sha256": None if latest is None else latest[0],
             }
         )
     runs.sort(key=lambda row: str(row.get("started_at") or ""), reverse=True)

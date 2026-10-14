@@ -250,9 +250,15 @@ def test_feasibility_sweep_projection_retrofit_and_listing(env: Lab) -> None:
         ]
     )
     assert retrofit["stage"] == "warmup" and "no benefit claimed" in retrofit["scope"]
+    # A run stopped before its first checkpoint has trained nothing at its length.
+    stopped = env.root / "runs" / "stopped"
+    stopped.mkdir()
+    (stopped / "manifest.json").write_text((env.root / "runs/ext/manifest.json").read_text())
     summary = _json(["context", "reports"])
     locations = {run["location"]: run for run in summary["runs"]}
     assert locations["runs/ext"]["trained"] == 384 and locations["runs/ext"]["validated"] == 0
+    assert locations["runs/stopped"]["configured"] == 384
+    assert locations["runs/stopped"]["trained"] is None
     assert "runs/sweep/control-full-attention" in locations
     assert summary["feasibility"] and summary["projection"] and summary["sweep"]
     assert summary["integrity_errors"] == []
