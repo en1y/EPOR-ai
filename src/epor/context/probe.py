@@ -121,7 +121,10 @@ def _child(connection: Any, payload: dict[str, Any]) -> None:
         if payload["mode"] == "train":
             model.train()
             began = time.perf_counter()
-            output = model(tokens, torch.roll(tokens, -1, dims=1))
+            # The kernel always passes segment IDs, which takes attention off
+            # the fused causal path; a step without them under-measures memory.
+            segments = torch.zeros_like(tokens)
+            output = model(tokens, torch.roll(tokens, -1, dims=1), segment_ids=segments)
             assert output.loss is not None
             output.loss.backward()
             result["train_step_seconds"] = time.perf_counter() - began
