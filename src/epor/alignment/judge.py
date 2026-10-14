@@ -276,6 +276,21 @@ def judge_eval_items(
     return {"judging_run": run, "judgements": judgements, "preferences": []}
 
 
+def unjudged_revisions(store: AlignmentStore) -> list[tuple[str, str]]:
+    """``(original, revision)`` pairs for every revision no judge has decided yet."""
+
+    judged = {
+        record.inputs[-1]
+        for _, record in store.records("judgement")
+        if record.subject == "revision"
+    }
+    pairs: list[tuple[str, str]] = []
+    for identifier, record in store.records("example"):
+        if record.purpose == "revision" and identifier not in judged:
+            pairs.append((record.lineage[0].id, identifier))
+    return pairs
+
+
 def judging_runs(store: AlignmentStore) -> dict[str, list[tuple[str, JudgementRecord]]]:
     """Judgement records grouped by judging run."""
 
@@ -293,4 +308,5 @@ __all__ = [
     "judge_eval_items",
     "judge_pairs",
     "judging_runs",
+    "unjudged_revisions",
 ]

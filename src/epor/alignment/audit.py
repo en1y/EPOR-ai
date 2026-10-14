@@ -337,6 +337,33 @@ def calibration(
     }
 
 
+def run_admission(
+    ledger: AuditLedger, run: str, *, max_disagreement: float, min_per_stratum: int = 1
+) -> Admission:
+    """Whether a judging run's audit allows any of its candidates to train."""
+
+    report = calibration(ledger, run)
+    strata = report["strata"]
+    reasons: list[str] = []
+    if report["pending"]:
+        reasons.append(f"{report['pending']} sampled decision(s) still await a human verdict")
+    for stratum in ("accepted", "rejected"):
+        if strata[stratum]["audited"] < min_per_stratum:
+            reasons.append(f"fewer than {min_per_stratum} {stratum} decision(s) audited")
+    rate = report["disagreement_rate"]
+    if rate is not None and rate > max_disagreement:
+        reasons.append(
+            f"judge-human disagreement {rate:.3f} exceeds {max_disagreement} (hypothesis)"
+        )
+    evidence = {
+        "judging_run": run,
+        "audited": report["audited"],
+        "disagreement_rate": rate,
+        "max_disagreement": max_disagreement,
+    }
+    return Admission(not reasons, "; ".join(reasons) or "audited run admitted", evidence)
+
+
 def admission_gate(
     ledger: AuditLedger,
     store: AlignmentStore,
@@ -351,31 +378,12 @@ def admission_gate(
     by_record = {item.record: item for item in items}
     run_status: dict[str, Admission] = {}
 
-    def run_admission(run: str) -> Admission:
-        if run in run_status:
-            return run_status[run]
-        report = calibration(ledger, run)
-        strata = report["strata"]
-        reasons: list[str] = []
-        if report["pending"]:
-            reasons.append(f"{report['pending']} sampled decision(s) still await a human verdict")
-        for stratum in ("accepted", "rejected"):
-            if strata[stratum]["audited"] < min_per_stratum:
-                reasons.append(f"fewer than {min_per_stratum} {stratum} decision(s) audited")
-        rate = report["disagreement_rate"]
-        if rate is not None and rate > max_disagreement:
-            reasons.append(
-                f"judge-human disagreement {rate:.3f} exceeds {max_disagreement} (hypothesis)"
+    def admitted_run(run: str) -> Admission:
+        if run not in run_status:
+            run_status[run] = run_admission(
+                ledger, run, max_disagreement=max_disagreement, min_per_stratum=min_per_stratum
             )
-        evidence = {
-            "judging_run": run,
-            "audited": report["audited"],
-            "disagreement_rate": rate,
-            "max_disagreement": max_disagreement,
-        }
-        decision = Admission(not reasons, "; ".join(reasons) or "audited run admitted", evidence)
-        run_status[run] = decision
-        return decision
+        return run_status[run]
 
     def judged(record_id: str, record: Any) -> tuple[str, JudgementRecord] | None:
         if isinstance(record, PreferenceRecord) and record.judgement is not None:
@@ -396,7 +404,7 @@ def admission_gate(
         if found is None:
             return Admission(False, "no judge decision covers this candidate")
         judgement_id, judgement = found
-        run = run_admission(judgement.judging_run)
+        run = admitted_run(judgement.judging_run)
         if not run.admitted:
             return run
         if not judgement.accepted:
@@ -407,6 +415,22 @@ def admission_gate(
         return Admission(True, "judge-accepted in an audited run", run.evidence)
 
     return gate
+
+
+def default_thresholds() -> dict[str, Any]:
+    from .monitors import load_monitor_config
+
+    admission = load_monitor_config().judge_admission
+    return {
+        "max_disagreement": admission.max_disagreement,
+        "min_per_stratum": admission.min_per_stratum,
+    }
+
+
+def default_gate(ledger: AuditLedger, store: AlignmentStore) -> Any:
+    """The admission gate with thresholds from ``configs/alignment/monitors.yaml``."""
+
+    return admission_gate(ledger, store, **default_thresholds())
 
 
 def pending(ledger: AuditLedger, subjects: Sequence[str] | None = None) -> list[AuditItem]:
@@ -425,6 +449,9 @@ __all__ = [
     "Verdict",
     "admission_gate",
     "calibration",
+    "default_gate",
+    "default_thresholds",
     "pending",
+    "run_admission",
     "sample_run",
 ]

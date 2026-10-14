@@ -253,6 +253,53 @@ def build_preference_dataset(
     return _write(store, "preference", tokenizer, build, notes)
 
 
+SFT_GROUPS = ("fixtures", "teacher-outputs", "revisions", "registered")
+PREFERENCE_GROUPS = ("fixtures", "ai-judge", "registered", "human")
+
+
+def select_records(
+    store: AlignmentStore, kind: str, groups: Sequence[str], records: Sequence[str] = ()
+) -> list[str]:
+    """Record IDs for a dataset: named groups plus explicit IDs, without repeats.
+
+    SFT groups: ``fixtures`` (project demonstrations), ``teacher-outputs``,
+    ``revisions`` (candidates; the audit gate still decides), ``registered``
+    (operator-registered sources).  Preference groups: ``fixtures``,
+    ``ai-judge`` (candidates), ``registered``, ``human``.
+    """
+
+    allowed = SFT_GROUPS if kind == "sft" else PREFERENCE_GROUPS
+    unknown = sorted(set(groups) - set(allowed))
+    if unknown:
+        raise ValueError(f"unknown {kind} record group(s): {', '.join(unknown)}")
+    chosen: list[str] = []
+    if kind == "sft":
+        for identifier, record in store.records("example"):
+            group = {
+                "project-authored": "fixtures",
+                "registered-source": "registered",
+            }.get(record.generator.kind)
+            if record.purpose == "teacher-output":
+                group = "teacher-outputs"
+            elif record.purpose == "revision":
+                group = "revisions"
+            elif record.purpose == "critique":
+                group = None
+            if group in groups:
+                chosen.append(identifier)
+    else:
+        origin_group = {
+            "project-fixture": "fixtures",
+            "ai-judge": "ai-judge",
+            "registered-source": "registered",
+            "human": "human",
+        }
+        for identifier, record in store.records("preference"):
+            if origin_group[record.origin] in groups:
+                chosen.append(identifier)
+    return list(dict.fromkeys([*chosen, *records]))
+
+
 def describe_dataset(dataset_id: str, manifest: ChatDatasetManifest) -> dict[str, Any]:
     """A small summary whose keys avoid the control plane's credential pattern."""
 
@@ -270,10 +317,13 @@ def describe_dataset(dataset_id: str, manifest: ChatDatasetManifest) -> dict[str
 
 
 __all__ = [
+    "PREFERENCE_GROUPS",
+    "SFT_GROUPS",
     "SPLIT_SALT",
     "Admission",
     "CandidateGate",
     "build_preference_dataset",
     "build_sft_dataset",
     "describe_dataset",
+    "select_records",
 ]
