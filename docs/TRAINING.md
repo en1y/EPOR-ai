@@ -294,7 +294,10 @@ token measurements, and their values are still scanned for inline credentials.
   local world sizes EPOR runs and would be a bottleneck at large scale.
 - A document longer than the space left in a row continues as a new segment:
   RoPE positions restart at 0 and the chunk cannot attend to the document's
-  earlier tokens. Long documents are trained as independent windows.
+  earlier tokens. Long documents are trained as independent windows. v0.0.8
+  keeps this deliberately: context extension raises `seq_len` itself and
+  `--min-document-pairs` selects long documents, so long distances are
+  trained inside a row; see [`CONTEXT.md`](CONTEXT.md#progressive-extension-in-the-kernel).
 - Throughput is wall-clock over optimizer steps on this machine, excluding
   checkpoint and evaluation time; it is not MFU and does not predict GPU speed.
 - FP8 mixed precision is not implemented. It remains a cloud-only ablation in

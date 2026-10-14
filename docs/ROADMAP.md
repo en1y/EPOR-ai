@@ -681,6 +681,7 @@ epor train pretrain|resume|kernel|kernel-resume|sft|preference|grpo
 epor align fixtures|teacher|source|critique|eval-items|judge|dataset|audit|monitor|g10|reports
 epor eval run|kernel|suite|contamination|compare|reports
 epor scale ladder|profile|sweep|mixture|fit|project|reports
+epor context extend|retrofit|g6|profile|feasibility|sweep|project|certify|status|reports
 epor export hf|gguf
 epor serve
 epor api
@@ -696,13 +697,14 @@ data, tokenizer, and training-run summaries (`/data`, `/tokenizers`,
 `/scaling/reports[/{id}]`), verified alignment state, audit items, and reports
 (`/alignment`, `/alignment/audits[/{id}]`, `/alignment/reports/{kind}/{id}`),
 the human verdict endpoint (`POST /alignment/audits/{id}/verdict`, which
-creates no job), and the stable error envelope
+creates no job), verified context-laboratory state (`/context`), and the stable error envelope
 `{code, message, details, request_id}`. `train kernel` is the training kernel on
 token shards (local `ddp`/`fsdp2` via `--strategy` and `--world-size`);
 `train pretrain|resume` and `eval run` remain the v0.0.1 debug path. `eval
 suite --allow-code-execution`, `scale fit`, `scale project`, teacher
 registration and import (`epor align teacher register|import`), `epor align
-source import`, and audit sampling and verdicts have no job equivalent; `epor train grpo` stays gated until v0.5.0.
+source import`, audit sampling and verdicts, `epor context project`, and
+`epor context certify` have no job equivalent; `epor train grpo` stays gated until v0.5.0.
 
 The eventual inference API supplies `/v1/models`, `/v1/completions`, and
 `/v1/chat/completions`, including streaming, cancellation, token usage,

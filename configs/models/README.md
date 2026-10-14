@@ -14,6 +14,9 @@ The four context fields have deliberately different meanings:
 - `configured_max_context`: construction/configuration ceiling.
 - `trained_max_context`: longest sequence used in training.
 - `validated_max_context`: longest sequence that passed the context suite.
+  Since v0.0.8 measured trained context lives in run manifests and validated
+  context only in G6 certificates (`epor context certify`); neither is ever
+  written back into these files.
 - `operational_default_context`: conservative default supported by evidence.
 
 The public-family files therefore start with zero trained, validated, and
@@ -45,6 +48,30 @@ control at matched tokens; the parameter report lists MTP's extra parameters
 and per-token FP32 logit bytes so that memory cost is visible. Activation
 checkpointing is a runtime option of the decoder, not a config field, because it
 does not change the model's math.
+
+## Context fields (v0.0.8)
+
+These fields are hash-neutral at their defaults like the features above. None
+of the shipped files sets them; `epor context extend` and the sweeps derive
+configs that do. See [`docs/CONTEXT.md`](../../docs/CONTEXT.md).
+
+- `rope_scaling` (default none): `linear`, `ntk`, or `yarn` with `factor` and
+  `original_max_context` (YaRN also takes `beta_fast` 32, `beta_slow` 1, and
+  `attention_factor`, default `0.1·ln(factor) + 1`). It scales only the
+  layers that use `rope_theta`.
+- `local_rope_theta` (default none): a separate RoPE base for local layers
+  (Gemma 3's split base, `disclosed`).
+- `sliding_window` and `local_layers_per_global` (default `0`, set together):
+  in every group of `local_layers_per_global + 1` layers, the first attend
+  only to the previous `sliding_window` tokens and the last attends globally.
+- `attention_variant` (default `gqa`), `mla_kv_rank`, `mla_rope_dim`:
+  experimental multi-head latent attention (`deepseek-v2`, `disclosed`). It
+  caches only the latent and a shared positional key.
+- `sparse_attention` (default none): the experimental DeepSeek-V3.2-style
+  indexer and top-k retrofit (`deepseek-v3-2`, `disclosed`). It is added only
+  to an existing checkpoint by `epor context retrofit`.
+
+No benefit of any of these at EPOR scale is claimed (`hypothesis`).
 
 ## Training-kernel runs
 
