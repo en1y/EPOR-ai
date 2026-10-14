@@ -2,7 +2,7 @@
 
 <!-- project-version:start -->
 > [!IMPORTANT]
-> **Current project version: `v0.0.6`**
+> **Current project version: `v0.0.7`**
 >
 > This identifies the code in this checkout; it does not imply a formal release.
 > Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -14,13 +14,15 @@ language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
-The v0.0.x program is intentionally small. Through v0.0.6 it validates research
+The v0.0.x program is intentionally small. Through v0.0.7 it validates research
 provenance, the executable safety covenant and local authorization boundary,
 configuration, tiny-model correctness and exact resume, a provenance-first
 offline data engine, an original byte-level BPE tokenizer with
 content-addressed token shards, a CPU training kernel with exact resume
-across single-process, DDP, and FSDP2 runs, and an evaluation and scaling
-laboratory before any target-size run is considered. The 30B/12B/8B
+across single-process, DDP, and FSDP2 runs, an evaluation and scaling
+laboratory, and a knowledge-transfer and alignment pipeline whose model
+feedback stays a candidate until humans audit it, before any target-size run
+is considered. The 30B/12B/8B
 family descriptions are gated research destinations, not bundled checkpoints
 or fabricated performance claims.
 
@@ -84,13 +86,14 @@ once. A refusal is never approvable.
 
 What this is not: a harm detector. The resolver enforces ordering, citation,
 justification, and fail-closed escalation over assessments supplied to it.
-Through v0.0.6, those assessments are reviewed per-action declarations over a
+Through v0.0.7, those assessments are reviewed per-action declarations over a
 closed allowlist, which is only sound because that action space is small and
 fixed.
 The authorization model is local and single-machine: it verifies a bearer
 credential held on this machine, and cannot defend against a compromised local
 account that can read that credential from disk. Classifiers, model-behavior
-evaluations beyond the v0.0.6 G10 harness, and red teaming are later versions.
+evaluations beyond the G10 harness (system level since v0.0.2, model level
+before and after alignment since v0.0.7), and red teaming are later versions.
 
 ## Quick start
 
@@ -230,6 +233,31 @@ measurement, and a projection provisions nothing and is never an approval. See
 [`docs/EVALUATION.md`](docs/EVALUATION.md) and
 [`docs/SCALING.md`](docs/SCALING.md).
 
+The v0.0.7 alignment pipeline fine-tunes, distills, and preference-optimizes
+those checkpoints on recorded, rights-checked data in the `epor-chat-v1`
+format, cites covenant obligations by key for critique and revision, keeps AI
+judge decisions and model-written evaluation items as candidates until a
+verified human audits a sample of accepted and rejected cases, and measures
+overoptimization and G10 behaviour before and after:
+
+```bash
+uv run --frozen --no-sync epor align fixtures
+uv run --frozen --no-sync epor align dataset sft --checkpoint runs/kernel-tiny --include fixtures
+uv run --frozen --no-sync epor train sft runs/kernel-tiny --dataset <sft-dataset-id> --output runs/sft
+uv run --frozen --no-sync epor align critique runs/sft --example <record-id> --obligation no-harmful-output
+uv run --frozen --no-sync epor align judge runs/sft --subject revision --all-unjudged
+uv run --frozen --no-sync epor align audit sample <judging-run-id>
+uv run --frozen --no-sync epor align audit verdict <item-id> accept
+uv run --frozen --no-sync epor align dataset preference --checkpoint runs/sft --include fixtures --include ai-judge
+uv run --frozen --no-sync epor train preference runs/sft --dataset <preference-dataset-id> --output runs/dpo
+uv run --frozen --no-sync epor align monitor runs/dpo --reference runs/sft --dataset <preference-dataset-id>
+uv run --frozen --no-sync epor align g10 --before runs/sft --after runs/dpo
+```
+
+Nothing is ever marked audited automatically, every monitor threshold is a
+hypothesis, and a G10 regression fails closed. No result is evidence of
+alignment or safety. See [`docs/ALIGNMENT.md`](docs/ALIGNMENT.md).
+
 The tiny reference path can be checked independently:
 
 ```bash
@@ -251,8 +279,8 @@ allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary
 URL.
 
-The console separates its work into twelve pages: **Overview**, **Training**,
-**Evaluation**, **Scaling**, **Data engine**, **Tokenizer**, **Jobs**,
+The console separates its work into thirteen pages: **Overview**, **Training**,
+**Evaluation**, **Alignment**, **Scaling**, **Data engine**, **Tokenizer**, **Jobs**,
 **Safety covenant**, **Access**, **Model families**, **Research ledger**, and
 **Documentation**. The data page
 shows reviewed source registrations, immutable-layer counts, quarantines,
@@ -266,12 +294,16 @@ measurements, beside the training and evaluation jobs. The evaluation page
 shows verified suite reports with scoped metrics, calibration, contamination,
 memorization, G10 scores under their claim note, and comparisons; the scaling
 page shows the ladder, profiles, sweeps, mixtures, fits, and projections with
-their unknown inputs and approval requirement, and has no launch control. The documentation reader serves
+their unknown inputs and approval requirement, and has no launch control. The
+alignment page shows provenance record counts, the human audit queue with
+verdict controls for an identity holding the `align_audit` scope, judge
+calibration and admission, overoptimization monitors, and the G10 comparison
+before and after alignment. The documentation reader serves
 tracked first-party Markdown only. Ignored
 third-party research downloads are never rendered as console content; the
 research ledger links those sources at their canonical URL instead.
 
-Version 0.0.6 is operated from a source checkout. The wheel and source archive
+Version 0.0.7 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository
 resources until the v0.1.0 packaging contract is finalized.
@@ -302,6 +334,8 @@ so the evaluation harness works without another profile.
   the v0.0.5 training kernel.
 - `src/epor/evaluation/` and `src/epor/scaling/` — the v0.0.6 evaluation harness,
   code sandbox, and scaling laboratory.
+- `src/epor/alignment/` — the v0.0.7 chat format, teacher-data provenance,
+  datasets, DPO, covenant-cited critique, judging, audits, monitors, and G10.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.
 

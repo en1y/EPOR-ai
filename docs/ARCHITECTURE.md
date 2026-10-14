@@ -57,6 +57,8 @@ flowchart TD
     shards --> run
     run --> outputs["checkpoint + manifest + metrics"]
     outputs --> evaluation["evaluation + scaling reports"]
+    outputs --> alignment["SFT / distillation / DPO + audited model feedback"]
+    alignment --> outputs
     outputs --> export["HF / Safetensors"]
     export --> quantized["GGUF + parity report"]
 ```
@@ -154,16 +156,39 @@ projection-only and a projection is never an approval. Reports of both kinds
 live under the private data root and are re-verified whenever they are read.
 See [`EVALUATION.md`](EVALUATION.md) and [`SCALING.md`](SCALING.md).
 
+## Knowledge transfer and alignment
+
+The v0.0.7 pipeline (`epor.alignment`) adds the `epor-chat-v1` format on the
+frozen reserved role and turn IDs, with assistant-only targets, and keeps all
+alignment material as immutable provenance records under the data root:
+generator identity, rights and cost basis, prompt-template hash, sampling,
+time, exact output, and lineage, with data-engine tombstones propagating
+through lineage. SFT and logit distillation run inside the training kernel
+through optional settings that stay out of the trajectory hash at their
+defaults, so single-process, DDP, and FSDP2 runs and exact resume carry over.
+DPO is a single-process baseline against a frozen reference, using kernel
+checkpoints. Critique and revision cite covenant obligations by key, read
+from the covenant file. AI judge decisions and model-written evaluation items
+are candidates that reach training only through a judging run whose sampled
+accepted and rejected decisions a verified human has audited, within a
+disagreement threshold. The audit queue is a hash-chained log under the
+safety root. Overoptimization monitors and the model-level G10 comparison
+store content-addressed reports. See [`ALIGNMENT.md`](ALIGNMENT.md).
+
 ## Local control plane
 
 The API, worker, and UI are separate processes. Typed job specifications include
 the original probe/research/reference-training jobs, v0.0.3's `data_ingest`,
 `data_build`, `data_remove`, and `data_audit`, v0.0.4's `tokenizer_train`,
 `tokenizer_shard`, and `tokenizer_evaluate`, v0.0.5's single-process
-`kernel_train` and `kernel_evaluate`, and v0.0.6's `eval_suite`,
-`eval_contamination`, `scale_profile`, `scale_sweep`, and `scale_mixture`.
-Running model-generated code is deliberately not a job type, and fits and
-projections stay on the CLI. The API never evaluates a client command, fetches
+`kernel_train` and `kernel_evaluate`, v0.0.6's `eval_suite`,
+`eval_contamination`, `scale_profile`, `scale_sweep`, and `scale_mixture`, and
+v0.0.7's `align_generate`, `align_judge`, `align_dataset`, `align_sft`,
+`align_preference`, and `align_evaluate`. Running model-generated code,
+registering teacher material, and recording human audit verdicts are
+deliberately not job types; fits and projections stay on the CLI. A verdict is
+recorded by a verified human through `POST /api/v1/alignment/audits/{id}/verdict`
+or the CLI, gated by the `align_audit` action. The API never evaluates a client command, fetches
 an arbitrary data URL, or exposes a general filesystem browser. Job results
 carry a report ID and a small fixed summary; full evaluation and scaling
 reports are served by read-only endpoints that verify each content address.
@@ -179,7 +204,9 @@ rather than keeping its own, through a single command-to-action table, so
 `doctor`, `config validate`, `research sync|verify|index`, `data
 ingest|build|remove|audit`, `tokenizer train|shard|evaluate`, `train
 pretrain|resume|kernel|kernel-resume`, `eval run|kernel|suite|contamination|compare|reports`,
-`scale ladder|profile|sweep|mixture|fit|project|reports`, and `generate` are governed identically despite
+`scale ladder|profile|sweep|mixture|fit|project|reports`, `train sft|preference`,
+`align fixtures|teacher|source|critique|eval-items|judge|dataset|audit|monitor|g10|reports`,
+and `generate` are governed identically despite
 never touching the control plane. They also share the reference-runtime limits
 described above, so the declaration's resource assumptions hold on either
 route. Stopping work is never gated: the second principle outranks the third,

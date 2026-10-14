@@ -56,6 +56,23 @@ bind to loopback. It is not an internet-facing multi-tenant service.
   string values scanned and per-item generated text omitted.
 - Scaling projections take prices and hardware figures only from an
   operator-written file, never fetch them, and never provision anything.
+- The v0.0.7 alignment pipeline never calls a model API and never loads
+  external weights. Teacher outputs from other models enter only as local files
+  that the owner registers from the CLI, under a data-engine registration that
+  allows training and a teacher registration stating that the licence permits
+  training on outputs; a paid source must name a cost approval. Chat turns and
+  roles are reserved IDs inserted by structure, so neither message text nor
+  model output can forge one. Model text is stored as data and shown to a
+  reviewer as inert text, never interpreted.
+- Human audit verdicts are recorded only by a verified identity holding the
+  `align_audit` scope, which training and judging delegations do not imply. They
+  are appended to a hash-chained log (`alignment-audit.jsonl`) beside the
+  authority log under the private safety root. No job or automated component
+  writes a verdict, and verdicts are superseded, never deleted.
+- Alignment job results carry IDs and small summaries whose keys avoid the
+  credential pattern; no redaction allowlist entry was added in v0.0.7. Model
+  text never appears in a job result or event, and the alignment views scan
+  string values for inline credentials.
 - The worker dispatches typed allowlisted jobs and never executes a supplied
   shell string.
 - Every job passes covenant admission before its specification is parsed, and
