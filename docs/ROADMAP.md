@@ -471,7 +471,8 @@ The initial archive covers:
   alignment, helpfulness, or safety claim follows from any of it. See
   [`ALIGNMENT.md`](ALIGNMENT.md). v0.0.7 performs no paid API call, external
   weight load, GPU training, or model release.
-- **v0.0.8 — Context laboratory:** Train progressively at 4/8K→32K→128K and
+- **v0.0.8 — Context laboratory (implementation complete; formal release
+  pending):** Train progressively at 4/8K→32K→128K and
   then 256K for α/β only after 128K passes. Evaluate RoPE/YaRN, GQA cache
   quantization, MLA, long-document mixtures, lost-middle behavior, prompt
   injection, TTFT, throughput, and memory. **`[disclosed]`** The [Gemma 3
@@ -491,6 +492,58 @@ The initial archive covers:
   **`[EPOR-adaptation]`** EPOR therefore treats sparse attention as a retrofit
   evaluated against an already-certified dense or local/global checkpoint, so a
   failed experiment delays no release.
+  The mechanisms (`epor.models`, `epor.context`) are config fields that are
+  hash-neutral at their defaults, so no shipped config hash changed:
+  - RoPE scaling (linear, NTK, YaRN with `beta_fast` 32, `beta_slow` 1, and
+    temperature `0.1·ln s + 1`);
+  - a local-layer RoPE base;
+  - interleaved local/global attention with a bounded window;
+  - experimental MLA;
+  - an experimental sparse-attention retrofit (indexer, top-k, KL warm-up).
+
+  The decoder gains a KV cache:
+  - prefill and decode match the no-cache forward to 1e-5 for every variant;
+  - local layers use a bounded ring;
+  - int8 per-token-and-head storage is optional.
+
+  `epor context extend` continues a checkpoint at a longer `seq_len`, changing
+  only its context fields, and exact resume is preserved.
+  `--min-document-pairs` trains on long documents. The chunk RoPE restart is
+  kept, with its justification in [`CONTEXT.md`](CONTEXT.md).
+
+  G6 generates passkey, RULER-style multi-key, multi-document, long-code, and
+  benign prompt-injection items locally at the beginning, middle, and end of
+  each length, plus perplexity by position. Thresholds are `[hypothesis]` in
+  `configs/evaluation/g6-context.yaml`.
+
+  `epor context certify` is the only path that raises validated context: an
+  owner-CLI action that requires all of the following:
+  - a passing G6 report of the exact checkpoint;
+  - a length within its trained context;
+  - no short-context regression against the parent;
+  - a completed host profile.
+
+  Host profiles and feasibility searches run each length in a spawned
+  subprocess with an address-space cap and a wall-clock kill, so
+  out-of-memory and hangs end as statuses. Window, ratio, and split-base
+  sweeps always include a full-attention control. `epor context project`
+  covers the 32K/128K/256K recipe. Six reviewed declarations
+  (`context_extend`, `context_evaluate`, `context_profile`, `context_sweep`,
+  `context_project`, `context_certify`) back four job types (migration 0008),
+  `GET /context`, and the console's Context page.
+
+  Measured on the reference machine with `epor-reference` at the 65,536-entry
+  vocabulary and a 6 GiB budget:
+  - a training step fits up to 2,048 for full, local/global, and MLA
+    attention;
+  - prefill and decode fit up to 16,384 for full and local/global, and 8,192
+    for MLA.
+
+  The kernel extended a 512-token base to 4,096 with YaRN. The 8,192 attempt
+  failed on memory. G6 retrieval stayed near chance and certification was
+  refused, so no checkpoint has a validated context. 32K and above are
+  projections only. See [`CONTEXT.md`](CONTEXT.md). v0.0.8 performs no
+  download, GPU training, paid compute, or model release.
 - **v0.0.9 — Export, inference, and full console:** Add Hugging
   Face/Safetensors export, GGUF conversion, Q8/Q6/Q5/Q4 profiles, llama.cpp
   Vulkan integration, quantization parity reports, a provider-neutral local

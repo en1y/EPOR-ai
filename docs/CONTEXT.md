@@ -240,7 +240,12 @@ describe this host only.
 
 It measures doubling lengths for a training step and for prefill and decode,
 and stops at the first failure. The largest passing length is the feasible
-maximum, which is neither trained nor validated context.
+maximum, which is neither trained nor validated context. The training probe
+is one forward and backward pass on the kernel's segment-masked attention
+path, with no optimizer, data pipeline, or validation pass, so it is a lower
+bound on a kernel step. Pass the vocabulary the run will really train with
+(`--vocab-size`): at 65,536 IDs the FP32 logits of one 8,192-token row alone
+take 2 GiB.
 
 ## Sweeps
 
@@ -281,6 +286,103 @@ Every report is re-verified against its content address on read, and failures
 are listed as integrity errors. The console's **Context** page renders this
 view. Context runs are discovered separately from the Training page's listing.
 
+## End-to-end run (local, proxy scale)
+
+The run used the CPU reference machine (12 cores, 31 GiB RAM, no GPU) while
+other desktop applications were running. The corpus was 130 project-authored
+documentation and source files ingested as twelve groups:
+
+- dataset split 76/22/32 documents for train/validation/test;
+- a 9,829-entry tokenizer and 396,236 tokens of shards.
+
+**Feasible maximum per variant.** These were measured on `epor-reference`
+with the trained model's 65,536-entry vocabulary and a 6 GiB budget per
+measurement:
+
+| Variant | Training step fits up to | Prefill + decode fits up to | First failure (train / inference) |
+| --- | --- | --- | --- |
+| full attention (GQA) | 2,048 (3.01 GiB peak) | 16,384 (4.69 GiB, TTFT 15.9 s) | out-of-memory at 4,096 / refused-estimate at 32,768 |
+| local/global (window 1,024, 3:1) | 2,048 (3.02 GiB) | 16,384 (4.58 GiB, TTFT 15.0 s) | out-of-memory at 4,096 / refused-estimate at 32,768 |
+| MLA (rank 32) | 2,048 (3.44 GiB) | 8,192 (4.23 GiB, TTFT 12.0 s) | out-of-memory at 4,096 / out-of-memory at 16,384 |
+
+Every failure ended cleanly inside its capped subprocess. A `refused-estimate`
+was refused before it ran, because its logits alone exceed the budget.
+
+- With a 9,829-entry vocabulary the same search reached 8,192 for training
+  (4,096 for MLA). At this scale the output layer, not attention, sets the
+  training ceiling.
+- Local windows did not raise any maximum, because the window is a mask over a
+  full score matrix.
+- Eager MLA expands its latent to full keys and values, so it costs more
+  memory.
+
+**Base, extension, and G6.**
+
+1. The base model, `epor-reference` with 35.5M parameters at the 65,536-entry
+   vocabulary, trained 300 steps at 512 tokens.
+2. `epor context extend` to 8,192 failed in its first step. Under a soft
+   9 GiB address-space cap this was a clean 2 GiB logits allocation error, at
+   6.6 GB peak RSS. An earlier attempt without a cap was stopped by the host's
+   OOM killer at 9.2 GB.
+3. Extension to 4,096 with YaRN (factor 8 from 512) trained 30 steps on the
+   38 documents with at least 2,048 token pairs (`--min-document-pairs`):
+   - about 904 tokens/s;
+   - peak RSS 6.65 GiB, including its validation pass, which is above the
+     6 GiB probe budget;
+   - trained context 4,096, validated context 0.
+4. G6 at 4,096 with the default scoring batch of four failed cleanly on a
+   4.3 GB allocation, the logits of four rows. With `--batch-size 1` it
+   completed.
+
+The locally feasible kernel training length was therefore 4,096 with this
+vocabulary on this host.
+
+Retrieval is at or near chance everywhere, with two items per cell.
+`certify` at 4,096 exited 3 with thirteen failing reasons: every retrieval
+depth below 0.9, and injection resistance 0.5. Short-context regression and
+the host profile passed.
+
+**KV cache** (4,096-token checkpoint):
+
+| Length | FP32 cache | int8 cache | TTFT FP32 / int8 | Decode tok/s FP32 / int8 |
+| --- | --- | --- | --- | --- |
+| 512 | 3.0 MiB | 0.8 MiB | 0.19 / 0.19 s | 73 / 67 |
+| 2,048 | 12.0 MiB | 3.2 MiB | 0.80 / 0.81 s | 39 / 59 |
+| 4,096 | 24.0 MiB | 6.4 MiB | 1.77 / 1.97 s | 26 / 39 |
+| 8,192 | — | — | refused as `exceeds-configured-context` | — |
+
+The int8 cache holds 26.6% of the FP32 bytes. With a 1,536-token prefill and
+512 decode steps, it moved logits by at most 0.175 (mean 0.0042), and the
+argmax agreed on 99.8% of positions. The FP32 cache stayed within 4.8e-5 of
+the no-cache forward. Decode timings are single short runs on a shared host.
+
+**Sparse retrofit** (512 tokens, 10 warm-up and 10 selection steps, top-k 64)
+changed the validation main loss from 5.747 (base) to 5.748 after warm-up
+and 6.247 after selection, with near-chance G6. That is a regression, as
+expected for a 10-step retrofit, and it is not a result about sparse
+attention.
+
+**Sweeps** (40 steps each, retrieval at 256 tokens): every point retrieved
+at the same near-chance level as its control, so they discriminate only on
+cache size and loss:
+
+| Sweep | KV bytes/token (bf16) | Validation loss |
+| --- | --- | --- |
+| window, tiny | 256 control; 144 (w=32); 192 (w=128) | 7.296 / 7.288 / 7.302 |
+| ratio, `epor-reference`, w=64 | 3,072 control; 1,920 (1:1); 1,536 (2:1); 1,152 (5:1) | 6.969 / 6.986 / 7.009 / 7.012 |
+| split RoPE base, tiny | 256 control; 160 shared; 160 (local base 1,000) | 7.296 / 7.289 / 7.292 |
+
+**Projection for `epor-beta`** (KV cache per sequence, bf16 / int8):
+
+| Stage | As configured | Interleaved local/global | Note |
+| --- | --- | --- | --- |
+| 32K | 5.0 / 2.58 GiB | 0.88 / 0.46 GiB | progressive stage |
+| 128K | 20.0 / 10.31 GiB | 3.13 / 1.62 GiB | progressive stage |
+| 256K | 40.0 / 20.62 GiB | 6.13 / 3.16 GiB | α/β only, after 128K passes G6 |
+
+Time, device-hours, cost, and energy stay `unknown` because the example
+inputs leave hardware and prices empty.
+
 ## Known limits
 
 - All measured numbers come from a few-million-parameter model trained for
@@ -291,4 +393,9 @@ view. Context runs are discovered separately from the Training page's listing.
   kernels. Local windows are masks over full score matrices, so they bound the
   KV cache but not training memory.
 - MLA and sparse attention are experimental and have no shipped config.
+- `epor context extend` and `epor train kernel` have no memory guard of
+  their own, so a kernel step above the host's memory can reach the OOM
+  killer. Size an extension with `epor context feasibility` at the real
+  vocabulary, and run it under an address-space limit (`ulimit -S -v`).
+  Score G6 at long lengths with `--batch-size 1`.
 - Long-document chunks restart RoPE positions (see above).
