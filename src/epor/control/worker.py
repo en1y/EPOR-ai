@@ -509,6 +509,22 @@ def _alignment_handler(name: str) -> JobHandler:
     return run
 
 
+def _context_handler(name: str) -> JobHandler:
+    """Load the context laboratory lazily; it needs the train-cpu, data, and eval profiles."""
+
+    def run(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            from epor.context.control import run_context_job
+        except ImportError as exc:
+            raise RuntimeError(
+                "context-laboratory support is unavailable; sync the train-cpu, data, and eval "
+                "profiles"
+            ) from exc
+        return run_context_job(name, spec, context)
+
+    return run
+
+
 DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.SYSTEM_PROBE: _system_probe,
     JobType.RESEARCH_SYNC: _research_sync,
@@ -535,6 +551,11 @@ DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.ALIGN_SFT: _alignment_handler("align_sft"),
     JobType.ALIGN_PREFERENCE: _alignment_handler("align_preference"),
     JobType.ALIGN_EVALUATE: _alignment_handler("align_evaluate"),
+    # Projection and certification are deliberately absent: owner CLI only.
+    JobType.CONTEXT_EXTEND: _context_handler("context_extend"),
+    JobType.CONTEXT_EVALUATE: _context_handler("context_evaluate"),
+    JobType.CONTEXT_PROFILE: _context_handler("context_profile"),
+    JobType.CONTEXT_SWEEP: _context_handler("context_sweep"),
     JobType.TINY_TRAIN: _training_handler("tiny_train"),
     JobType.TINY_EVAL: _training_handler("tiny_eval"),
 }

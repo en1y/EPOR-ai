@@ -511,6 +511,105 @@ ALIGNMENT_CHECKPOINT_FIELDS = (
 )
 
 
+_CONTEXT_LENGTH = Annotated[int, Field(ge=96, le=1 << 20)]
+
+
+class ContextExtendSpec(StrictSchema):
+    """Extend a checkpoint's context or retrofit sparse attention (one process)."""
+
+    mode: Literal["extend", "retrofit"]
+    checkpoint_path: str = _ARTIFACT_PATH
+    target_context: int | None = Field(default=None, ge=64, le=1 << 20)
+    method: Literal["yarn", "linear", "ntk", "none"] = "yarn"
+    seq_len: int | None = Field(default=None, ge=1, le=1 << 20)
+    tokens_per_batch: int | None = Field(default=None, ge=1, le=1_048_576)
+    min_document_pairs: int | None = Field(default=None, ge=1)
+    max_steps: int = Field(default=50, ge=1, le=100_000)
+    learning_rate: float = Field(default=3e-4, gt=0, le=1.0)
+    warmup_steps: int = Field(default=0, ge=0, le=100_000)
+    precision: Literal["bf16", "fp32"] = "bf16"
+    checkpoint_every: int = Field(default=50, ge=1, le=100_000)
+    select: bool = False
+    top_k: int = Field(default=64, ge=1, le=1 << 20)
+    index_heads: int = Field(default=2, ge=1, le=64)
+    index_dim: int = Field(default=16, ge=1, le=512)
+    kl_weight: float = Field(default=1.0, ge=0, le=100)
+    output_name: str | None = Field(default=None, pattern=_REPORT_DIRECTORY)
+
+    @model_validator(mode="after")
+    def mode_inputs(self) -> ContextExtendSpec:
+        if self.mode == "extend" and self.target_context is None:
+            raise ValueError("an extension needs target_context")
+        return self
+
+
+class ContextEvaluateSpec(StrictSchema):
+    checkpoint_path: str = _ARTIFACT_PATH
+    lengths: list[_CONTEXT_LENGTH] = Field(min_length=1, max_length=8)
+    items_per_cell: int = Field(default=2, ge=1, le=64)
+    seed: int = Field(default=0, ge=0, le=2**32 - 1)
+    split: Literal["train", "validation", "test"] = "validation"
+    batch_size: int = Field(default=4, ge=1, le=64)
+
+
+class ContextProfileSpec(StrictSchema):
+    """A host profile of one checkpoint, or a feasibility search over variants."""
+
+    mode: Literal["profile", "feasibility"]
+    checkpoint_path: str | None = Field(default=None, min_length=1, max_length=512)
+    lengths: list[_CONTEXT_LENGTH] = Field(default_factory=list, max_length=16)
+    quantize: Literal["none", "int8"] = "none"
+    decode_tokens: int = Field(default=16, ge=0, le=4_096)
+    config_path: str = Field(
+        default="configs/models/epor-tiny.yaml",
+        pattern=_MODEL_CONFIG,
+        alias="model_config",
+        serialization_alias="model_config",
+    )
+    variants: list[Literal["full", "local", "mla"]] = Field(
+        default_factory=lambda: ["full"], max_length=3
+    )
+    min_length: int = Field(default=1024, ge=64, le=1 << 20)
+    max_length: int = Field(default=65_536, ge=128, le=1 << 20)
+    vocab_size: int | None = Field(default=None, ge=260, le=1 << 20)
+    window: int = Field(default=1024, ge=1, le=1 << 20)
+    ratio: int = Field(default=1, ge=1, le=64)
+    mla_rank: int = Field(default=32, ge=1, le=4_096)
+    mla_rope_dim: int = Field(default=8, ge=2, le=512)
+    memory_budget_gib: float | None = Field(default=None, gt=0, le=1024)
+    timeout_seconds: float = Field(default=300.0, ge=1, le=24 * 3600)
+
+    @model_validator(mode="after")
+    def mode_inputs(self) -> ContextProfileSpec:
+        if self.mode == "profile" and (self.checkpoint_path is None or not self.lengths):
+            raise ValueError("a profile needs checkpoint_path and lengths")
+        if self.mode == "feasibility" and self.min_length > self.max_length:
+            raise ValueError("min_length must not exceed max_length")
+        return self
+
+
+class ContextSweepSpec(StrictSchema):
+    config_path: str = Field(
+        default="configs/models/epor-tiny.yaml",
+        pattern=_MODEL_CONFIG,
+        alias="model_config",
+        serialization_alias="model_config",
+    )
+    vocab_from_build: bool = False
+    axis: Literal["window", "ratio", "rope-base"]
+    values: list[float] = Field(min_length=1, max_length=8)
+    window: int = Field(default=64, ge=1)
+    ratio: int = Field(default=1, ge=1)
+    tokenized_id: str = Field(pattern=_SHA256)
+    seq_len: int = Field(default=256, ge=32, le=65_536)
+    tokens_per_batch: int = Field(default=1_024, ge=32, le=1_048_576)
+    max_steps: int = Field(default=50, ge=1, le=100_000)
+    learning_rate: float = Field(default=3e-3, gt=0, le=1.0)
+    eval_length: int = Field(default=256, ge=96, le=65_536)
+    items_per_cell: int = Field(default=2, ge=1, le=16)
+    output_name: str = Field(default="context-sweep", pattern=_REPORT_DIRECTORY)
+
+
 JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.SYSTEM_PROBE: SystemProbeSpec,
     JobType.RESEARCH_SYNC: ResearchSyncSpec,
@@ -534,6 +633,10 @@ JOB_SPEC_MODELS: dict[JobType, type[StrictSchema]] = {
     JobType.ALIGN_SFT: AlignSftSpec,
     JobType.ALIGN_PREFERENCE: AlignPreferenceSpec,
     JobType.ALIGN_EVALUATE: AlignEvaluateSpec,
+    JobType.CONTEXT_EXTEND: ContextExtendSpec,
+    JobType.CONTEXT_EVALUATE: ContextEvaluateSpec,
+    JobType.CONTEXT_PROFILE: ContextProfileSpec,
+    JobType.CONTEXT_SWEEP: ContextSweepSpec,
     JobType.TINY_TRAIN: TinyTrainSpec,
     JobType.TINY_EVAL: TinyEvalSpec,
 }

@@ -109,6 +109,10 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "align_sft",
                 "align_preference",
                 "align_evaluate",
+                "context_extend",
+                "context_evaluate",
+                "context_profile",
+                "context_sweep",
                 "tiny_train",
                 "tiny_eval",
             }
