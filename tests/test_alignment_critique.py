@@ -350,17 +350,17 @@ def test_overoptimization_report_is_stored_and_flags_unknown_without_audits(
         load_report(fixture.store, "overoptimization", report_id)
 
 
-def test_audited_pairs_follow_the_human_verdict(
+def test_only_accepted_verdicts_endorse_an_audited_pair(
     fixture: AlignmentFixture, seeded: dict[str, list[str]], tmp_path: Path
 ) -> None:
     ledger = AuditLedger(tmp_path / "safety")
     run, judgements, _ = _synthetic_run(fixture, seeded, [True, False], "cab")
     sample_run(ledger, fixture.store, run, per_stratum=1, seed=0, actor_id="owner")
-    for item in ledger.items():
-        ledger.record_verdict(item.id, "reject", actor=LOCAL_CLI)
-    pairs = audited_pairs(fixture.store, ledger)
-    assert len(pairs) == 2
-    for (_, endorsed, other), judgement_id in zip(pairs, judgements, strict=True):
-        judgement = fixture.store.get(judgement_id)
-        preferred = fixture.store.get(judgement.preferred)
-        assert other == preferred.output and endorsed != preferred.output
+    items = {item.record: item for item in ledger.items()}
+    ledger.record_verdict(items[judgements[0]].id, "accept", actor=LOCAL_CLI)
+    # A rejection says the judge's pick is not better; it endorses nothing.
+    ledger.record_verdict(items[judgements[1]].id, "reject", actor=LOCAL_CLI)
+    [(_, endorsed, other)] = audited_pairs(fixture.store, ledger)
+    judgement = fixture.store.get(judgements[0])
+    assert endorsed == fixture.store.get(judgement.preferred).output
+    assert other != endorsed

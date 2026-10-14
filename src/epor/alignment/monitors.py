@@ -11,9 +11,9 @@ Three signals, each compared with explicit alert/abort thresholds from
     Proxy reward accuracy — the fraction of held-out preference pairs whose
     DPO implicit reward ``beta * (log-ratio(chosen) - log-ratio(rejected))``
     favours the chosen reply — minus the policy's agreement with
-    *human-audited* judge decisions (the fraction of audited pairs where the
-    policy prefers the reply the human endorsed).  ``unknown`` until audited
-    pairs exist; never filled in by the judge alone.
+    *human-endorsed* judge decisions (the fraction of pairs a human accepted
+    where the policy prefers the endorsed reply).  ``unknown`` until such pairs
+    exist; never filled in by the judge alone.
 ``length_ratio``
     Mean policy reply length over the reference's on the same prompts; drift
     in either direction (ratio or its inverse) is checked.
@@ -209,24 +209,25 @@ def held_out_pairs(store: AlignmentStore, dataset_id: str) -> list[Pair]:
 
 
 def audited_pairs(store: AlignmentStore, ledger: Any) -> list[Pair]:
-    """``(prompt, endorsed, other)`` for every human-audited pairwise judge decision.
+    """``(prompt, endorsed, other)`` for every pairwise judge decision a human endorsed.
 
-    The human verdict decides which reply is endorsed: ``accept`` endorses the
-    judge's preferred reply, ``reject`` the other one.
+    Only an ``accept`` verdict endorses an ordering: the human agrees the
+    judge's preferred reply is the better one.  A ``reject`` says only that the
+    judge's pick is not better — both replies may be equally poor — so it is
+    not read as endorsing the other reply and contributes no pair.
     """
 
     pairs: list[Pair] = []
     for item in ledger.items():
-        if item.verdict is None or item.subject not in {"preference", "revision"}:
+        if item.verdict != "accept" or item.subject not in {"preference", "revision"}:
             continue
         judgement = store.get(item.record)
         first, second = (store.get(value) for value in judgement.inputs)
         preferred, other = (
             (second, first) if judgement.preferred == judgement.inputs[1] else (first, second)
         )
-        endorsed, rest = (preferred, other) if item.verdict == "accept" else (other, preferred)
-        if endorsed.output != rest.output:
-            pairs.append((tuple(first.messages), endorsed.output, rest.output))
+        if preferred.output != other.output:
+            pairs.append((tuple(first.messages), preferred.output, other.output))
     return pairs
 
 
