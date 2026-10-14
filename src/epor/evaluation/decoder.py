@@ -5,8 +5,11 @@ Conventions
 * Context and continuation are encoded separately and concatenated, so the
   continuation's tokens never depend on the context (and the length
   normalization denominators are stable); a prefix (``prefix_ids``) is added
-  first: ``DOC_START`` for kernel checkpoints, whose training documents are
-  framed ``DOC_START … DOC_END``, or ``BOS`` for the debug byte tokenizer.
+  first: ``MODEL_SEQUENCE_START_ID`` (``<|bos|>``) for kernel checkpoints —
+  the first input the training kernel feeds for every document, by the
+  framing contract in :mod:`epor.tokenizer.spec` — or ``BOS`` for the debug
+  byte tokenizer.  Kernel generation stops at ``MODEL_SEQUENCE_END_ID``
+  (``<|eos|>``), the only end a kernel model is trained to predict.
 * Sequences longer than ``max_length`` are truncated from the left of the
   context; a continuation that alone does not fit is an error.
 * Batches are right-padded.  The decoder is causal, so padding after a
@@ -164,8 +167,9 @@ def load_kernel_scoring_model(
 
     from epor.models.config import model_config_from_mapping
     from epor.reference_policy import validate_kernel_model
-    from epor.tokenizer import DOC_END_ID, DOC_START_ID, EOS_ID, load_tokenizer
+    from epor.tokenizer import load_tokenizer
     from epor.tokenizer.shards import load_tokenized_manifest
+    from epor.tokenizer.spec import MODEL_SEQUENCE_END_ID, MODEL_SEQUENCE_START_ID
     from epor.training.distributed import DistributedContext
     from epor.training.kernel import PackedTrainingSettings
     from epor.training.run_checkpoint import (
@@ -201,8 +205,8 @@ def load_kernel_scoring_model(
         model,
         tokenizer,
         identity,
-        prefix_ids=[DOC_START_ID],
-        stop_ids=[DOC_END_ID, EOS_ID],
+        prefix_ids=[MODEL_SEQUENCE_START_ID],
+        stop_ids=[MODEL_SEQUENCE_END_ID],
         decodable_vocab_size=tokenizer.learned_vocab_size,
         max_length=max_length,
         batch_size=batch_size,

@@ -185,6 +185,17 @@ class JobService:
                     value.get("sources", [])
                 ):
                     raise InvalidJobSpecError("each benchmark source may be named only once")
+            elif job_type.value.startswith("align_"):
+                from .schemas import ALIGNMENT_CHECKPOINT_FIELDS
+
+                assert self.settings.artifact_root is not None
+                supplied = [value[name] for name in ALIGNMENT_CHECKPOINT_FIELDS if value.get(name)]
+                for path in [*supplied, *value.get("logit_teachers", [])]:
+                    resolved = contained_path(self.settings.artifact_root, path, must_exist=True)
+                    if not resolved.is_dir():
+                        raise InvalidJobSpecError(
+                            "alignment checkpoints must be run or checkpoint directories"
+                        )
         except (FileNotFoundError, OSError, PathOutsideRootError) as exc:
             raise InvalidJobSpecError(str(exc)) from exc
         return value

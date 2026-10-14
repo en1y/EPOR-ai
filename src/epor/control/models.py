@@ -72,6 +72,12 @@ class JobType(StrEnum):
     SCALE_PROFILE = "scale_profile"
     SCALE_SWEEP = "scale_sweep"
     SCALE_MIXTURE = "scale_mixture"
+    ALIGN_GENERATE = "align_generate"
+    ALIGN_JUDGE = "align_judge"
+    ALIGN_DATASET = "align_dataset"
+    ALIGN_SFT = "align_sft"
+    ALIGN_PREFERENCE = "align_preference"
+    ALIGN_EVALUATE = "align_evaluate"
     TINY_TRAIN = "tiny_train"
     TINY_EVAL = "tiny_eval"
 
@@ -120,7 +126,8 @@ class Job(Base):
             "'data_remove', 'data_audit', 'tokenizer_train', 'tokenizer_shard', "
             "'tokenizer_evaluate', 'kernel_train', 'kernel_evaluate', 'eval_suite', "
             "'eval_contamination', 'scale_profile', 'scale_sweep', 'scale_mixture', "
-            "'tiny_train', 'tiny_eval')",
+            "'align_generate', 'align_judge', 'align_dataset', 'align_sft', "
+            "'align_preference', 'align_evaluate', 'tiny_train', 'tiny_eval')",
             name="job_type",
         ),
         CheckConstraint(

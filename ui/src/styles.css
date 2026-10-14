@@ -637,6 +637,28 @@ code.hash {
 .estimate-label { color: var(--text-faint); font-size: 12px; }
 .reason-cell { min-width: 220px; }
 
+.audit-list { margin: 0; padding: 0; list-style: none; }
+.audit-item { padding: 16px 20px; border-bottom: 1px solid var(--line); display: grid; gap: 12px; min-width: 0; }
+.audit-item:last-child { border-bottom: 0; }
+.audit-item .form-field { margin: 0; }
+.audit-item .button-row { justify-content: flex-start; }
+.audit-header { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; font-size: 13px; color: var(--text-dim); }
+.audit-header strong { color: var(--text); font-size: 14px; }
+.audit-detail { display: grid; gap: 10px; min-width: 0; }
+.audit-question { margin: 0; color: var(--text); font-size: 14px; }
+.audit-prompt { margin: 0; display: grid; gap: 6px; }
+.audit-prompt dt { color: var(--text-faint); font: 12px var(--mono); }
+.audit-prompt dd, .audit-replies blockquote {
+  margin: 0; color: var(--text-dim); font-size: 13px;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+.audit-replies { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.audit-reply-label { color: var(--text-faint); font-size: 12px; }
+.audit-replies blockquote { padding: 8px 10px; border-left: 2px solid var(--line-strong); background: rgba(0, 0, 0, 0.14); }
+.audit-history { margin: 0 20px 16px; }
+.audit-history summary { cursor: pointer; padding: 12px 0; color: var(--text-dim); font-size: 13px; }
+.regressed-row td { color: var(--err); }
+
 @media (max-width: 1100px) {
   .split-grid, .docs-layout { grid-template-columns: 1fr; }
   .docs-index { position: static; }
@@ -685,11 +707,11 @@ code.hash {
 }
 
 @media (min-width: 601px) and (max-width: 780px) {
-  /* Twelve pages in two rows of six; one row would crush their labels. */
+  /* Thirteen pages in two rows of seven; one row would crush their labels. */
   .app-shell { padding-bottom: calc(116px + env(safe-area-inset-bottom)); }
   .sidebar { height: calc(116px + env(safe-area-inset-bottom)); }
   .sidebar nav {
-    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
     grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 2px;
   }
   .nav-group { display: contents; }
@@ -701,7 +723,7 @@ code.hash {
     height: calc(168px + env(safe-area-inset-bottom));
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   }
-  /* Every page in one five-column grid, whatever its group: twelve pages, three rows. */
+  /* Every page in one five-column grid, whatever its group: thirteen pages, three rows. */
   .sidebar nav {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
     grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 2px;
@@ -713,3 +735,4 @@ code.hash {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+.objective-tag { color: var(--accent); font-family: var(--mono); }

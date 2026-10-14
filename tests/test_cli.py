@@ -29,9 +29,9 @@ def test_doctor_json_is_machine_readable() -> None:
 
 
 def test_future_command_fails_closed() -> None:
-    result = runner.invoke(app, ["train", "sft"])
+    result = runner.invoke(app, ["train", "grpo"])
     assert result.exit_code == 2
-    assert "v0.0.7" in result.stdout
+    assert "v0.5.0" in result.stdout
 
 
 def test_data_commands_are_executable_typed_surfaces() -> None:

@@ -43,6 +43,28 @@ so a resume must keep it; at ``None`` it is left out of
 :meth:`PackedTrainingSettings.trajectory`, so every pre-existing trajectory
 hash and checkpoint stays compatible.  Validation is never re-weighted.
 
+Fine-tuning and distillation (v0.0.7)
+-------------------------------------
+Three optional settings turn the same loop into supervised fine-tuning and
+knowledge transfer; like ``train_mixture`` each is left out of
+:meth:`PackedTrainingSettings.trajectory` at ``None``, so earlier checkpoints
+keep their trajectory hashes.
+
+* ``chat_dataset_id`` trains (and validates) on a verified ``epor-chat-v1``
+  dataset (:class:`~epor.training.chat_data.ChatCorpus`) instead of token
+  shards: loss falls on assistant turns only, and normalization counts only
+  those targets.  ``tokenized_id`` still names the build whose tokenizer the
+  model uses, and the dataset must have been tokenized with it.
+* ``init_checkpoint`` starts step 1 from a verified kernel checkpoint's
+  weights (pinned by the SHA-256 of its ``checkpoint.json``) with the same
+  model config, instead of a fresh initialization.  Optimizer state is new.
+* ``distillation`` adds ``weight * T^2 * KL(teacher_T || student_T)`` on every
+  trained target, against the frozen mean distribution of one or more EPOR
+  kernel checkpoints.  It is refused unless every teacher shares the student's
+  tokenizer and vocabulary, because logits over different vocabularies do not
+  describe the same events.  Teachers are only ever read; nothing from them is
+  written into the student's checkpoint.
+
 Precision is ``bf16`` (CPU autocast around the forward; FP32 parameters,
 gradients, optimizer state, and loss) or ``fp32``.  FP8 is not implemented:
 it is a cloud-only ablation in the roadmap.
@@ -62,7 +84,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import torch
-from pydantic import BaseModel, ConfigDict, Field
+import torch.nn.functional as F
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from torch import Tensor, nn
 
 from epor.data.models import Sha256
@@ -98,7 +121,7 @@ from .run_checkpoint import (
     remove_abandoned,
     save_kernel_checkpoint,
 )
-from .shard_data import ShardCorpus
+from .shard_data import ShardCorpus, TrainingCorpus
 
 Precision = Literal["bf16", "fp32"]
 
@@ -114,6 +137,31 @@ RUNTIME_FIELDS = frozenset(
         "eval_max_steps",
     }
 )
+
+
+class DistillationRefusedError(ValueError):
+    """Logit distillation was requested between models that do not share a vocabulary."""
+
+
+class CheckpointRef(BaseModel):
+    """A kernel checkpoint pinned by the SHA-256 of its ``checkpoint.json``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    path: str = Field(min_length=1, max_length=4_096)
+    checkpoint_sha256: Sha256
+
+
+class LogitDistillation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    teachers: tuple[CheckpointRef, ...] = Field(min_length=1, max_length=4)
+    weight: float = Field(default=1.0, gt=0.0, le=10.0)
+    temperature: float = Field(default=1.0, ge=0.25, le=10.0)
+
+
+# Optional v0.0.7 trajectory fields, omitted from the trajectory at ``None``.
+_OPTIONAL_TRAJECTORY = ("train_mixture", "chat_dataset_id", "init_checkpoint", "distillation")
 
 
 class PackedTrainingSettings(BaseModel):
@@ -142,6 +190,17 @@ class PackedTrainingSettings(BaseModel):
     keep_checkpoints: int = Field(default=3, ge=1)
     eval_max_steps: int | None = Field(default=None, ge=1)
     train_mixture: DomainMixture | None = None
+    chat_dataset_id: Sha256 | None = None
+    init_checkpoint: CheckpointRef | None = None
+    distillation: LogitDistillation | None = None
+
+    @model_validator(mode="after")
+    def chat_excludes_mixture(self) -> PackedTrainingSettings:
+        if self.chat_dataset_id is not None and self.train_mixture is not None:
+            raise ValueError("a domain mixture selects token-shard documents, not chat datasets")
+        if self.chat_dataset_id is not None and self.validation_split == "test":
+            raise ValueError("chat datasets hold train and validation splits only")
+        return self
 
     def trajectory(self) -> dict[str, Any]:
         payload = {
@@ -149,10 +208,11 @@ class PackedTrainingSettings(BaseModel):
             for key, value in self.model_dump(mode="json").items()
             if key not in RUNTIME_FIELDS
         }
-        # Added after trajectories were hashed into checkpoints; at its
-        # default it selects the original data and stays out of the hash.
-        if payload["train_mixture"] is None:
-            del payload["train_mixture"]
+        # Added after trajectories were hashed into checkpoints; at their
+        # defaults they change nothing and stay out of the hash.
+        for key in _OPTIONAL_TRAJECTORY:
+            if payload[key] is None:
+                del payload[key]
         return payload
 
     @property
@@ -203,6 +263,7 @@ class _StepRecord(BaseModel):
     main_sum: float
     target_tokens: int
     mtp_sums: tuple[float, ...]
+    distill_sum: float = 0.0
 
 
 def mtp_target_counts(batch: PackedBatch, depth: int) -> list[int]:
@@ -238,6 +299,15 @@ def micro_objective(
 
     if output.main_loss is None:
         raise RuntimeError("decoder did not return a training loss")
+    if target_tokens == 0:
+        # Every target of this micro-batch is masked (a chat row that holds
+        # only prompt turns).  Contribute an exact zero that still touches
+        # every parameter, so DDP and FSDP2 reduce the same buckets on every
+        # rank; the decoder's mean over no targets would be NaN.
+        objective = output.logits.float().sum() * 0.0
+        for loss in output.mtp_losses:
+            objective = objective + loss * 0.0
+        return objective
     objective = output.main_loss * (target_tokens * world_size / global_target_tokens)
     depth_count = len(global_mtp_counts)
     for depth, (loss, count) in enumerate(zip(output.mtp_losses, mtp_counts, strict=True)):
@@ -245,6 +315,32 @@ def micro_objective(
             share = mtp_loss_weight / depth_count * count * world_size
             objective = objective + loss * (share / global_mtp_counts[depth])
     return objective
+
+
+def distillation_kl_sum(
+    student_logits: Tensor,
+    teacher_logits: Sequence[Tensor],
+    targets: Tensor,
+    temperature: float,
+) -> Tensor:
+    """``T^2 * sum_t KL(teacher_T || student_T)`` over trained targets.
+
+    The teacher distribution is the mean of the teachers' tempered softmaxes,
+    in FP32.  Positions whose target is ``IGNORE_INDEX`` (padding, masked
+    prompt turns) contribute nothing.
+    """
+
+    keep = targets.reshape(-1) != IGNORE_INDEX
+    vocab = student_logits.shape[-1]
+    student = F.log_softmax(student_logits.float().reshape(-1, vocab)[keep] / temperature, -1)
+    probabilities = torch.stack(
+        [
+            F.softmax(logits.float().reshape(-1, vocab)[keep] / temperature, -1)
+            for logits in teacher_logits
+        ]
+    ).mean(0)
+    kl = (probabilities * (probabilities.clamp_min(1e-30).log() - student)).sum()
+    return kl * temperature**2
 
 
 def _step_seed(seed: int, step: int, rank: int) -> int:
@@ -305,9 +401,89 @@ def _check_compatible(
         )
 
 
+def open_training_corpus(
+    data_root: Path,
+    settings: PackedTrainingSettings,
+    split: Split,
+    config: ModelConfig,
+    *,
+    verify: bool,
+) -> TrainingCorpus:
+    """Token shards, or the chat dataset when ``settings.chat_dataset_id`` is set."""
+
+    if settings.chat_dataset_id is None:
+        return ShardCorpus.open(
+            data_root, settings.tokenized_id, split, model_config=config, verify=verify
+        )
+    from epor.tokenizer.shards import load_tokenized_manifest
+
+    from .chat_data import ChatCorpus
+
+    tokenizer_id = load_tokenized_manifest(data_root, settings.tokenized_id).tokenizer_id
+    return ChatCorpus.open(
+        data_root,
+        settings.chat_dataset_id,
+        split,
+        model_config=config,
+        tokenizer_id=tokenizer_id,
+    )
+
+
+def verified_checkpoint(reference: CheckpointRef) -> tuple[Path, dict[str, Any]]:
+    """A pinned checkpoint's directory and trainer state, or :class:`CheckpointError`."""
+
+    from epor.data.store import sha256_file
+
+    from .run_checkpoint import MANIFEST_FILE
+
+    trainer = read_kernel_checkpoint(reference.path)
+    directory = Path(trainer["checkpoint_dir"])
+    if sha256_file(directory / MANIFEST_FILE) != reference.checkpoint_sha256:
+        raise CheckpointError(f"checkpoint {directory.name} does not match its pinned SHA-256")
+    return directory, trainer
+
+
+def checkpoint_tokenizer_id(data_root: Path, trainer: dict[str, Any]) -> str:
+    from epor.tokenizer.shards import load_tokenized_manifest
+
+    settings = PackedTrainingSettings.model_validate(trainer["settings"])
+    return load_tokenized_manifest(data_root, settings.tokenized_id).tokenizer_id
+
+
+def load_teachers(
+    distillation: LogitDistillation,
+    data_root: Path,
+    *,
+    student: ModelConfig,
+    tokenizer_id: str,
+) -> list[EporDecoder]:
+    """Frozen FP32 teachers, refused unless each shares the student's vocabulary."""
+
+    teachers: list[EporDecoder] = []
+    for reference in distillation.teachers:
+        directory, trainer = verified_checkpoint(reference)
+        config = validate_kernel_model(model_config_from_mapping(trainer["model_config"]))
+        teacher_tokenizer = checkpoint_tokenizer_id(data_root, trainer)
+        if teacher_tokenizer != tokenizer_id or config.vocab_size != student.vocab_size:
+            raise DistillationRefusedError(
+                "logit distillation needs teacher and student to share the EPOR tokenizer and "
+                f"vocabulary; teacher {directory.name} uses tokenizer {teacher_tokenizer[:12]} "
+                f"with {config.vocab_size} IDs, the student {tokenizer_id[:12]} with "
+                f"{student.vocab_size}. Use response distillation (train on its sampled outputs) "
+                "instead"
+            )
+        model = EporDecoder(config, seed=0, device="cpu", dtype=torch.float32, initialize=False)
+        load_kernel_checkpoint(
+            directory, model=model, optimizer=None, context=DistributedContext(), restore_rng=False
+        )
+        model.eval().requires_grad_(False)
+        teachers.append(model)
+    return teachers
+
+
 def _evaluate(
     model: nn.Module,
-    corpus: ShardCorpus,
+    corpus: TrainingCorpus,
     settings: PackedTrainingSettings,
     context: DistributedContext,
     *,
@@ -450,17 +626,29 @@ def pretrain_packed(
     validate_kernel_run(max_steps, settings.tokens_per_batch)
     destination = Path(output_dir).expanduser().resolve()
     config = resolve_model_config(model)
-    corpus = ShardCorpus.open(
-        Path(data_root),
-        settings.tokenized_id,
-        settings.train_split,
-        model_config=config,
-        verify=verify_data,
+    corpus = open_training_corpus(
+        Path(data_root), settings, settings.train_split, config, verify=verify_data
     )
     selection: MixtureSelection | None = None
     if settings.train_mixture is not None:
+        assert isinstance(corpus, ShardCorpus)
         selection = apply_mixture(Path(data_root), corpus, settings.train_mixture)
         corpus = corpus.select(selection.document_ids)
+    init_dir: Path | None = None
+    if settings.init_checkpoint is not None:
+        init_dir, init_trainer = verified_checkpoint(settings.init_checkpoint)
+        if model_config_from_mapping(init_trainer["model_config"]).sha256 != config.sha256:
+            raise CheckpointError("the initial checkpoint's model config differs from this run's")
+        if checkpoint_tokenizer_id(Path(data_root), init_trainer) != corpus.tokenizer_id:
+            raise CheckpointError("the initial checkpoint was trained with a different tokenizer")
+    teachers: list[EporDecoder] = []
+    if settings.distillation is not None:
+        teachers = load_teachers(
+            settings.distillation,
+            Path(data_root),
+            student=config,
+            tokenizer_id=corpus.tokenizer_id,
+        )
     stream = PackedBatchStream(
         corpus,
         seq_len=settings.seq_len,
@@ -538,6 +726,17 @@ def pretrain_packed(
             },
             activation_checkpointing=settings.activation_checkpointing,
             train_mixture=None if selection is None else selection.summary(),
+            chat_dataset_id=settings.chat_dataset_id,
+            init_checkpoint=(
+                None
+                if settings.init_checkpoint is None
+                else settings.init_checkpoint.model_dump(mode="json")
+            ),
+            distillation=(
+                None
+                if settings.distillation is None
+                else settings.distillation.model_dump(mode="json")
+            ),
             start_step=start_step,
             target_steps=max_steps,
             counters={"tokens_seen": tokens_seen, "target_tokens_seen": target_tokens_seen},
@@ -610,6 +809,10 @@ def pretrain_packed(
             dtype=torch.float32,
             activation_checkpointing=settings.activation_checkpointing,
         )
+        if checkpoint_dir is None and init_dir is not None:
+            load_kernel_checkpoint(
+                init_dir, model=decoder, optimizer=None, context=context, restore_rng=False
+            )
         wrapped = wrap_model(decoder, context)
         optimizer = build_optimizer(wrapped, settings.optimizer)
         if checkpoint_dir is not None:
@@ -638,16 +841,20 @@ def pretrain_packed(
             optimizer.zero_grad(set_to_none=True)
             records: list[_StepRecord] = []
             last_index = len(packed.micro_batches) - 1
+            if global_targets == 0:
+                raise ValueError(
+                    f"step {step} contains no trained target (every row is a masked prompt "
+                    "turn); raise tokens_per_batch above the longest prompt"
+                )
             for index, micro in enumerate(packed.micro_batches):
-                if micro.target_tokens == 0:
-                    raise RuntimeError("training micro-batches must contain targets")
+                distill_sum = 0.0
                 with gradient_sync(wrapped, index == last_index):
                     with _autocast(settings.precision):
                         output = wrapped(
                             micro.input_ids, micro.targets, segment_ids=micro.segment_ids
                         )
                     main_loss: Tensor = output.main_loss
-                    micro_objective(
+                    objective = micro_objective(
                         output,
                         target_tokens=micro.target_tokens,
                         mtp_counts=local_counts[index],
@@ -655,10 +862,32 @@ def pretrain_packed(
                         global_mtp_counts=mtp_totals,
                         mtp_loss_weight=config.mtp_loss_weight,
                         world_size=world,
-                    ).backward()
+                    )
+                    if teachers and micro.target_tokens:
+                        assert settings.distillation is not None
+                        with torch.no_grad():
+                            teacher_logits = [
+                                teacher(micro.input_ids, segment_ids=micro.segment_ids).logits
+                                for teacher in teachers
+                            ]
+                        kl = distillation_kl_sum(
+                            output.logits,
+                            teacher_logits,
+                            micro.targets,
+                            settings.distillation.temperature,
+                        )
+                        distill_sum = float(kl.detach())
+                        objective = objective + kl * (
+                            settings.distillation.weight * world / global_targets
+                        )
+                    objective.backward()
                 records.append(
                     _StepRecord(
-                        main_sum=float(main_loss.detach()) * micro.target_tokens,
+                        main_sum=(
+                            float(main_loss.detach()) * micro.target_tokens
+                            if micro.target_tokens
+                            else 0.0
+                        ),
                         target_tokens=micro.target_tokens,
                         mtp_sums=tuple(
                             float(loss.detach()) * count
@@ -666,6 +895,7 @@ def pretrain_packed(
                                 output.mtp_losses, local_counts[index], strict=True
                             )
                         ),
+                        distill_sum=distill_sum,
                     )
                 )
             grad_norm = clip_gradients(wrapped.parameters(), settings.optimizer.gradient_clip)
@@ -687,6 +917,14 @@ def pretrain_packed(
             loss_value = main_value
             if mtp_values:
                 loss_value = main_value + config.mtp_loss_weight * sum(mtp_values) / mtp_depth
+            distill_value: float | None = None
+            if settings.distillation is not None:
+                distill_total = 0.0
+                for record in ordered:
+                    distill_total += record.distill_sum
+                distill_share = distill_total / global_targets
+                distill_value = distill_share
+                loss_value += settings.distillation.weight * distill_share
             losses.append(loss_value)
             main_losses.append(main_value)
             tokens_seen += packed.global_tokens
@@ -699,6 +937,7 @@ def pretrain_packed(
                     "training_loss": loss_value,
                     "main_loss": main_value,
                     "mtp_losses": mtp_values,
+                    **({} if distill_value is None else {"distill_kl": distill_value}),
                     "learning_rate": learning_rate_at(step, settings.optimizer),
                     "grad_norm": grad_norm,
                     "tokens_seen": tokens_seen,
@@ -725,12 +964,8 @@ def pretrain_packed(
                 raise TrainingCancelled("training cancellation requested")
 
         if settings.validation_split is not None:
-            validation = ShardCorpus.open(
-                Path(data_root),
-                settings.tokenized_id,
-                settings.validation_split,
-                model_config=config,
-                verify=False,
+            validation = open_training_corpus(
+                Path(data_root), settings, settings.validation_split, config, verify=False
             )
             if validation.document_count:
                 evaluation = _evaluate(
@@ -837,8 +1072,9 @@ def evaluate_packed_checkpoint(
     directory = Path(trainer["checkpoint_dir"])
     config = validate_kernel_model(model_config_from_mapping(trainer["model_config"]))
     settings = PackedTrainingSettings.model_validate(trainer["settings"])
-    corpus = ShardCorpus.open(Path(data_root), settings.tokenized_id, split, model_config=config)
+    corpus = open_training_corpus(Path(data_root), settings, split, config, verify=True)
     if document_ids is not None:
+        assert isinstance(corpus, ShardCorpus)
         corpus = corpus.select(document_ids)
     context = DistributedContext()
     model = EporDecoder(config, seed=0, device="cpu", dtype=torch.float32, initialize=False)
@@ -896,16 +1132,22 @@ def final_model_state(run_dir: str | Path) -> dict[str, Tensor]:
 
 __all__ = [
     "RUNTIME_FIELDS",
+    "CheckpointRef",
+    "DistillationRefusedError",
     "DomainMixture",
+    "LogitDistillation",
     "PackedEvaluation",
     "PackedEvaluationResult",
     "PackedTrainingResult",
     "PackedTrainingSettings",
     "apply_mixture",
+    "distillation_kl_sum",
     "evaluate_packed_checkpoint",
     "final_model_state",
     "micro_objective",
     "mtp_target_counts",
+    "open_training_corpus",
     "pretrain_packed",
     "resolve_model_config",
+    "verified_checkpoint",
 ]

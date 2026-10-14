@@ -19,6 +19,10 @@
   contamination, memorization, and the G10 safety suite's claim boundary.
 - [Scaling laboratory](SCALING.md) — v0.0.6 ladder, FLOPs model, host profiles,
   sweeps, mixture ablations, fits, and projections mapped to the compute policy.
+- [Knowledge transfer and alignment](ALIGNMENT.md) — v0.0.7 chat format,
+  teacher-data provenance, SFT and distillation on the kernel, the DPO
+  baseline, covenant-cited critique, audited AI judging, overoptimization
+  monitors, and model-level G10.
 - [Compute policy](COMPUTE_POLICY.md) — cheap-first experiments, approval gates,
   abort rules, and hardware profiles.
 - [Contributing](CONTRIBUTING.md) — environment, tests, claim discipline, and
@@ -33,7 +37,8 @@ Downloaded bytes, extracted text, and local indexes live under ignored
 `research/raw/`, `research/extracted/`, and `research/cache/` directories.
 
 No target-size model or target-scale tokenizer has been trained or released by
-v0.0.6; kernel runs, evaluations, and sweeps so far are proxy-scale local
-measurements, and no target-size run has been proposed or approved. Parameter counts,
+v0.0.7; kernel runs, fine-tunes, DPO runs, evaluations, and sweeps so far are
+proxy-scale local measurements, no alignment or safety claim follows from
+them, and no target-size run has been proposed or approved. Parameter counts,
 context lengths, vocabulary targets, and architecture descriptions are plans
 until their named gates produce measured artifacts.

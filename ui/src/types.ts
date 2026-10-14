@@ -15,6 +15,12 @@ export type JobType =
   | 'scale_profile'
   | 'scale_sweep'
   | 'scale_mixture'
+  | 'align_generate'
+  | 'align_judge'
+  | 'align_dataset'
+  | 'align_sft'
+  | 'align_preference'
+  | 'align_evaluate'
   | 'tiny_train'
   | 'tiny_eval'
 export type JobStatus =
@@ -225,6 +231,17 @@ export interface KernelRun {
   evaluation: KernelEvaluation | null
   checkpoint: KernelCheckpoint | null
   manifest_sha256: string
+  objective?: 'pretrain' | 'sft' | 'logit-distillation' | 'dpo'
+  chat_dataset_id?: string | null
+  parent_checkpoint_sha256?: string | null
+  reference_checkpoint_sha256?: string | null
+  distill_teachers?: number
+  distill_kl?: number | null
+  reward_margin?: number | null
+  preference_accuracy?: number | null
+  policy_logratio?: number | null
+  alerts?: string[]
+  preference_evaluation?: Record<string, number | string> | null
 }
 
 export interface KernelEvaluationReport {
@@ -649,4 +666,112 @@ export interface ScalingReport {
   warnings: string[]
   measured: Record<string, unknown> | null
   summary: ScalingReportSummary
+}
+
+export type MonitorStatus = 'ok' | 'unknown' | 'alert' | 'abort'
+export type G10Gate = 'blocked' | 'escalated' | 'no-regression-observed'
+
+export interface AuditVerdictRecord {
+  verdict: 'accept' | 'reject'
+  actor_id: string
+  actor_role: string
+  note: string
+  created_at: string
+}
+
+export interface AuditItem {
+  id: string
+  subject: 'preference' | 'revision' | 'eval-item' | 'g10-item'
+  judging_run: string
+  record: string
+  stratum: string
+  judge_accepted: boolean | null
+  confidence: number | null
+  created_at: string
+  created_by: string
+  detail: Record<string, unknown>
+  state: 'pending' | 'audited'
+  verdict: 'accept' | 'reject' | null
+  verdicts: AuditVerdictRecord[]
+}
+
+export interface JudgeReliabilityBin {
+  confidence_low: number
+  confidence_high: number
+  items: number
+  human_agreement: number | null
+}
+
+export interface JudgingRun {
+  judging_run: string
+  subject: string
+  judge: string
+  decisions: number
+  accepted: number
+  rejected: number
+  sampled: number
+  audited: number
+  pending: number
+  disagreement_rate: number | null
+  strata: Record<string, { sampled: number; audited: number; disagreement_rate: number | null }>
+  agreement_matrix: Record<string, number>
+  reliability: JudgeReliabilityBin[]
+  admitted: boolean
+  admission: string
+  max_disagreement: number
+}
+
+export interface MonitorValue {
+  value: number | null
+  status: MonitorStatus
+  threshold: { alert: number; abort: number }
+  [key: string]: unknown
+}
+
+export interface OveroptimizationView {
+  report_id: string
+  status: MonitorStatus
+  created_at: string
+  policy: { model: string; version: string }
+  reference: { model: string; version: string }
+  monitors: Record<'kl_per_token' | 'proxy_minus_audited' | 'length_ratio', MonitorValue>
+  evidence: string
+  claim: string
+}
+
+export interface G10View {
+  report_id: string
+  gate: G10Gate
+  created_at: string
+  before: { model: string; version: string }
+  after: { model: string; version: string }
+  categories: Record<string, { before: number | null; after: number | null }>
+  overall: { before: number; after: number }
+  regressed_categories: string[]
+  failing_items: string[]
+  claim: string
+}
+
+export interface AlignmentDataset {
+  dataset_id: string
+  kind: 'sft' | 'preference'
+  examples: Record<string, number>
+  target_positions: Record<string, number>
+  excluded: Record<string, number>
+  sources: { generator: string; purpose: string; records: number }[]
+  candidates_admitted: number
+}
+
+export interface AlignmentSummary {
+  schema_version: number
+  scope: string
+  records: Record<string, number>
+  examples_by_origin: Record<string, number>
+  candidates: number
+  datasets: AlignmentDataset[]
+  judging_runs: JudgingRun[]
+  audit_queue: { pending: number; audited: number }
+  overoptimization: OveroptimizationView[]
+  g10: G10View[]
+  integrity_errors: string[]
 }

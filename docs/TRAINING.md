@@ -88,6 +88,18 @@ It is used by `epor scale mixture` and `scale_mixture` jobs; the `kernel_train`
 job specification has no such field and rejects it. See
 [`SCALING.md`](SCALING.md#data-mixtures).
 
+v0.0.7 adds three optional trajectory fields that turn the same loop into
+supervised fine-tuning and distillation, each left out of the trajectory hash
+when unset: `chat_dataset_id` (train and validate on a verified
+`epor-chat-v1` dataset with assistant-only targets; packing counts only
+unmasked targets and a fully masked micro-batch contributes an exact zero),
+`init_checkpoint` (start step 1 from a pinned checkpoint's weights), and
+`distillation` (a tempered KL term against frozen EPOR teachers that share the
+student's tokenizer). `epor train sft` and `align_sft` jobs set them, and
+`epor train kernel-resume` continues such a run exactly. The DPO baseline is a
+separate single-process loop that writes ordinary kernel checkpoints, which
+kernel resume refuses. See [`ALIGNMENT.md`](ALIGNMENT.md).
+
 **Runtime** settings change speed, memory, or bookkeeping only and may differ
 on resume: `micro_batch_size`, `activation_checkpointing`, `checkpoint_every`,
 `keep_checkpoints`, `validation_split`, and `eval_max_steps`. World size and

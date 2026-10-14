@@ -37,6 +37,7 @@ from .authority import (
 from .database import create_session_factory, create_sqlite_engine, initialize_database
 from .documents import DocumentTooLargeError, build_index, read_document
 from .errors import (
+    AuditItemNotFoundError,
     AuthenticationRequiredError,
     AuthorizationDeniedError,
     CapabilityUnavailableError,
@@ -51,6 +52,7 @@ from .schemas import (
     ActionList,
     ArtifactList,
     ArtifactRead,
+    AuditVerdictCreate,
     CapabilityRead,
     CovenantRead,
     DataSummaryRead,
@@ -98,6 +100,12 @@ JobLimitQuery = Annotated[int, Query(ge=1, le=500)]
 EventAfterQuery = Annotated[int, Query(ge=0)]
 EventLimitQuery = Annotated[int, Query(ge=1, le=1_000)]
 ReportIdPath = Annotated[str, FastApiPath(pattern=r"^[0-9a-f]{64}$")]
+AuditItemPath = Annotated[
+    str, FastApiPath(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+]
+AlignmentReportKind = Annotated[str, FastApiPath(pattern=r"^(?:overoptimization|g10|calibration)$")]
+AuditStateQuery = Annotated[str | None, Query(pattern=r"^(?:pending|audited)$")]
+JudgingRunQuery = Annotated[str | None, Query(pattern=r"^[0-9a-f]{64}$")]
 ReportIdQuery = Annotated[str, Query(pattern=r"^[0-9a-f]{64}$")]
 ResamplesQuery = Annotated[int, Query(ge=1, le=10_000)]
 SeedQuery = Annotated[int, Query(ge=0, le=2**32 - 1)]
@@ -165,6 +173,30 @@ _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
     JobType.SCALE_MIXTURE: (
         "Mixture ablation",
         "Train one small model per domain mixture and compare per-domain validation loss.",
+    ),
+    JobType.ALIGN_GENERATE: (
+        "Alignment candidates",
+        "Sample teacher outputs, covenant-cited critique/revision, or model-written G10 items.",
+    ),
+    JobType.ALIGN_JUDGE: (
+        "AI judge",
+        "Record judge decisions as data; nothing they accept trains before a human audit.",
+    ),
+    JobType.ALIGN_DATASET: (
+        "Alignment dataset",
+        "Build an SFT or preference dataset; candidates enter only from audited judging runs.",
+    ),
+    JobType.ALIGN_SFT: (
+        "Supervised fine-tuning",
+        "Fine-tune or distill on a chat dataset through the training kernel (one process).",
+    ),
+    JobType.ALIGN_PREFERENCE: (
+        "DPO baseline",
+        "Optimize a policy on preference pairs against a frozen reference, with a stop monitor.",
+    ),
+    JobType.ALIGN_EVALUATE: (
+        "Alignment evaluation",
+        "Overoptimization monitors, judge calibration, or the G10 before/after comparison.",
     ),
     JobType.TINY_TRAIN: (
         "Tiny pretraining",
@@ -551,6 +583,92 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
         try:
             return load_verified_report(settings.data_root, report_id)
         except ReportError as exc:
+            raise ReportIntegrityError(str(exc)) from exc
+
+    # ---- alignment ----------------------------------------------------
+
+    def _audit_ledger() -> Any:
+        try:
+            from epor.alignment.audit import AuditLedger
+        except ModuleNotFoundError as exc:
+            raise CapabilityUnavailableError(
+                "alignment support requires the train-cpu and data profiles"
+            ) from exc
+        assert settings.safety_root is not None
+        return AuditLedger(settings.safety_root)
+
+    def _audit_item(ledger: Any, item_id: str) -> Any:
+        for item in ledger.items():
+            if item.id == item_id:
+                return item
+        raise AuditItemNotFoundError(f"audit item not found: {item_id}")
+
+    @router.get("/alignment", response_model=dict[str, Any], tags=["alignment"])
+    async def alignment_summary() -> dict[str, Any]:
+        ledger = _audit_ledger()
+        from epor.alignment.summary import alignment_summary as summarize
+
+        assert settings.data_root is not None
+        return redact_values(summarize(settings.data_root, ledger))
+
+    @router.get("/alignment/audits", response_model=list[dict[str, Any]], tags=["alignment"])
+    async def alignment_audits(
+        state: AuditStateQuery = None, run: JudgingRunQuery = None
+    ) -> list[dict[str, Any]]:
+        views = [item.view() for item in _audit_ledger().items()]
+        return redact_values(
+            [
+                view
+                for view in views
+                if (state is None or view["state"] == state)
+                and (run is None or view["judging_run"] == run)
+            ]
+        )
+
+    @router.get("/alignment/audits/{item_id}", response_model=dict[str, Any], tags=["alignment"])
+    async def alignment_audit(item_id: AuditItemPath) -> dict[str, Any]:
+        return redact_values(_audit_item(_audit_ledger(), item_id).view())
+
+    @router.post(
+        "/alignment/audits/{item_id}/verdict",
+        response_model=dict[str, Any],
+        tags=["alignment"],
+    )
+    async def alignment_verdict(
+        request: Request, item_id: AuditItemPath, payload: AuditVerdictCreate
+    ) -> dict[str, Any]:
+        # A verdict is human oversight of model feedback: it needs a verified
+        # identity holding the audit scope, and it is never a job.
+        actor = _require_actor(request, authority, settings)
+        ledger = _audit_ledger()
+        _audit_item(ledger, item_id)
+        service.admit(
+            "align_audit",
+            spec={"item_id": item_id, "verdict": payload.verdict},
+            actor=actor,
+            surface="api",
+        )
+        ledger.record_verdict(item_id, payload.verdict, actor=actor, note=payload.note)
+        return redact_values(_audit_item(ledger, item_id).view())
+
+    @router.get(
+        "/alignment/reports/{kind}/{report_id}",
+        response_model=dict[str, Any],
+        tags=["alignment"],
+    )
+    async def alignment_report(
+        kind: AlignmentReportKind, report_id: ReportIdPath
+    ) -> dict[str, Any]:
+        from epor.alignment.monitors import load_report
+        from epor.alignment.records import AlignmentStore
+
+        assert settings.data_root is not None
+        store = AlignmentStore(settings.data_root)
+        if not store.data.alignment_path(f"reports/{kind}/{report_id}.json").is_file():
+            raise ReportNotFoundError(f"alignment report not found: {kind}/{report_id}")
+        try:
+            return redact_values(load_report(store, kind, report_id))
+        except ValueError as exc:
             raise ReportIntegrityError(str(exc)) from exc
 
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])

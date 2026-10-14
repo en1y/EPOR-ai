@@ -117,6 +117,10 @@ def resume_inputs(
     from .kernel import RUNTIME_FIELDS
 
     trainer = read_kernel_checkpoint(checkpoint)
+    if trainer.get("command") == "alignment_dpo":
+        raise CheckpointError(
+            "this is a preference (DPO) checkpoint; resume it with `epor train preference --resume`"
+        )
     config = model_config_from_mapping(trainer.get("model_config"))
     settings = PackedTrainingSettings.model_validate(trainer.get("settings"))
     updates = {key: value for key, value in (runtime or {}).items() if value is not None}

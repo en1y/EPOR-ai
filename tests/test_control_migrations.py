@@ -12,6 +12,7 @@ from epor.control.database import (
     initialize_database,
     migration_config,
 )
+from epor.control.models import JobType
 from epor.control.settings import ControlSettings
 
 
@@ -31,7 +32,7 @@ def test_default_bootstrap_is_alembic_current_and_has_no_schema_drift(
 
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0006_laboratory_jobs"
+            "0007_alignment_jobs"
         )
         assert {
             "jobs",
@@ -88,7 +89,7 @@ def test_pre_alembic_create_all_schema_is_safely_adopted(tmp_path: Path) -> None
     initialize_database(engine)
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "0006_laboratory_jobs"
+            "0007_alignment_jobs"
         )
         assert {"principals", "escalations", "authority_events"} <= set(
             inspect(connection).get_table_names()
@@ -137,5 +138,40 @@ def test_laboratory_job_revision_round_trips_and_guards_its_jobs(tmp_path: Path)
         connection.commit()
         command.check(config)
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+            "0007_alignment_jobs"
+        )
+
+
+def test_alignment_job_revision_round_trips_and_guards_its_jobs(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "alignment.sqlite3")
+    initialize_database(engine)
+    config = migration_config(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO jobs (id, type, status, spec, progress, event_cursor, "
+                "created_at, updated_at) VALUES ('align-job', 'align_preference', 'queued', "
+                "'{}', 0, 0, '2026-01-01 00:00:00', '2026-01-01 00:00:00')"
+            )
+        )
+    with engine.connect() as connection:
+        config.attributes["connection"] = connection
+        with pytest.raises(RuntimeError, match=r"v0\.0\.7 alignment jobs exist"):
+            command.downgrade(config, "0006_laboratory_jobs")
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM jobs WHERE id = 'align-job'"))
+    with engine.connect() as connection:
+        config.attributes["connection"] = connection
+        command.downgrade(config, "0006_laboratory_jobs")
+        connection.commit()
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
             "0006_laboratory_jobs"
         )
+        command.upgrade(config, "head")
+        connection.commit()
+        command.check(config)
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+            "0007_alignment_jobs"
+        )
+    # The widest job type still fits the column: the width did not change.
+    assert max(len(job_type.value) for job_type in JobType) == len("tokenizer_evaluate")
