@@ -494,6 +494,21 @@ def _laboratory_handler(name: str) -> JobHandler:
     return run
 
 
+def _alignment_handler(name: str) -> JobHandler:
+    """Load the alignment pipeline lazily; it needs the train-cpu and data profiles."""
+
+    def run(context: WorkerContext, spec: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            from epor.alignment.control import run_alignment_job
+        except ImportError as exc:
+            raise RuntimeError(
+                "alignment support is unavailable; sync the train-cpu, data, and eval profiles"
+            ) from exc
+        return run_alignment_job(name, spec, context)
+
+    return run
+
+
 DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.SYSTEM_PROBE: _system_probe,
     JobType.RESEARCH_SYNC: _research_sync,
@@ -512,6 +527,14 @@ DEFAULT_HANDLERS: dict[JobType, JobHandler] = {
     JobType.SCALE_PROFILE: _laboratory_handler("scale_profile"),
     JobType.SCALE_SWEEP: _laboratory_handler("scale_sweep"),
     JobType.SCALE_MIXTURE: _laboratory_handler("scale_mixture"),
+    # Teacher registration and human verdicts are deliberately absent: the
+    # first is CLI-only and a verdict is never a job.
+    JobType.ALIGN_GENERATE: _alignment_handler("align_generate"),
+    JobType.ALIGN_JUDGE: _alignment_handler("align_judge"),
+    JobType.ALIGN_DATASET: _alignment_handler("align_dataset"),
+    JobType.ALIGN_SFT: _alignment_handler("align_sft"),
+    JobType.ALIGN_PREFERENCE: _alignment_handler("align_preference"),
+    JobType.ALIGN_EVALUATE: _alignment_handler("align_evaluate"),
     JobType.TINY_TRAIN: _training_handler("tiny_train"),
     JobType.TINY_EVAL: _training_handler("tiny_eval"),
 }

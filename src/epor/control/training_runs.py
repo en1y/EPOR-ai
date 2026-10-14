@@ -3,7 +3,9 @@
 Runs are found in two fixed places only: control-job outputs
 (``<artifact_root>/<job id>/<name>/manifest.json``) and direct CLI runs under
 ``<project_root>/runs/<name>/manifest.json``.  Only manifests whose
-``command`` is ``kernel_train`` are listed.
+``command`` is ``kernel_train`` (pretraining, SFT, distillation) or
+``alignment_dpo`` (the v0.0.7 DPO baseline) are listed; ``objective`` says
+which.
 
 Verification is deliberately cheap enough to run on every console poll and
 strict about what it does check: the latest-checkpoint pointer must name a
@@ -96,7 +98,7 @@ def _verify_checkpoint(run_dir: Path) -> dict[str, Any] | None:
 
 def _run_record(manifest_path: Path, *, source: str, location: str) -> dict[str, Any] | None:
     manifest = _read_json(manifest_path)
-    if manifest.get("command") != "kernel_train":
+    if manifest.get("command") not in {"kernel_train", "alignment_dpo"}:
         return None
     run_dir = manifest_path.parent
     status = str(manifest.get("status", "unknown"))
@@ -104,7 +106,7 @@ def _run_record(manifest_path: Path, *, source: str, location: str) -> dict[str,
         immutable = run_dir / "manifests" / f"{manifest.get('run_id')}.json"
         if not immutable.is_file() or _read_json(immutable) != manifest:
             raise ValueError("finished run manifest differs from its immutable copy")
-    settings = manifest.get("training_settings") or {}
+    settings = manifest.get("training_settings") or manifest.get("preference_settings") or {}
     metrics = manifest.get("metrics") or {}
     throughput = manifest.get("throughput") or {}
     features = manifest.get("model_features") or {}
@@ -137,9 +139,47 @@ def _run_record(manifest_path: Path, *, source: str, location: str) -> dict[str,
         "learning_rate": metrics.get("learning_rate"),
         "tokens_seen": (manifest.get("counters") or {}).get("tokens_seen"),
         "tokens_per_second": throughput.get("tokens_per_second"),
-        "evaluation": manifest.get("evaluation"),
+        "evaluation": None
+        if manifest.get("command") == "alignment_dpo"
+        else manifest.get("evaluation"),
         "checkpoint": _verify_checkpoint(run_dir),
         "manifest_sha256": _sha256(manifest_path),
+        **_alignment_fields(manifest),
+    }
+
+
+def _objective(manifest: dict[str, Any]) -> str:
+    if manifest.get("command") == "alignment_dpo":
+        return "dpo"
+    if manifest.get("distillation"):
+        return "logit-distillation"
+    if manifest.get("chat_dataset_id"):
+        return "sft"
+    return "pretrain"
+
+
+def _alignment_fields(manifest: dict[str, Any]) -> dict[str, Any]:
+    """What a v0.0.7 run adds: its objective, dataset, parent, and DPO signals."""
+
+    metrics = manifest.get("metrics") or {}
+    parent = manifest.get("init_checkpoint") or {}
+    preference = manifest.get("preference_settings") or {}
+    reference = preference.get("reference") or {}
+    return {
+        "objective": _objective(manifest),
+        "chat_dataset_id": manifest.get("chat_dataset_id") or manifest.get("dataset_id"),
+        "parent_checkpoint_sha256": parent.get("checkpoint_sha256")
+        or (preference.get("policy_init") or {}).get("checkpoint_sha256"),
+        "reference_checkpoint_sha256": reference.get("checkpoint_sha256"),
+        "distill_teachers": len((manifest.get("distillation") or {}).get("teachers") or []),
+        "distill_kl": metrics.get("distill_kl"),
+        "reward_margin": metrics.get("reward_margin"),
+        "preference_accuracy": metrics.get("preference_accuracy"),
+        "policy_logratio": metrics.get("policy_logratio"),
+        "alerts": list(manifest.get("alerts") or []),
+        "preference_evaluation": (
+            manifest.get("evaluation") if manifest.get("command") == "alignment_dpo" else None
+        ),
     }
 
 
