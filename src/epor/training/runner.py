@@ -18,6 +18,10 @@ the rules below hold on every surface:
   or a control-plane cancellation) reaches every rank through one shared event;
   the trainer checkpoints its last completed step and raises
   :class:`~epor.training.loop.TrainingCancelled`.
+* **Memory is budgeted.**  Every rank checks the run's certain allocations
+  against one host budget before allocating, and caps its own address space
+  at its share (:mod:`~epor.training.memory`), so an oversized run is refused
+  or stops cleanly instead of reaching the host's OOM killer.
 * **Fault injection is not here.**  :class:`~epor.training.faults.FaultPlan`
   is a test instrument passed directly to :func:`pretrain_packed`; no
   operator surface accepts one.
@@ -181,6 +185,7 @@ def _rank_main(
             context=context,
             project_root=arguments["project_root"],
             should_cancel=stop.is_set,
+            memory_budget_bytes=arguments["memory_budget_bytes"],
         )
     except Exception as exc:
         return {"ok": False, "type": type(exc).__name__, "message": str(exc)}
@@ -202,6 +207,7 @@ def run_kernel(
     on_step: Callable[[int, int, float], None] | None = None,
     launch_timeout_seconds: float = DEFAULT_LAUNCH_TIMEOUT_SECONDS,
     stop_event: Any = None,
+    memory_budget_bytes: int | None = None,
 ) -> dict[str, Any]:
     """Train in-process (``none``) or across a local loopback group; return a JSON summary.
 
@@ -209,6 +215,8 @@ def run_kernel(
     exception's type name, so callers map failures identically for every
     topology.  For a distributed run ``stop_event`` (a spawn-context event)
     is the stop channel; ``should_cancel`` and ``on_step`` apply in-process.
+    ``memory_budget_bytes`` is the host budget for all ranks together (see
+    :mod:`epor.training.memory`); each rank caps itself at its share.
     """
 
     if strategy == "none":
@@ -224,6 +232,7 @@ def run_kernel(
             project_root=project_root,
             should_cancel=should_cancel,
             on_step=on_step,
+            memory_budget_bytes=memory_budget_bytes,
         )
         return _summary(result, model, {"strategy": "none", "world_size": 1})
     if not 1 <= world_size <= MAX_LOCAL_WORLD_SIZE:
@@ -239,6 +248,7 @@ def run_kernel(
         "max_steps": max_steps,
         "resume_from": None if resume_from is None else str(resume_from),
         "project_root": None if project_root is None else str(project_root),
+        "memory_budget_bytes": memory_budget_bytes,
     }
     threads = max(1, (os.cpu_count() or world_size) // world_size)
     ranks = launch_local(
@@ -250,9 +260,15 @@ def run_kernel(
         timeout_seconds=launch_timeout_seconds,
         threads_per_rank=threads,
     )
-    for outcome in ranks:
-        if not outcome["ok"]:
-            raise KernelRunError(str(outcome["type"]), str(outcome["message"]))
+    failures = [outcome for outcome in ranks if not outcome["ok"]]
+    if failures:
+        # A rank that hit its memory cap leaves its peers to fail in a
+        # collective; report the cause, not the symptom.
+        failure = next(
+            (item for item in failures if item["type"] == "MemoryBudgetExceededError"),
+            failures[0],
+        )
+        raise KernelRunError(str(failure["type"]), str(failure["message"]))
     result = PackedTrainingResult.model_validate(ranks[0]["result"])
     return _summary(
         result,

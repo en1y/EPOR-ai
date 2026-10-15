@@ -52,19 +52,56 @@ def default_memory_budget() -> int:
     return int(min(0.75 * pages, 24 * 1024**3))
 
 
+def certain_components(
+    config: ModelConfig,
+    length: int,
+    mode: Mode,
+    quantize: Quantization = "none",
+    *,
+    rows: int = 1,
+    precision: Literal["fp32", "bf16"] = "fp32",
+    optimizer: bool = False,
+    replicas: int = 1,
+) -> dict[str, int]:
+    """Allocations a run at ``length`` cannot avoid, by kind; a lower bound, not a forecast.
+
+    The training keywords describe a kernel step on one host: ``rows`` is the
+    number of sequences in flight at once across every local rank,
+    ``replicas`` the number of full weight copies (one per ``ddp`` rank), and
+    ``optimizer`` adds AdamW's two moments.
+    """
+
+    parameters = structural_parameter_count(config) * 4
+    mask = length * length if config.local_layers_per_global else 0
+    if mode == "train":
+        logits = rows * length * config.vocab_size * 4
+        mtp_positions = sum(max(0, length - depth) for depth in range(1, config.mtp_depth + 1))
+        return {
+            "weights and gradients": 2 * parameters * replicas,
+            "optimizer state": 2 * parameters * replicas if optimizer else 0,
+            # The logits and their gradient; under BF16 autocast the head's
+            # BF16 logits sit beside the FP32 copy the loss reads.
+            "logits": 2 * logits + (logits // 2 if precision == "bf16" else 0),
+            # Each MTP depth keeps its own full-vocabulary log-probabilities.
+            "MTP logits": rows * mtp_positions * config.vocab_size * 4,
+            # Training always passes segment IDs, so every row has a boolean
+            # segment mask, plus the local-window one.
+            "attention masks": rows * (length * length + mask),
+        }
+    return {
+        "weights": parameters,
+        "KV cache": kv_cache_bytes(config, length, dtype_bytes=4, quantize=quantize),
+        "logits": length * config.vocab_size * 4,
+        "attention masks": mask,
+    }
+
+
 def certain_bytes(
     config: ModelConfig, length: int, mode: Mode, quantize: Quantization = "none"
 ) -> int:
     """Allocations a run at ``length`` cannot avoid; a lower bound, not a forecast."""
 
-    parameters = structural_parameter_count(config) * 4
-    logits = length * config.vocab_size * 4
-    mask = length * length if config.local_layers_per_global else 0
-    if mode == "train":
-        # Weights, gradients, and the logits and their gradient.
-        return 2 * parameters + 2 * logits + mask
-    cache = kv_cache_bytes(config, length, dtype_bytes=4, quantize=quantize)
-    return parameters + cache + logits + mask
+    return sum(certain_components(config, length, mode, quantize).values())
 
 
 def _rss_bytes() -> int:
@@ -390,6 +427,7 @@ __all__ = [
     "Mode",
     "Status",
     "certain_bytes",
+    "certain_components",
     "default_memory_budget",
     "feasibility_report",
     "feasible_maximum",

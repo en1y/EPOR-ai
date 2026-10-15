@@ -12,7 +12,10 @@ A :class:`FaultPlan` names one optimizer step and one point in it:
 
 ``mode='raise'`` raises :class:`InjectedFault` (the run's manifest records a
 failure); ``mode='exit'`` calls ``os._exit`` to model a killed process that
-runs no cleanup at all.  ``ranks`` limits the fault to some ranks.
+runs no cleanup at all; ``mode='allocate'`` maps ``allocate_bytes`` of address
+space without touching it, modelling an allocation the memory estimate missed
+(it costs no resident memory, and fails only under the memory guard's cap).
+``ranks`` limits the fault to some ranks.
 
 Faults are only ever injected when a caller passes a plan to the trainer, or
 explicitly builds one with :func:`fault_plan_from_env`; the trainer never reads
@@ -27,7 +30,7 @@ from dataclasses import dataclass
 from typing import Final, Literal
 
 FaultPoint = Literal["step", "checkpoint_write"]
-FaultMode = Literal["raise", "exit"]
+FaultMode = Literal["raise", "exit", "allocate"]
 FAULT_EXIT_CODE: Final = 86
 
 
@@ -41,13 +44,14 @@ class FaultPlan:
     point: FaultPoint = "step"
     mode: FaultMode = "raise"
     ranks: tuple[int, ...] | None = None
+    allocate_bytes: int = 1 << 30
 
     def __post_init__(self) -> None:
         if self.step < 1:
             raise ValueError("fault step must be a positive optimizer step")
         if self.point not in ("step", "checkpoint_write"):
             raise ValueError(f"unknown fault point: {self.point!r}")
-        if self.mode not in ("raise", "exit"):
+        if self.mode not in ("raise", "exit", "allocate"):
             raise ValueError(f"unknown fault mode: {self.mode!r}")
 
     def maybe_fire(self, point: FaultPoint, step: int, rank: int) -> None:
@@ -57,6 +61,11 @@ class FaultPlan:
             return
         if self.mode == "exit":
             os._exit(FAULT_EXIT_CODE)
+        if self.mode == "allocate":
+            import torch
+
+            torch.empty(self.allocate_bytes, dtype=torch.uint8)
+            return
         raise InjectedFault(f"injected fault at step {step} ({point}) on rank {rank}")
 
 

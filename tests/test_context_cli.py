@@ -92,6 +92,8 @@ def lab(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Lab]:
                 "384",
                 "--tokens-per-batch",
                 "768",
+                "--memory-budget-gib",
+                "2",
             ]
         )
         yield Lab(root, shards)
@@ -125,6 +127,8 @@ def test_extension_keeps_configured_trained_and_validated_distinct(env: Lab) -> 
     assert status["rope_scaling"]["original_max_context"] == 64
     base = _json(["context", "status", "runs/base"])
     assert (base["configured"], base["trained"], base["validated"]) == (128, 64, 0)
+    manifest = json.loads((env.root / "runs" / "ext" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["memory_guard"]["budget_bytes"] == 2 * 1024**3
 
 
 def test_g6_profile_and_a_refused_certification(env: Lab) -> None:

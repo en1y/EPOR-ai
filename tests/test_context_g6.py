@@ -277,8 +277,10 @@ def test_probe_outcomes_are_bounded_and_never_hang() -> None:
     ok = measure(config, 256, mode="inference", decode_tokens=4, timeout_seconds=120)
     assert ok["status"] == "ok" and ok["ttft_seconds"] > 0 and ok["peak_rss_bytes"] > 0
     assert ok["cache_bytes"] == ok["kv_cache_bytes"]
+    # Its certain bytes (81 MiB, mostly the 64 MiB segment mask) fit the budget,
+    # so the step runs and fails inside the capped child.
     oom = measure(
-        config, 32768, mode="train", memory_budget_bytes=200 * 1024**2, timeout_seconds=120
+        config, 8192, mode="train", memory_budget_bytes=200 * 1024**2, timeout_seconds=120
     )
     assert oom["status"] == "out-of-memory", oom
     assert measure(config, 256, mode="train", timeout_seconds=0.2)["status"] == "timeout"

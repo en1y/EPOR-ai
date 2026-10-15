@@ -142,6 +142,12 @@ class TinyEvalSpec(StrictSchema):
     max_batches: int | None = Field(default=None, ge=1, le=10_000)
 
 
+_BUDGET = (
+    "Host memory budget in GiB; a run whose certain allocations exceed it is refused and the "
+    "training process is capped at it (default: 3/4 of available memory at start)."
+)
+
+
 class KernelTrainSpec(StrictSchema):
     """A bounded kernel pretraining job; distributed runs stay on the CLI.
 
@@ -190,6 +196,7 @@ class KernelTrainSpec(StrictSchema):
     keep_checkpoints: int = Field(default=3, ge=1, le=100)
     validation_split: Literal["validation", "test"] | None = "validation"
     eval_max_steps: int | None = Field(default=None, ge=1, le=100_000)
+    memory_budget_gib: float | None = Field(default=None, ge=0.1, le=1024, description=_BUDGET)
 
     @model_validator(mode="after")
     def schedule_fits(self) -> KernelTrainSpec:
@@ -535,6 +542,7 @@ class ContextExtendSpec(StrictSchema):
     index_dim: int = Field(default=16, ge=1, le=512)
     kl_weight: float = Field(default=1.0, ge=0, le=100)
     output_name: str | None = Field(default=None, pattern=_REPORT_DIRECTORY)
+    memory_budget_gib: float | None = Field(default=None, ge=0.1, le=1024, description=_BUDGET)
 
     @model_validator(mode="after")
     def mode_inputs(self) -> ContextExtendSpec:

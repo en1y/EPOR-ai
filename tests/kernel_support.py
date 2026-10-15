@@ -97,6 +97,46 @@ def train_worker(
     return losses
 
 
+def guarded_worker(rank: int, world_size: int, run: dict[str, Any]) -> dict[str, Any]:
+    """Train one run (as :func:`train_worker` describes, plus ``"budget"``) and report how it ended.
+
+    The soft ``RLIMIT_AS`` is read before training, at every cancellation poll
+    during it, and after it, so a test sees the cap each rank set and that it
+    was released.
+    """
+
+    import resource
+
+    def soft_limit() -> int:
+        return resource.getrlimit(resource.RLIMIT_AS)[0]
+
+    before = soft_limit()
+    during: set[int] = set()
+
+    def observe() -> bool:
+        during.add(soft_limit())
+        return False
+
+    error: str | None = None
+    try:
+        pretrain_packed(
+            run["config"],
+            run["data_root"],
+            run["output"],
+            run["settings"],
+            max_steps=run["max_steps"],
+            context=init_distributed(run["strategy"]),
+            project_root=PROJECT_ROOT,
+            should_cancel=observe,
+            fault_plan=run.get("fault"),
+            memory_budget_bytes=run["budget"],
+        )
+    except Exception as exc:
+        error = type(exc).__name__
+    del rank, world_size
+    return {"error": error, "before": before, "during": sorted(during), "after": soft_limit()}
+
+
 def failing_worker(rank: int, world_size: int) -> None:
     raise ValueError(f"rank {rank} of {world_size} failed deliberately")
 

@@ -152,6 +152,19 @@ extension run continues bit-for-bit (`test_context_training.py`).
 least `N` token pairs, so an extension can train on long documents from the
 data engine. It is part of the trajectory hash only when set.
 
+Extension and retrofit runs go through the kernel's
+[memory guard](TRAINING.md#memory-guard), like `epor train kernel`, and their
+jobs take `memory_budget_gib`. A length whose certain allocations exceed
+`--memory-budget-gib` (default: three quarters of available memory) is refused
+with exit `2` before anything is allocated. At a 65,536-entry vocabulary the
+message names the logits. Each training process caps its own address space
+at its share of the budget, so a step that outgrows the estimate stops with
+exit `4` and `termination_reason: out-of-memory` instead of reaching the host's
+OOM killer. `epor train kernel-resume` continues it from its last checkpoint
+with a larger budget, a smaller `--micro-batch-size`, or
+`--activation-checkpointing`. A shorter length is a new extension run, because
+`seq_len` is part of the trajectory.
+
 **`PROGRESSIVE_RECIPE`** is 8K → 32K → 128K → 256K. Each stage extends the
 previous certified stage, and 256K is for α/β only after 128K passes G6.
 Locally only the first lengths that fit are run (see the end-to-end run).
@@ -223,8 +236,12 @@ Otherwise it exits 3 and lists every failing reason.
    (`RLIMIT_AS`) at its start-up size plus the memory budget (default: three
    quarters of RAM, at most 24 GiB).
 2. The parent waits with a timeout and kills the whole group when it expires.
-3. A length whose certain allocations (weights, optimizer state, KV cache)
-   already exceed the budget is refused before it starts.
+3. A length whose certain allocations already exceed the budget is refused
+   before it starts. For inference that means weights, KV cache, and logits.
+   For training it means weights and gradients, the logits and their
+   gradient, MTP logits, and the attention masks
+   (`epor.context.probe.certain_components`, the same estimator the kernel's
+   memory guard uses).
 
 Each result is one of `ok`, `out-of-memory`, `timeout`, `refused-estimate`,
 `exceeds-configured-context`, or `error`. Out of memory or a hang cannot take
@@ -323,7 +340,8 @@ was refused before it ran, because its logits alone exceed the budget.
 2. `epor context extend` to 8,192 failed in its first step. Under a soft
    9 GiB address-space cap this was a clean 2 GiB logits allocation error, at
    6.6 GB peak RSS. An earlier attempt without a cap was stopped by the host's
-   OOM killer at 9.2 GB.
+   OOM killer at 9.2 GB. That attempt is why the kernel now applies such a cap
+   itself; this run was not repeated with the built-in guard.
 3. Extension to 4,096 with YaRN (factor 8 from 512) trained 30 steps on the
    38 documents with at least 2,048 token pairs (`--min-document-pairs`):
    - about 904 tokens/s;
@@ -393,9 +411,10 @@ inputs leave hardware and prices empty.
   kernels. Local windows are masks over full score matrices, so they bound the
   KV cache but not training memory.
 - MLA and sparse attention are experimental and have no shipped config.
-- `epor context extend` and `epor train kernel` have no memory guard of
-  their own, so a kernel step above the host's memory can reach the OOM
-  killer. Size an extension with `epor context feasibility` at the real
-  vocabulary, and run it under an address-space limit (`ulimit -S -v`).
-  Score G6 at long lengths with `--batch-size 1`.
+- The kernel's [memory guard](TRAINING.md#memory-guard) refuses a run whose
+  certain allocations exceed its budget and caps each training process's
+  address space. It does not cover memory that other processes take, nor G6
+  scoring. Size an extension with `epor context feasibility` at the real
+  vocabulary, keep `ulimit -S -v` as an extra net if the host is shared, and
+  score G6 at long lengths with `--batch-size 1`.
 - Long-document chunks restart RoPE positions (see above).

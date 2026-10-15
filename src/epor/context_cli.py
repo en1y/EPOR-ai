@@ -4,9 +4,10 @@ Every command resolves its declared action (:data:`epor.actions.CLI_ACTIONS`)
 before doing anything, and every operator-supplied path must resolve beneath
 ``EPOR_PROJECT_ROOT``.
 
-Exit codes: 0 success, 1 any other failure, 2 input or verification failure,
-3 refusal by the covenant or by the certification gate, 130 stopped by
-SIGINT/SIGTERM.
+Exit codes: 0 success, 1 any other failure, 2 input or verification failure
+(including a training run refused by its memory budget), 3 refusal by the
+covenant or by the certification gate, 4 training stopped at its memory budget
+(checkpoints kept), 130 stopped by SIGINT/SIGTERM.
 """
 
 from __future__ import annotations
@@ -110,6 +111,7 @@ def _train(
     strategy: str,
     world_size: int,
     checkpoint_every: int,
+    memory_budget_gib: float | None,
 ) -> dict[str, Any]:
     from epor.training import OptimizerSettings, PackedTrainingSettings
 
@@ -144,6 +146,7 @@ def _train(
         world_size=world_size,
         launch_timeout=6 * 3600.0,
         project_root=project_root,
+        memory_budget_gib=memory_budget_gib,
     )
 
 
@@ -151,6 +154,14 @@ _Output = Annotated[Path, typer.Option("--output", help="New run directory.")]
 _Steps = Annotated[int, typer.Option(min=1, max=100_000)]
 _Batch = Annotated[int, typer.Option(min=1, max=1_048_576, help="Global positions per step.")]
 _Rate = Annotated[float, typer.Option(min=1e-8, max=1.0)]
+_MemoryBudget = Annotated[
+    float | None,
+    typer.Option(
+        min=0.1,
+        max=1024,
+        help="Host memory budget for the run (default: 3/4 of available memory at start).",
+    ),
+]
 
 
 @context_app.command("extend")
@@ -171,6 +182,7 @@ def context_extend(
     strategy: Annotated[Literal["none", "ddp", "fsdp2"], typer.Option()] = "none",
     world_size: Annotated[int, typer.Option(min=1, max=8)] = 1,
     checkpoint_every: Annotated[int, typer.Option(min=1)] = 50,
+    memory_budget_gib: _MemoryBudget = None,
 ) -> None:
     """Continue a checkpoint at a longer context with a RoPE extension method."""
 
@@ -203,6 +215,7 @@ def context_extend(
         strategy=strategy,
         world_size=world_size,
         checkpoint_every=checkpoint_every,
+        memory_budget_gib=memory_budget_gib,
     )
     _cli()._echo_json(
         {
@@ -231,6 +244,7 @@ def context_retrofit(
     ] = None,
     learning_rate: _Rate = 3e-4,
     precision: Annotated[Literal["bf16", "fp32"], typer.Option()] = "bf16",
+    memory_budget_gib: _MemoryBudget = None,
 ) -> None:
     """Continue a certified-style checkpoint with an experimental sparse-attention indexer."""
 
@@ -272,6 +286,7 @@ def context_retrofit(
         strategy="none",
         world_size=1,
         checkpoint_every=max_steps,
+        memory_budget_gib=memory_budget_gib,
     )
     _cli()._echo_json(
         {

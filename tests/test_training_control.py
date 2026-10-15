@@ -150,6 +150,40 @@ def test_kernel_jobs_train_resume_and_evaluate_through_the_worker(tmp_path: Path
     assert report.kind == "evaluation-report"
 
 
+def test_kernel_jobs_carry_a_memory_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from epor.training import memory
+
+    settings, service, owner, shards = kernel_service(tmp_path)
+    assert settings.artifact_root is not None
+    worker = JobWorker(settings, service=service, worker_id="kernel-worker")
+
+    budgeted = run_job(
+        worker,
+        service.create_job(
+            JobType.KERNEL_TRAIN,
+            train_spec(shards.tokenized_id, max_steps=2, memory_budget_gib=1),
+            actor=owner,
+        ),
+    )
+    assert budgeted.status is JobStatus.SUCCEEDED, budgeted.error_message
+    assert budgeted.result is not None
+    manifest = settings.artifact_root / budgeted.result["output_path"] / "manifest.json"
+    guard = json.loads(manifest.read_text(encoding="utf-8"))["memory_guard"]
+    assert (guard["budget_bytes"], guard["budget_source"]) == (1 << 30, "operator")
+
+    # Without a budget the default applies, and a run that cannot fit it never starts.
+    monkeypatch.setattr(memory, "default_budget", lambda: 4096)
+    refused = run_job(
+        worker,
+        service.create_job(
+            JobType.KERNEL_TRAIN, train_spec(shards.tokenized_id, max_steps=2), actor=owner
+        ),
+    )
+    assert refused.status is JobStatus.FAILED
+    assert refused.error_code == "memory_budget_refused"
+    assert "memory budget" in (refused.error_message or "")
+
+
 def test_vocabulary_mismatch_fails_without_touching_the_recipe(tmp_path: Path) -> None:
     settings, service, owner, shards = kernel_service(tmp_path)
     recipe = (tmp_path / TINY).read_bytes()
@@ -252,6 +286,8 @@ def test_kernel_job_specs_are_typed_and_bounded(tmp_path: Path) -> None:
         {**base, "warmup_steps": 9},
         {**base, "model_config": "configs/models/epor-alpha.yaml"},
         {**base, "fault_plan": {"step": 1}},
+        {**base, "memory_budget_gib": 0.05},
+        {**base, "memory_budget_gib": 2048},
         {**base, "command": "rm -rf /"},
     ):
         with pytest.raises(InvalidJobSpecError):

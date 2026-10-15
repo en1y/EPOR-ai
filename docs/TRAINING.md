@@ -32,7 +32,9 @@ uv run --frozen --no-sync epor train kernel configs/models/epor-tiny.yaml \
 uv run --frozen --no-sync epor train kernel ... --strategy fsdp2 --world-size 2
 
 # Continue a run exactly (any strategy or world size), then evaluate it.
-uv run --frozen --no-sync epor train kernel-resume runs/kernel-tiny --max-steps 400
+# --memory-budget-gib overrides the default host-memory budget on any run.
+uv run --frozen --no-sync epor train kernel-resume runs/kernel-tiny --max-steps 400 \
+  --memory-budget-gib 12
 uv run --frozen --no-sync epor eval kernel runs/kernel-tiny --split test
 ```
 
@@ -41,8 +43,10 @@ Every command resolves its covenant declaration (`kernel_train` or
 checkpoint paths beneath `EPOR_PROJECT_ROOT`, reads shards from the private data
 root, and prints JSON. Exit codes: `0` success, `2` invalid input or a failed
 verification (missing or tampered build or checkpoint, a resume that changes
-the trajectory, an out-of-bounds setting), `3` covenant refusal, `130` a
-checkpointed stop, `1` any other failure.
+the trajectory, an out-of-bounds setting, a run refused by its
+[memory budget](#memory-guard)), `3` covenant refusal, `4` a run stopped at its
+memory cap (its checkpoints are kept), `130` a checkpointed stop, `1` any other
+failure.
 
 The first SIGINT or SIGTERM asks every rank to finish its current optimizer
 step, checkpoint it, and stop (exit `130`); a second signal aborts immediately.
@@ -233,20 +237,120 @@ the tolerance described above. Resuming into the same output directory requires
 the same lineage; a new output directory starts a child lineage record that
 names its parent run and checkpoint.
 
+## Memory guard
+
+A kernel step larger than the host's memory used to reach the Linux OOM killer,
+which ended the run (and once the session running it) without a manifest.
+`pretrain_packed` now guards every run on every surface (`epor train kernel`,
+`epor train kernel-resume`, `epor context extend|retrofit`, and their jobs) in
+two layers. Fine-tuning, distillation, and scale and context sweeps train
+through the same function and get the default budget.
+
+**Budget.** `--memory-budget-gib` (job field `memory_budget_gib`, 0.1 to 1,024)
+is the host-memory budget for all local ranks together. The default is
+`0.75 x MemAvailable` (`psutil.virtual_memory().available`), measured once
+when training starts by rank 0 and shared with the other ranks. An operator may
+raise it up to the host's physical memory. The run manifest records it under
+`memory_guard`:
+
+```json
+"memory_guard": {
+  "budget_bytes": 12884901888,
+  "budget_source": "operator",
+  "estimate": {"certain_bytes": ..., "rows_in_flight": 4,
+               "components": {"weights and gradients": ..., "optimizer state": ...,
+                              "logits": ..., "MTP logits": ..., "attention masks": ...}},
+  "runtime_cap": {"mechanism": "RLIMIT_AS (soft)", "share_bytes": ...,
+                  "address_space_at_start_bytes": ..., "soft_limit_bytes": ...,
+                  "previous_soft_limit_bytes": null}
+}
+```
+
+**Pre-flight refusal.** Before it opens data or allocates anything, the trainer
+adds up the run's *certain* allocations on this host with the same estimator
+the context laboratory's probes use (`epor.context.probe.certain_components`):
+
+- FP32 weights and gradients, and AdamW's two moments, once per `ddp` replica;
+- logits and their gradient for every row in flight (micro-batch rows times
+  world size), plus the BF16 copy under autocast;
+- one full-vocabulary log-probability row per MTP depth;
+- the boolean segment mask (training always passes segment IDs) and the
+  local-window mask.
+
+When that lower bound exceeds the budget, the run is refused with exit `2`
+(job error code `memory_budget_refused`) and nothing is created on disk. The
+message gives the estimate, the budget, and the dominant term, for example
+`logits dominate at 5.00 GiB (1 row(s) of 8,192 positions in flight, a
+65,536-entry vocabulary, bf16)`. The bound leaves out activations, temporaries,
+allocator overhead, distillation teachers, and the sparse indexer, and
+activation checkpointing does not lower it. Passing the pre-flight does not
+mean the run fits; the runtime cap covers the rest.
+
+**Runtime cap.** When training starts, each training process lowers its own
+*soft* `RLIMIT_AS` to its current address-space size (`VmSize`) plus its share
+of the budget. That process is the CLI process for `--strategy none`, the
+worker for a job, or each local rank under `launch_local`, whose share is the
+budget divided by the world size. The previous soft limit comes back when
+training ends, whether it succeeded, failed, or was cancelled. An allocation
+past the cap fails inside the process (`MemoryError`, or the torch CPU
+allocator's `can't allocate memory`) instead of exhausting the host. The
+trainer then:
+
+- writes the manifest with `status: failed` and
+  `termination_reason: out-of-memory`;
+- raises `MemoryBudgetExceededError` (CLI exit `4`, job error code
+  `memory_budget_exceeded`);
+- leaves every checkpoint it already wrote untouched.
+
+In a distributed run the launcher reports a rank's memory failure ahead of its
+peers' collective timeouts. Resume from the last good checkpoint with a larger
+budget, a smaller `--micro-batch-size`, or `--activation-checkpointing`. These
+are runtime settings, so exact resume still holds
+(`test_an_allocation_past_the_cap_stops_cleanly_and_resumes_exactly`).
+Cancellation and stopping are not gated by any of this.
+
+What the cap does and does not cover:
+
+- `RLIMIT_AS` limits virtual address space, not resident memory. Linux ignores
+  `RLIMIT_RSS`, and a cgroup `memory.max` needs a delegated cgroup and kills
+  instead of failing an allocation. Resident growth can never exceed
+  address-space growth, so the cap is a hard upper bound on what a run can
+  take, but a conservative one.
+- Virtual reservations made after the cap count against it: glibc's per-thread
+  malloc arenas (each reserves up to 64 MiB, untouched until used), the stack
+  of any thread started later (8 MiB by default), and shared libraries loaded
+  later. A run with many threads therefore fails somewhat before its resident
+  memory reaches the budget; raise the budget if that bites. The trainer
+  starts its intra-op thread pool before setting the cap, because OpenMP
+  aborts the whole process, without a manifest, when it cannot start a thread.
+- The cap covers only the training processes. Memory that other processes take
+  after the budget is measured is not covered, so the kernel's OOM killer
+  remains the last line. Size the budget for what else runs on the host.
+- A tighter soft limit already in place, for example from `ulimit -S -v`, is
+  kept. Running under one stays a sensible extra safety net.
+- Platforms without `RLIMIT_AS` or `/proc/self/status` get the pre-flight only,
+  and the manifest records `runtime_cap: null`.
+
 ## Fault injection
 
 `FaultPlan(step, point, mode, ranks)` fails a run at a chosen optimizer step,
 either after the update and before that step's checkpoint (`point="step"`) or
 mid-checkpoint after every rank's state is on disk and before promotion
-(`point="checkpoint_write"`); `mode="raise"` raises `InjectedFault`, and
-`mode="exit"` kills the process with no cleanup. It is a test instrument only:
-it is passed explicitly to `pretrain_packed`, `fault_plan_from_env` reads the
-environment only when called, and **no operator surface accepts one** — not the
-CLI, not the job API. The covenant declaration for `kernel_train` states this.
-Tests use it to show that a crash between checkpoints and a killed distributed
-checkpoint write both recover to the uninterrupted result
+(`point="checkpoint_write"`); `mode="raise"` raises `InjectedFault`,
+`mode="exit"` kills the process with no cleanup, and `mode="allocate"` maps
+`allocate_bytes` of address space without touching it. That models an
+allocation the memory estimate missed: it fails only under the
+[memory guard's](#memory-guard) cap and costs no resident memory either way.
+
+It is a test instrument only: it is passed explicitly to `pretrain_packed`,
+`fault_plan_from_env` reads the environment only when called, and **no
+operator surface accepts one** — not the CLI, not the job API. The covenant
+declaration for `kernel_train` states this. Tests use it to show that a crash
+between checkpoints, a killed distributed checkpoint write, and an allocation
+past the memory cap all recover to the uninterrupted result
 (`test_crash_recovery_reproduces_uninterrupted_run`,
-`test_killed_distributed_checkpoint_write_recovers_on_one_process`).
+`test_killed_distributed_checkpoint_write_recovers_on_one_process`,
+`test_an_allocation_past_the_cap_stops_cleanly_and_resumes_exactly`).
 
 ## Evaluation
 
@@ -262,10 +366,13 @@ validation split at the end unless `--validation-split none`.
 - **CLI:** `epor train kernel`, `epor train kernel-resume`, `epor eval kernel`
   (above). Local DDP and FSDP2 are CLI-only.
 - **Control jobs:** `kernel_train` and `kernel_evaluate` take bounded typed
-  specs. Jobs train in **one process**: the spec accepts only
-  `strategy: none`, because spawning a process group from inside the worker
-  thread would need its own cancellation and progress channels and is not
-  needed for proxy-scale runs. Jobs report progress every optimizer step,
+  specs, including an optional `memory_budget_gib` under the same
+  [memory guard](#memory-guard). Jobs train in **one process**: the spec
+  accepts only `strategy: none`, because spawning a process group from inside
+  the worker thread would need its own cancellation and progress channels and
+  is not needed for proxy-scale runs. The memory cap is the worker's own soft
+  limit for the job's duration; the worker runs one job at a time and restores
+  the previous limit afterwards. Jobs report progress every optimizer step,
   cancel cooperatively after checkpointing the last completed step, and may
   resume from another job's run only when the trainer confirms the trajectory
   is unchanged. Paths are contained beneath the artifact root.

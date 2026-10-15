@@ -52,6 +52,7 @@ def _run_extend(spec: dict[str, Any], context: Any) -> dict[str, Any]:
     from epor.alignment.model import checkpoint_identity
     from epor.models.config import SparseAttention, model_config_from_mapping
     from epor.training import OptimizerSettings, PackedTrainingSettings
+    from epor.training.control import memory_budget_bytes
     from epor.training.kernel import CheckpointRef, resolve_model_config, trained_context
     from epor.training.loop import TrainingCancelled
     from epor.training.run_checkpoint import latest_checkpoint, read_kernel_checkpoint
@@ -127,6 +128,7 @@ def _run_extend(spec: dict[str, Any], context: Any) -> dict[str, Any]:
             project_root=project_root,
             should_cancel=_cancel(context),
             on_step=on_step,
+            memory_budget_bytes=memory_budget_bytes(spec),
         )
     except TrainingCancelled:
         context.raise_if_cancelled()
