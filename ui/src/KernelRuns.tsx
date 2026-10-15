@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { EmptyState, StatusPill, formatDate, shortId } from './shared'
 import type { JobType, KernelRun, TokenizedBuild, TrainingSummary } from './types'
 
@@ -29,6 +30,24 @@ function objectiveLabel(run: KernelRun): string {
   if (run.objective === 'dpo') return 'DPO'
   if (run.objective === 'logit-distillation') return `logit distillation ×${run.distill_teachers ?? 0}`
   return 'SFT'
+}
+
+/**
+ * A run or report path with long hex IDs (sweep points, report nonces) shortened and line
+ * breaks allowed only after a separator; the tooltip is the full path.
+ */
+function Location({ path }: { path: string }) {
+  const parts = path.replace(/[0-9a-f]{16,}/g, (hex) => `${shortId(hex)}…`).split('/')
+  return (
+    <span className="run-location" title={path}>
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {part}
+          {index < parts.length - 1 && <>/<wbr /></>}
+        </Fragment>
+      ))}
+    </span>
+  )
 }
 
 /** The tokenized build of the most recent dataset build, else the first one listed. */
@@ -112,6 +131,11 @@ export function KernelRunsPanel({
           {summary?.integrity_errors.join('; ')}
         </div>
       )}
+      {(summary?.notices?.length ?? 0) > 0 && (
+        <p className="plan-warning" role="status">
+          {summary?.notices?.join('; ')}
+        </p>
+      )}
       {runs.length === 0 ? (
         <EmptyState>
           No kernel run is stored. Shard a dataset build, then queue kernel training on it.
@@ -132,7 +156,7 @@ export function KernelRunsPanel({
                 <tr key={`${run.location}-${run.run_id}`}>
                   <td>
                     <code className="hash" title={run.run_id}>{shortId(run.run_id.replace('kernel-', ''))}</code>{' '}
-                    <small>{run.source === 'job' ? 'job' : 'CLI'} · {run.location}</small>
+                    <small>{run.source === 'job' ? 'job' : 'CLI'} · <Location path={run.location} /></small>
                     {run.objective && run.objective !== 'pretrain' && (
                       <>
                         {' '}
@@ -200,7 +224,7 @@ export function KernelRunsPanel({
             <tbody>
               {evaluations.map((report) => (
                 <tr key={report.location}>
-                  <td><code className="hash" title={report.report_sha256}>{shortId(report.report_sha256)}</code> <small>{report.location}</small></td>
+                  <td><code className="hash" title={report.report_sha256}>{shortId(report.report_sha256)}</code> <small><Location path={report.location} /></small></td>
                   <td className="numeric-cell">{count(report.checkpoint_step)}</td>
                   <td>{report.split ?? '—'}{report.split === 'train' ? ' (in-sample)' : ''}</td>
                   <td className="numeric-cell">{loss(report.main_loss)}</td>

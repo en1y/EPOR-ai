@@ -319,7 +319,8 @@ The console's **Alignment** page shows:
 - the latest G10 comparison.
 
 The training page lists SFT, distillation, and DPO runs beside pretraining,
-with their objective.
+with their objective and location, including nested CLI outputs such as
+`runs/align/sft` (see [TRAINING.md](TRAINING.md#operator-surfaces)).
 
 Read-only endpoints are `GET /api/v1/alignment`,
 `/alignment/audits[?state=&run=]`, `/alignment/audits/{id}`, and

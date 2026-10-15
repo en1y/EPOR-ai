@@ -144,7 +144,9 @@ def test_control_api_contract_cors_and_error_envelopes(tmp_path: Path) -> None:
                 "runs",
                 "evaluations",
                 "integrity_errors",
+                "notices",
             }
+            assert training["notices"] == []
             assert not [run for run in training["runs"] if run["source"] == "job"]
 
             # Reading is public; every mutation requires a verified identity.

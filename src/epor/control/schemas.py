@@ -1021,6 +1021,8 @@ class TrainingSummaryRead(BaseModel):
     runs: list[KernelRunRead]
     evaluations: list[KernelEvaluationReportRead]
     integrity_errors: list[str]
+    # Discovery bounds that cut the listing short; empty when it is complete.
+    notices: list[str] = Field(default_factory=list)
 
 
 class PrimaryMetricRead(BaseModel):

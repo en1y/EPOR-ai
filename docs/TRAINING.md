@@ -275,10 +275,24 @@ validation split at the end unless `--validation-split none`.
   hash, and with finished manifests checked against their immutable copy. Full
   tensor hashes are re-verified whenever a checkpoint is loaded. A run or report
   that fails is listed as an integrity error, not shown as healthy.
+  A run is any kernel or DPO `manifest.json` up to eight directories below the
+  artifact root or `runs/`, so nested outputs are listed: scaling sweep and
+  mixture attempts (`<output>/runs/<point_id>/attempt-<n>`), alignment runs,
+  and any `--output runs/<a>/<b>`. Evaluation reports are the JSON files of any
+  `evaluations/` or `kernel-eval/` directory the same walk reaches. The walk
+  follows no symbolic link, keeps every path inside its root (a checkpoint or
+  immutable-copy path that escapes its run is an integrity error), never
+  treats a `checkpoints/` or `manifests/` folder as a run, and reads at most
+  5,000 directories and 1,000 manifests and 1,000 reports per root. When a
+  bound cuts the listing short, or more than 100 runs or 200 reports are
+  found, `notices` says so.
 - **Console:** the Training page shows each run's step, losses, MTP losses,
   tokens seen and throughput, precision, topology, features, checkpoint, and
   validation result, labelled as proxy-scale measurements, and prefills a
-  training job from the most recent tokenized build.
+  training job from the most recent tokenized build. Each run and report shows
+  its location relative to its root, with long hex IDs such as sweep point IDs
+  shortened (the full path is the tooltip), so sweep points and attempts stay
+  distinguishable; discovery notices appear above the table.
 
 Job results keep `tokens_seen`, `tokens_per_batch`, and `target_tokens`
 legible: they are exact keys on the redaction allowlist for language-model

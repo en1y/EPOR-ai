@@ -265,6 +265,7 @@ export interface TrainingSummary {
   runs: KernelRun[]
   evaluations: KernelEvaluationReport[]
   integrity_errors: string[]
+  notices?: string[]
 }
 
 export interface CertifiedProfile {
