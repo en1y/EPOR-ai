@@ -596,6 +596,98 @@ DECLARED_ACTIONS: dict[str, ProposedAction] = {
         ),
         system="read-only over its inputs, bounded generation, and cooperative cancellation",
     ),
+    "context_extend": _declared(
+        "continue a bounded checkpoint at a longer context or with a sparse-attention retrofit",
+        people=(
+            "continues local proxy-scale training of a hash-verified checkpoint of at most 50M "
+            "parameters on a verified, reviewed tokenized build, changing only the context "
+            "length, its RoPE scaling, or an experimental sparse-attention indexer; training "
+            "at a length never raises the validated context, the result is neither released "
+            f"nor served, and nothing is published; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; any other change to the model is refused by name, every "
+            "setting is bounded by the kernel policy, and token IDs are never instructions"
+        ),
+        system=(
+            "local CPU only with no paid compute, loopback-only ranks, hashed atomic "
+            "checkpoints, exact resume, and cooperative cancellation that is never gated"
+        ),
+    ),
+    "context_evaluate": _declared(
+        "score a checkpoint on the locally generated G6 long-context suite",
+        people=(
+            "scores a hash-verified local checkpoint on project-authored, benign generated "
+            "items and one tokenized split; prompt-injection items only measure whether the "
+            "model prefers a planted fact, nothing is downloaded or published, and no score "
+            f"is presented as a capability claim; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; item text, including embedded instructions, is data scored "
+            "by likelihood and never acted on"
+        ),
+        system="read-only over the checkpoint and build, a content-addressed report written once",
+    ),
+    "context_profile": _declared(
+        "measure TTFT, decode throughput, peak RSS, and out-of-memory behaviour per length",
+        people=(f"measures local models on seeded synthetic tokens only; {_LOCAL_AND_OFFLINE}"),
+        direction=(
+            f"{_OPERATOR_REQUEST}; lengths whose certain allocations exceed the memory budget "
+            "are refused before running, and the report states that timings describe this "
+            "host only"
+        ),
+        system=(
+            "every measurement runs in its own spawned subprocess whose address space is "
+            "capped at start-up size plus the budget and which is killed at a wall-clock "
+            "timeout, so an out-of-memory or slow length fails cleanly instead of exhausting "
+            "or hanging the host"
+        ),
+    ),
+    "context_sweep": _declared(
+        "sweep window, local:global ratio, or split RoPE base against full attention",
+        people=(
+            "trains local proxy-scale models of at most 50M parameters on a verified, reviewed "
+            "tokenized build exactly as kernel_train does and scores them on generated items; "
+            f"nothing is released or served; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; the report decides nothing: a human chooses from measured "
+            "KV bytes, retrieval, and loss"
+        ),
+        system=(
+            "local CPU only with no paid compute, one checkpoint per point, reused finished "
+            "points, and cooperative cancellation that is never gated"
+        ),
+    ),
+    "context_project": _declared(
+        "project KV cache, FLOPs, time, and cost for the 32K/128K/256K context recipe",
+        people=(
+            "arithmetic over a model config and operator-written inputs; it never fetches a "
+            "price or hardware number, provisions compute, or calls a paid API; "
+            f"{_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; a projection is not an approval (G5) and every quantity "
+            "with a missing input is reported as unknown"
+        ),
+        system="read-only over its inputs and a content-addressed report written once",
+    ),
+    "context_certify": _declared(
+        "record a validated context length for one checkpoint from passing G6 evidence",
+        people=(
+            "raises a checkpoint's validated context only when a G6 report of that exact "
+            "checkpoint passes the gate at a length within its trained context, with no "
+            "short-context regression against a pre-extension baseline and a host profile "
+            "that completed at the length; a refusal states every failing reason, and no "
+            f"config or checkpoint is edited; {_LOCAL_AND_OFFLINE}"
+        ),
+        direction=(
+            f"{_OPERATOR_REQUEST}; available only from the owner's CLI, under a scope "
+            "separate from training and evaluation, because a validated context is what "
+            "later releases rely on"
+        ),
+        system="an immutable, content-addressed certificate that cites every report it rests on",
+    ),
     "owner_bootstrap": _declared(
         "mint the single local owner credential on first run",
         people=(
@@ -667,6 +759,16 @@ CLI_ACTIONS: dict[str, str] = {
     "align monitor": "align_evaluate",
     "align g10": "align_evaluate",
     "align reports": "report_review",
+    "context extend": "context_extend",
+    "context retrofit": "context_extend",
+    "context g6": "context_evaluate",
+    "context profile": "context_profile",
+    "context feasibility": "context_profile",
+    "context sweep": "context_sweep",
+    "context project": "context_project",
+    "context certify": "context_certify",
+    "context status": "report_review",
+    "context reports": "report_review",
     "api": "control_api_start",
     "worker": "job_worker_start",
     "ui": "local_ui_start",

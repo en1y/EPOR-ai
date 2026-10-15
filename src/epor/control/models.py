@@ -78,6 +78,10 @@ class JobType(StrEnum):
     ALIGN_SFT = "align_sft"
     ALIGN_PREFERENCE = "align_preference"
     ALIGN_EVALUATE = "align_evaluate"
+    CONTEXT_EXTEND = "context_extend"
+    CONTEXT_EVALUATE = "context_evaluate"
+    CONTEXT_PROFILE = "context_profile"
+    CONTEXT_SWEEP = "context_sweep"
     TINY_TRAIN = "tiny_train"
     TINY_EVAL = "tiny_eval"
 
@@ -127,7 +131,8 @@ class Job(Base):
             "'tokenizer_evaluate', 'kernel_train', 'kernel_evaluate', 'eval_suite', "
             "'eval_contamination', 'scale_profile', 'scale_sweep', 'scale_mixture', "
             "'align_generate', 'align_judge', 'align_dataset', 'align_sft', "
-            "'align_preference', 'align_evaluate', 'tiny_train', 'tiny_eval')",
+            "'align_preference', 'align_evaluate', 'context_extend', 'context_evaluate', "
+            "'context_profile', 'context_sweep', 'tiny_train', 'tiny_eval')",
             name="job_type",
         ),
         CheckConstraint(

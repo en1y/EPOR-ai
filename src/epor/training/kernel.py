@@ -161,7 +161,33 @@ class LogitDistillation(BaseModel):
 
 
 # Optional v0.0.7 trajectory fields, omitted from the trajectory at ``None``.
-_OPTIONAL_TRAJECTORY = ("train_mixture", "chat_dataset_id", "init_checkpoint", "distillation")
+_OPTIONAL_TRAJECTORY = (
+    "train_mixture",
+    "chat_dataset_id",
+    "init_checkpoint",
+    "distillation",
+    "min_document_pairs",
+)
+
+# Config fields a run may change relative to its ``init_checkpoint`` (v0.0.8):
+# progressive context extension (a longer configured context and a RoPE
+# scaling method) and the sparse-attention retrofit (a new indexer, whose
+# parameters are newly initialized).  Declared counts follow the structure,
+# and the context bookkeeping fields are metadata.  Anything else is a
+# different model and is refused.
+EXTENSION_FIELDS = frozenset(
+    {
+        "configured_max_context",
+        "rope_scaling",
+        "sparse_attention",
+        "total_parameters",
+        "active_parameters",
+        "core_parameters",
+        "trained_max_context",
+        "validated_max_context",
+        "operational_default_context",
+    }
+)
 
 
 class PackedTrainingSettings(BaseModel):
@@ -193,9 +219,15 @@ class PackedTrainingSettings(BaseModel):
     chat_dataset_id: Sha256 | None = None
     init_checkpoint: CheckpointRef | None = None
     distillation: LogitDistillation | None = None
+    # Long-document selection (v0.0.8): train only on documents with at least
+    # this many next-token pairs, so an extension run's rows hold long
+    # documents rather than many short ones.
+    min_document_pairs: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def chat_excludes_mixture(self) -> PackedTrainingSettings:
+        if self.chat_dataset_id is not None and self.min_document_pairs is not None:
+            raise ValueError("long-document selection applies to token shards, not chat datasets")
         if self.chat_dataset_id is not None and self.train_mixture is not None:
             raise ValueError("a domain mixture selects token-shard documents, not chat datasets")
         if self.chat_dataset_id is not None and self.validation_split == "test":
@@ -264,6 +296,7 @@ class _StepRecord(BaseModel):
     target_tokens: int
     mtp_sums: tuple[float, ...]
     distill_sum: float = 0.0
+    index_sum: float = 0.0
 
 
 def mtp_target_counts(batch: PackedBatch, depth: int) -> list[int]:
@@ -307,8 +340,15 @@ def micro_objective(
         objective = output.logits.float().sum() * 0.0
         for loss in output.mtp_losses:
             objective = objective + loss * 0.0
+        if output.aux_loss is not None:
+            objective = objective + output.aux_loss * 0.0
         return objective
     objective = output.main_loss * (target_tokens * world_size / global_target_tokens)
+    if output.aux_loss is not None:
+        # The sparse-attention indexer loss is a per-token mean like main_loss.
+        objective = objective + output.aux_loss * (
+            target_tokens * world_size / global_target_tokens
+        )
     depth_count = len(global_mtp_counts)
     for depth, (loss, count) in enumerate(zip(output.mtp_losses, mtp_counts, strict=True)):
         if count:
@@ -399,6 +439,70 @@ def _check_compatible(
         raise CheckpointError(
             "resume settings change the training trajectory: " + ", ".join(differing)
         )
+
+
+def trained_context(trainer: dict[str, Any]) -> int:
+    """The longest sequence length a checkpoint's lineage has trained at.
+
+    Recorded in ``trainer.json`` since v0.0.8; for earlier checkpoints it is the
+    run's own ``seq_len``.  Training at a length is not validating it: only a
+    passing G6 report raises a validated context (``epor.context``).
+    """
+
+    recorded = trainer.get("trained_context")
+    if isinstance(recorded, int) and recorded > 0:
+        return recorded
+    return int(PackedTrainingSettings.model_validate(trainer["settings"]).seq_len)
+
+
+def extension_delta(parent: ModelConfig, child: ModelConfig) -> list[str]:
+    """Config fields that differ between an initial checkpoint and the run."""
+
+    before, after = parent.model_dump(mode="json"), child.model_dump(mode="json")
+    return sorted(key for key in after if before.get(key) != after[key])
+
+
+def load_initial_weights(
+    decoder: EporDecoder, directory: Path, parent: ModelConfig, context: DistributedContext
+) -> None:
+    """Load a parent checkpoint's weights into ``decoder`` before wrapping.
+
+    With an identical config this is the plain collective load.  For an
+    extension or retrofit config, the parent is read whole into its own model
+    and copied across; only sparse-indexer parameters may be missing (they stay
+    newly initialized), and nothing may be left over.
+    """
+
+    if parent.sha256 == decoder.config.sha256:
+        load_kernel_checkpoint(
+            directory, model=decoder, optimizer=None, context=context, restore_rng=False
+        )
+        return
+    source = EporDecoder(parent, seed=0, device="cpu", dtype=torch.float32, initialize=False)
+    load_kernel_checkpoint(
+        directory, model=source, optimizer=None, context=DistributedContext(), restore_rng=False
+    )
+    missing, unexpected = decoder.load_state_dict(source.state_dict(), strict=False)
+    if unexpected or any(".indexer." not in name for name in missing):
+        raise CheckpointError(
+            "the initial checkpoint's weights do not map onto this run's model "
+            f"(missing {sorted(missing)[:3]}, unexpected {sorted(unexpected)[:3]})"
+        )
+
+
+def select_long_documents(corpus: TrainingCorpus, min_pairs: int) -> ShardCorpus:
+    """The documents of a token-shard split with at least ``min_pairs`` pairs."""
+
+    if not isinstance(corpus, ShardCorpus):
+        raise ValueError("long-document selection applies to token shards")
+    chosen = [
+        document_id
+        for document_id, pairs in zip(corpus.document_ids, corpus.pair_counts, strict=True)
+        if pairs >= min_pairs
+    ]
+    if not chosen:
+        raise ValueError(f"no document in the split has at least {min_pairs} pairs")
+    return corpus.select(chosen)
 
 
 def open_training_corpus(
@@ -634,13 +738,31 @@ def pretrain_packed(
         assert isinstance(corpus, ShardCorpus)
         selection = apply_mixture(Path(data_root), corpus, settings.train_mixture)
         corpus = corpus.select(selection.document_ids)
+    long_documents: dict[str, int] | None = None
+    if settings.min_document_pairs is not None:
+        corpus = select_long_documents(corpus, settings.min_document_pairs)
+        long_documents = {
+            "min_document_pairs": settings.min_document_pairs,
+            "documents": corpus.document_count,
+            "pairs": sum(corpus.pair_counts),
+        }
+    if config.sparse_attention is not None and settings.activation_checkpointing:
+        raise ValueError("the sparse-attention retrofit does not support activation checkpointing")
     init_dir: Path | None = None
+    init_config: ModelConfig | None = None
+    parent_trained_context = 0
     if settings.init_checkpoint is not None:
         init_dir, init_trainer = verified_checkpoint(settings.init_checkpoint)
-        if model_config_from_mapping(init_trainer["model_config"]).sha256 != config.sha256:
-            raise CheckpointError("the initial checkpoint's model config differs from this run's")
+        init_config = model_config_from_mapping(init_trainer["model_config"])
+        foreign = sorted(set(extension_delta(init_config, config)) - EXTENSION_FIELDS)
+        if foreign:
+            raise CheckpointError(
+                "the initial checkpoint's model config differs from this run's in "
+                + ", ".join(foreign)
+            )
         if checkpoint_tokenizer_id(Path(data_root), init_trainer) != corpus.tokenizer_id:
             raise CheckpointError("the initial checkpoint was trained with a different tokenizer")
+        parent_trained_context = trained_context(init_trainer)
     teachers: list[EporDecoder] = []
     if settings.distillation is not None:
         teachers = load_teachers(
@@ -668,6 +790,8 @@ def pretrain_packed(
         stream.load_state_dict(trainer["data_state"])
         if max_steps <= int(trainer["step"]):
             raise ValueError("max_steps must exceed the checkpoint step when resuming")
+        parent_trained_context = max(parent_trained_context, trained_context(trainer))
+    run_trained_context = max(parent_trained_context, settings.seq_len)
 
     _collective(
         context,
@@ -726,6 +850,24 @@ def pretrain_packed(
             },
             activation_checkpointing=settings.activation_checkpointing,
             train_mixture=None if selection is None else selection.summary(),
+            long_documents=long_documents,
+            trained_context=run_trained_context,
+            context={
+                "configured": config.configured_max_context,
+                "trained": run_trained_context,
+                "rope_scaling": (
+                    None if config.rope_scaling is None else config.rope_scaling.model_dump()
+                ),
+                "sliding_window": config.sliding_window,
+                "local_layers_per_global": config.local_layers_per_global,
+                "attention_variant": config.attention_variant,
+                "sparse_attention": config.sparse_attention is not None,
+                "extension_of": (
+                    None
+                    if init_config is None or init_config.sha256 == config.sha256
+                    else init_config.sha256
+                ),
+            },
             chat_dataset_id=settings.chat_dataset_id,
             init_checkpoint=(
                 None
@@ -780,6 +922,7 @@ def pretrain_packed(
                 "settings": settings.model_dump(mode="json"),
                 "trajectory": settings.trajectory(),
                 "trajectory_sha256": settings.trajectory_sha256,
+                "trained_context": run_trained_context,
                 "strategy": context.strategy,
                 "created_at": utc_now(),
                 "metrics": {"loss": losses[-1] if losses else None},
@@ -810,9 +953,8 @@ def pretrain_packed(
             activation_checkpointing=settings.activation_checkpointing,
         )
         if checkpoint_dir is None and init_dir is not None:
-            load_kernel_checkpoint(
-                init_dir, model=decoder, optimizer=None, context=context, restore_rng=False
-            )
+            assert init_config is not None
+            load_initial_weights(decoder, init_dir, init_config, context)
         wrapped = wrap_model(decoder, context)
         optimizer = build_optimizer(wrapped, settings.optimizer)
         if checkpoint_dir is not None:
@@ -896,6 +1038,11 @@ def pretrain_packed(
                             )
                         ),
                         distill_sum=distill_sum,
+                        index_sum=(
+                            float(output.aux_loss.detach()) * micro.target_tokens
+                            if output.aux_loss is not None and micro.target_tokens
+                            else 0.0
+                        ),
                     )
                 )
             grad_norm = clip_gradients(wrapped.parameters(), settings.optimizer.gradient_clip)
@@ -917,6 +1064,14 @@ def pretrain_packed(
             loss_value = main_value
             if mtp_values:
                 loss_value = main_value + config.mtp_loss_weight * sum(mtp_values) / mtp_depth
+            index_value: float | None = None
+            if config.sparse_attention is not None:
+                index_total = 0.0
+                for record in ordered:
+                    index_total += record.index_sum
+                index_share = index_total / global_targets
+                index_value = index_share
+                loss_value += index_share
             distill_value: float | None = None
             if settings.distillation is not None:
                 distill_total = 0.0
@@ -938,6 +1093,7 @@ def pretrain_packed(
                     "main_loss": main_value,
                     "mtp_losses": mtp_values,
                     **({} if distill_value is None else {"distill_kl": distill_value}),
+                    **({} if index_value is None else {"index_loss": index_value}),
                     "learning_rate": learning_rate_at(step, settings.optimizer),
                     "grad_norm": grad_norm,
                     "tokens_seen": tokens_seen,

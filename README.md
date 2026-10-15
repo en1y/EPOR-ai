@@ -2,7 +2,7 @@
 
 <!-- project-version:start -->
 > [!IMPORTANT]
-> **Current project version: `v0.0.7`**
+> **Current project version: `v0.0.8`**
 >
 > This identifies the code in this checkout; it does not imply a formal release.
 > Follow implementation status in [`docs/ROADMAP.md`](docs/ROADMAP.md).
@@ -14,14 +14,16 @@ language models. Its public families are **EPOR-α** (`epor-alpha`), **EPOR-β**
 independent random initialization; external models may provide licensed
 teacher signals or verified synthetic data, never reused weights.
 
-The v0.0.x program is intentionally small. Through v0.0.7 it validates research
+The v0.0.x program is intentionally small. Through v0.0.8 it validates research
 provenance, the executable safety covenant and local authorization boundary,
 configuration, tiny-model correctness and exact resume, a provenance-first
 offline data engine, an original byte-level BPE tokenizer with
 content-addressed token shards, a CPU training kernel with exact resume
 across single-process, DDP, and FSDP2 runs, an evaluation and scaling
-laboratory, and a knowledge-transfer and alignment pipeline whose model
-feedback stays a candidate until humans audit it, before any target-size run
+laboratory, a knowledge-transfer and alignment pipeline whose model
+feedback stays a candidate until humans audit it, and a context laboratory
+that keeps configured, trained, and validated context apart, before any
+target-size run
 is considered. The 30B/12B/8B
 family descriptions are gated research destinations, not bundled checkpoints
 or fabricated performance claims.
@@ -86,7 +88,7 @@ once. A refusal is never approvable.
 
 What this is not: a harm detector. The resolver enforces ordering, citation,
 justification, and fail-closed escalation over assessments supplied to it.
-Through v0.0.7, those assessments are reviewed per-action declarations over a
+Through v0.0.8, those assessments are reviewed per-action declarations over a
 closed allowlist, which is only sound because that action space is small and
 fixed.
 The authorization model is local and single-machine: it verifies a bearer
@@ -258,6 +260,27 @@ Nothing is ever marked audited automatically, every monitor threshold is a
 hypothesis, and a G10 regression fails closed. No result is evidence of
 alignment or safety. See [`docs/ALIGNMENT.md`](docs/ALIGNMENT.md).
 
+The v0.0.8 context laboratory extends a kernel checkpoint to a longer
+context with RoPE scaling, scores it on the locally generated G6 suite at the
+beginning, middle, and end of each length, profiles TTFT, decode rate, peak
+RSS, KV-cache bytes, and out-of-memory behaviour in memory-capped
+subprocesses, sweeps local/global attention against a full-attention control,
+and projects the 32K/128K/256K recipe:
+
+```bash
+uv run --frozen --no-sync epor context g6 runs/kernel-tiny --length 128
+uv run --frozen --no-sync epor context extend runs/kernel-tiny --target-context 1024 --output runs/extend-1k
+uv run --frozen --no-sync epor context g6 runs/extend-1k --length 128 --length 1024
+uv run --frozen --no-sync epor context profile runs/extend-1k --length 1024 --quantize int8
+uv run --frozen --no-sync epor context feasibility configs/models/epor-reference.yaml --variant full --variant local
+uv run --frozen --no-sync epor context project configs/models/epor-beta.yaml --inputs <inputs.yaml>
+uv run --frozen --no-sync epor context status runs/extend-1k
+```
+
+Only `epor context certify`, from a passing G6 report of that exact checkpoint,
+raises validated context; no checkpoint holds a certificate. See
+[`docs/CONTEXT.md`](docs/CONTEXT.md).
+
 The tiny reference path can be checked independently:
 
 ```bash
@@ -279,8 +302,8 @@ allowlisted `/api/v1` control API. Neither the API nor the UI can execute a
 client-provided shell command, provision paid compute, or fetch an arbitrary
 URL.
 
-The console separates its work into thirteen pages: **Overview**, **Training**,
-**Evaluation**, **Alignment**, **Scaling**, **Data engine**, **Tokenizer**, **Jobs**,
+The console separates its work into fourteen pages: **Overview**, **Training**,
+**Evaluation**, **Alignment**, **Context**, **Scaling**, **Data engine**, **Tokenizer**, **Jobs**,
 **Safety covenant**, **Access**, **Model families**, **Research ledger**, and
 **Documentation**. The data page
 shows reviewed source registrations, immutable-layer counts, quarantines,
@@ -290,7 +313,11 @@ apart, tokenized builds, and fertility reports with their scope and any
 in-sample or round-trip warning. The training page lists verified
 training-kernel runs with their losses, MTP losses, throughput, precision,
 topology, features, checkpoint, and validation result, labelled as proxy-scale
-measurements, beside the training and evaluation jobs. The evaluation page
+measurements, beside the training and evaluation jobs. The context page shows
+configured, trained, and validated context as separate columns, G6 retrieval
+by position, host profiles with TTFT, decode rate, peak RSS, KV bytes, and
+out-of-memory status, feasible maxima, sweeps, projections, and certificates.
+The evaluation page
 shows verified suite reports with scoped metrics, calibration, contamination,
 memorization, G10 scores under their claim note, and comparisons; the scaling
 page shows the ladder, profiles, sweeps, mixtures, fits, and projections with
@@ -303,7 +330,7 @@ tracked first-party Markdown only. Ignored
 third-party research downloads are never rendered as console content; the
 research ledger links those sources at their canonical URL instead.
 
-Version 0.0.7 is operated from a source checkout. The wheel and source archive
+Version 0.0.8 is operated from a source checkout. The wheel and source archive
 are build-tested, but they are not standalone distribution artifacts yet:
 runtime migrations, fixtures, model recipes, and UI assets remain repository
 resources until the v0.1.0 packaging contract is finalized.
@@ -336,6 +363,8 @@ so the evaluation harness works without another profile.
   code sandbox, and scaling laboratory.
 - `src/epor/alignment/` — the v0.0.7 chat format, teacher-data provenance,
   datasets, DPO, covenant-cited critique, judging, audits, monitors, and G10.
+- `src/epor/context/` — the v0.0.8 context extension, G6 suite, host
+  profiles, sweeps, projection, and certificates.
 - `src/epor/control/` — loopback API, durable job index, and safe worker.
 - `ui/` — React/TypeScript local management console.
 

@@ -18,6 +18,7 @@ from rich.table import Table
 
 from epor import __version__
 from epor.align_cli import register_alignment_commands
+from epor.context_cli import context_app
 from epor.lab_cli import register_evaluation_commands, scale_app
 from epor.research.cli import research_app
 from epor.system import probe_system
@@ -1124,6 +1125,7 @@ def export_gguf() -> None:
 
 register_evaluation_commands(eval_app)
 register_alignment_commands(app, train_app)
+app.add_typer(context_app, name="context")
 
 
 if __name__ == "__main__":

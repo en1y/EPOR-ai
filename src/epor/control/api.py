@@ -198,6 +198,22 @@ _JOB_TYPE_COPY: dict[JobType, tuple[str, str]] = {
         "Alignment evaluation",
         "Overoptimization monitors, judge calibration, or the G10 before/after comparison.",
     ),
+    JobType.CONTEXT_EXTEND: (
+        "Context extension",
+        "Continue a checkpoint at a longer context, or retrofit experimental sparse attention.",
+    ),
+    JobType.CONTEXT_EVALUATE: (
+        "G6 context suite",
+        "Score generated passkey, retrieval, QA, code, and injection items by position.",
+    ),
+    JobType.CONTEXT_PROFILE: (
+        "Context host profile",
+        "Measure TTFT, decode speed, peak RSS, and OOM behaviour in bounded subprocesses.",
+    ),
+    JobType.CONTEXT_SWEEP: (
+        "Context sweep",
+        "Sweep window, local:global ratio, or split RoPE base against full attention.",
+    ),
     JobType.TINY_TRAIN: (
         "Tiny pretraining",
         "Run the deterministic CPU reference trainer with bounded debug settings.",
@@ -670,6 +686,19 @@ def _router(service: JobService, settings: ControlSettings) -> APIRouter:
             return redact_values(load_report(store, kind, report_id))
         except ValueError as exc:
             raise ReportIntegrityError(str(exc)) from exc
+
+    @router.get("/context", response_model=dict[str, Any], tags=["context"])
+    async def context_summary() -> dict[str, Any]:
+        try:
+            from epor.context.summary import context_summary as summarize
+        except ModuleNotFoundError as exc:
+            raise CapabilityUnavailableError(
+                "context-laboratory support requires the train-cpu, data, and eval profiles"
+            ) from exc
+        assert settings.data_root is not None and settings.artifact_root is not None
+        return redact_values(
+            summarize(settings.data_root, settings.artifact_root, settings.project_root)
+        )
 
     @router.get("/models", response_model=ModelFamilyList, tags=["models"])
     async def models() -> ModelFamilyList:

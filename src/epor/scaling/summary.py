@@ -43,6 +43,9 @@ def _headline(report: ScalingReport) -> dict[str, Any]:
         }
     if report.kind == "mixture-ablation":
         return {"mixtures": len(results.get("mixtures", []))}
+    if report.kind.startswith("context-"):
+        # Context-laboratory reports (v0.0.8) are summarized on the Context page.
+        return {"context_report": True}
     if report.kind == "scaling-fit":
         return {
             "fit_status": {

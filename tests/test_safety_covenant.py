@@ -498,6 +498,83 @@ def test_alignment_declarations_state_their_boundaries() -> None:
     assert "fail closed" in rationale("align_evaluate")
 
 
+CONTEXT_ACTIONS = (
+    "context_extend",
+    "context_evaluate",
+    "context_profile",
+    "context_sweep",
+    "context_project",
+    "context_certify",
+)
+
+
+def test_context_commands_map_to_reviewed_declarations() -> None:
+    from epor.actions import CLI_ACTIONS
+
+    assert {
+        "context extend": "context_extend",
+        "context retrofit": "context_extend",
+        "context g6": "context_evaluate",
+        "context profile": "context_profile",
+        "context feasibility": "context_profile",
+        "context sweep": "context_sweep",
+        "context project": "context_project",
+        "context certify": "context_certify",
+        "context status": "report_review",
+    }.items() <= CLI_ACTIONS.items()
+    # Raising a validated context and projecting target runs stay on the owner's CLI.
+    jobs = {job_type.value for job_type in JobType}
+    assert "context_certify" not in jobs and "context_project" not in jobs
+    for action_id in CONTEXT_ACTIONS:
+        assert action_id in DECLARED_ACTIONS, action_id
+
+
+def test_context_work_requires_its_own_delegated_scope(covenant: Covenant) -> None:
+    from epor.control.authority import Actor, Role
+
+    def actor(*scopes: str) -> Actor:
+        return Actor(id="-".join(scopes), role=Role.DELEGATED_OPERATOR, scopes=frozenset(scopes))
+
+    for holder, action_id in (
+        (actor("kernel_train"), "context_extend"),
+        (actor("eval_suite"), "context_evaluate"),
+        (actor("scale_profile"), "context_profile"),
+        (actor("scale_sweep"), "context_sweep"),
+        (actor("scale_project"), "context_project"),
+        (actor("context_evaluate", "context_profile", "context_extend"), "context_certify"),
+    ):
+        refused = resolve_action(action_id, covenant, actor=holder)
+        assert refused.outcome == "refuse", (holder.id, action_id)
+        assert refused.binding_priority == 2
+    for action_id in CONTEXT_ACTIONS:
+        assert resolve_action(action_id, covenant, actor=actor(action_id)).outcome == "allow"
+
+
+def test_context_declarations_state_their_boundaries() -> None:
+    def rationale(action_id: str) -> str:
+        return " ".join(item.rationale for item in DECLARED_ACTIONS[action_id].assessments)
+
+    assert "never raises the validated context" in rationale("context_extend")
+    assert "never gated" in rationale("context_extend")
+    assert "data scored by likelihood and never acted on" in rationale("context_evaluate")
+    profile = rationale("context_profile")
+    for phrase in (
+        "address space is capped",
+        "killed at a wall-clock timeout",
+        "refused before running",
+    ):
+        assert phrase in profile, phrase
+    certify = rationale("context_certify")
+    for phrase in (
+        "exact checkpoint",
+        "within its trained context",
+        "owner's CLI",
+        "no config or checkpoint is edited",
+    ):
+        assert phrase in certify, phrase
+    assert "not an approval (G5)" in rationale("context_project")
+
+
 def test_undeclared_work_escalates_instead_of_running(covenant: Covenant) -> None:
     resolution = resolve_action("model_serve", covenant)
     assert resolution.outcome == "escalate"
