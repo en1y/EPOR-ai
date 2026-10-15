@@ -707,7 +707,7 @@ code.hash {
 }
 
 @media (min-width: 601px) and (max-width: 780px) {
-  /* Thirteen pages in two rows of seven; one row would crush their labels. */
+  /* Fourteen pages in two rows of seven; one row would crush their labels. */
   .app-shell { padding-bottom: calc(116px + env(safe-area-inset-bottom)); }
   .sidebar { height: calc(116px + env(safe-area-inset-bottom)); }
   .sidebar nav {
@@ -723,7 +723,7 @@ code.hash {
     height: calc(168px + env(safe-area-inset-bottom));
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   }
-  /* Every page in one five-column grid, whatever its group: thirteen pages, three rows. */
+  /* Every page in one five-column grid, whatever its group: fourteen pages, three rows. */
   .sidebar nav {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
     grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 2px;

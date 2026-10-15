@@ -75,10 +75,13 @@ jobs accept only the two built-in suites or a file under `configs/evaluation/`.
 | `contamination` | `ngram-contamination-v1` | `flagged_rate` | See below. |
 | `memorization` | — | `extraction_gap` | See below. |
 | `canary-exposure` | — | `mean_exposure_bits` | See below. |
+| `context-retrieval` | generated | `accuracy` per length and depth | v0.0.8 G6: four-way choice by summed log-likelihood; see [`CONTEXT.md`](CONTEXT.md#the-g6-suite). |
+| `position-perplexity` | — | loss per position bucket | v0.0.8 G6: validation-split loss split by position. |
 
 Per-byte normalization is an `EPOR-adaptation` chosen so scores do not depend
 on the tokenizer. Context and continuation are encoded separately; kernel
-checkpoints are scored with their build's tokenizer behind `DOC_START`, and
+checkpoints are scored with their build's tokenizer behind the start token
+training feeds first (`BOS`), and
 generation is greedy, restricted to decodable IDs, and stops at a stop ID, a
 stop string, or the length limit.
 

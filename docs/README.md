@@ -23,6 +23,10 @@
   teacher-data provenance, SFT and distillation on the kernel, the DPO
   baseline, covenant-cited critique, audited AI judging, overoptimization
   monitors, and model-level G10.
+- [Context laboratory](CONTEXT.md) — v0.0.8 RoPE scaling and split base,
+  local/global attention, the KV cache and int8 quantization, MLA and the
+  sparse retrofit, progressive extension, the G6 suite, host profiles, sweeps,
+  and the 32K/128K/256K projection.
 - [Compute policy](COMPUTE_POLICY.md) — cheap-first experiments, approval gates,
   abort rules, and hardware profiles.
 - [Contributing](CONTRIBUTING.md) — environment, tests, claim discipline, and
@@ -37,8 +41,10 @@ Downloaded bytes, extracted text, and local indexes live under ignored
 `research/raw/`, `research/extracted/`, and `research/cache/` directories.
 
 No target-size model or target-scale tokenizer has been trained or released by
-v0.0.7; kernel runs, fine-tunes, DPO runs, evaluations, and sweeps so far are
+v0.0.8; kernel runs, fine-tunes, DPO runs, context extensions, evaluations,
+and sweeps so far are
 proxy-scale local measurements, no alignment or safety claim follows from
 them, and no target-size run has been proposed or approved. Parameter counts,
 context lengths, vocabulary targets, and architecture descriptions are plans
-until their named gates produce measured artifacts.
+until their named gates produce measured artifacts; no checkpoint holds a
+validated context.

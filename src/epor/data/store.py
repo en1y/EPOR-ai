@@ -85,6 +85,7 @@ class DataStore:
             "evaluation-reports",
             "scaling-reports",
             "alignment",
+            "context-certificates",
             "audit/ingest",
             "tmp",
         ):
@@ -305,6 +306,20 @@ class DataStore:
         target = self.scaling_report_directory(report_id) / f"{content_sha256}.json"
         self._write_immutable(target, payload)
         return target
+
+    def certificate_path(self, certificate_id: str) -> Path:
+        """A v0.0.8 validated-context certificate (``epor.context.status``)."""
+
+        _require_sha256(certificate_id, "context certificate IDs")
+        return self.root / "context-certificates" / f"{certificate_id}.json"
+
+    def write_certificate(self, certificate_id: str, payload: bytes) -> Path:
+        target = self.certificate_path(certificate_id)
+        self._write_immutable(target, payload)
+        return target
+
+    def certificate_ids(self) -> list[str]:
+        return sorted(path.stem for path in (self.root / "context-certificates").glob("*.json"))
 
     def alignment_path(self, relative: str) -> Path:
         """A path beneath ``alignment/``, the v0.0.7 alignment-record layer."""

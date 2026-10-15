@@ -34,7 +34,8 @@ Accepting a tensor of a particular length updates none of the validation fields.
 ## Reference model
 
 The canonical implementation is pure PyTorch. The v0.0.1 decoder provides
-RMSNorm, SwiGLU, grouped-query attention, RoPE, causal masking, tied token
+RMSNorm, SwiGLU, grouped-query attention, RoPE (with optional v0.0.8 scaling,
+local windows, and a KV cache), causal masking, tied token
 embeddings, deterministic initialization, and FP32 CPU execution. A generated
 corpus and debug tokenizer make smoke tests network-free. Transformers is an
 interoperability/export boundary, not the canonical training loop.
@@ -174,6 +175,20 @@ accepted and rejected decisions a verified human has audited, within a
 disagreement threshold. The audit queue is a hash-chained log under the
 safety root. Overoptimization monitors and the model-level G10 comparison
 store content-addressed reports. See [`ALIGNMENT.md`](ALIGNMENT.md).
+
+## Context laboratory
+
+The v0.0.8 mechanisms are optional config fields that are hash-neutral at
+their defaults: RoPE scaling (linear, NTK, YaRN), a separate RoPE base for
+local layers, interleaved local/global attention with a bounded window, an
+experimental MLA variant, and an experimental sparse-attention retrofit. The
+reference decoder gains a KV cache for prefill and incremental decode, with
+a bounded ring for local layers and optional int8 storage. `epor.context`
+extends checkpoints in the kernel, generates and scores the G6 suite,
+measures host profiles in memory-capped subprocesses, runs sweeps, and
+projects the 32K/128K/256K recipe. Configured, trained, and validated context
+stay three separate numbers; only a certificate from a passing G6 report
+raises validated context. See [`CONTEXT.md`](CONTEXT.md).
 
 ## Local control plane
 

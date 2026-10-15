@@ -202,6 +202,43 @@ def test_a_stopped_run_exits_130(
     assert "training stopped" in result.stderr
 
 
+def test_memory_budget_refusal_exits_two_and_a_capped_run_exits_four(
+    cli_root: Path, shards: TokenShardFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from epor.training import memory
+    from epor.training import runner as kernel_runner
+
+    monkeypatch.setattr(memory, "default_budget", lambda: 4096)
+    refused = runner.invoke(
+        app, _train_args(shards.tokenized_id, "runs/refused", "--max-steps", "2")
+    )
+    assert refused.exit_code == 2, refused.output
+    assert "exceed its memory budget" in " ".join(unstyle(refused.stdout).split())
+    assert not (cli_root / "runs" / "refused").exists()
+
+    def capped(*_args: Any, **_kwargs: Any) -> Any:
+        raise memory.MemoryBudgetExceededError("training reached its memory cap")
+
+    monkeypatch.setattr(kernel_runner, "pretrain_packed", capped)
+    stopped = runner.invoke(
+        app, _train_args(shards.tokenized_id, "runs/capped", "--max-steps", "2")
+    )
+    assert stopped.exit_code == 4
+    assert "memory budget" in " ".join(unstyle(stopped.stdout).split())
+
+
+def test_an_operator_memory_budget_is_recorded(cli_root: Path, shards: TokenShardFixture) -> None:
+    summary = _json(
+        _train_args(
+            shards.tokenized_id, "runs/budgeted", "--max-steps", "2", "--memory-budget-gib", "2"
+        )
+    )
+    manifest = json.loads(Path(summary["manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["memory_guard"]["budget_bytes"] == 2 * 1024**3
+    assert manifest["memory_guard"]["budget_source"] == "operator"
+    assert manifest["memory_guard"]["estimate"]["certain_bytes"] > 0
+
+
 def test_first_signal_requests_a_stop_and_the_second_aborts() -> None:
     from epor.cli import _StopRequests  # pyright: ignore[reportPrivateUsage]
 

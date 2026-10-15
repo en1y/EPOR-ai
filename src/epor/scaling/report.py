@@ -50,7 +50,16 @@ SCALING_REPORT_SCHEMA = "epor-scaling-report-v1"
 EvidenceLabel = Literal["disclosed", "reported-result", "EPOR-adaptation", "hypothesis", "unknown"]
 ScalingScope = Literal["harness-fixture", "host-measurement", "proxy-scale", "projection"]
 ReportKind = Literal[
-    "hardware-profile", "scaling-sweep", "mixture-ablation", "scaling-fit", "compute-projection"
+    "hardware-profile",
+    "scaling-sweep",
+    "mixture-ablation",
+    "scaling-fit",
+    "compute-projection",
+    # v0.0.8 context laboratory (epor.context).
+    "context-profile",
+    "context-feasibility",
+    "context-sweep",
+    "context-projection",
 ]
 
 CLAIM_BOUNDARIES: dict[str, str] = {

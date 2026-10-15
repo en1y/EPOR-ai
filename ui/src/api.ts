@@ -1,6 +1,7 @@
 import type {
   ActionRegistry,
   AlignmentSummary,
+  ContextSummary,
   AuditItem,
   Artifact,
   Capabilities,
@@ -86,6 +87,7 @@ export const api = {
     request<ScalingReport[]>(`/scaling/reports/${encodeURIComponent(id)}`),
   ladder: () => request<Ladder>('/scaling/ladder'),
   alignment: () => request<AlignmentSummary>('/alignment'),
+  context: () => request<ContextSummary>('/context'),
   audits: (state?: 'pending' | 'audited') =>
     request<AuditItem[]>(state ? `/alignment/audits?state=${state}` : '/alignment/audits'),
   auditVerdict: (id: string, verdict: 'accept' | 'reject', note: string) =>

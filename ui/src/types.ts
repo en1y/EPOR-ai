@@ -21,6 +21,10 @@ export type JobType =
   | 'align_sft'
   | 'align_preference'
   | 'align_evaluate'
+  | 'context_extend'
+  | 'context_evaluate'
+  | 'context_profile'
+  | 'context_sweep'
   | 'tiny_train'
   | 'tiny_eval'
 export type JobStatus =
@@ -774,5 +778,70 @@ export interface AlignmentSummary {
   audit_queue: { pending: number; audited: number }
   overoptimization: OveroptimizationView[]
   g10: G10View[]
+  integrity_errors: string[]
+}
+
+export type RetrievalHeatmap = Record<string, Record<string, Record<string, number | null>>>
+
+export interface ContextRun {
+  location: string
+  source: 'job' | 'cli'
+  run_id: string | null
+  status: string | null
+  model_id: string | null
+  started_at: string | null
+  configured: number | null
+  trained: number | null
+  validated: number
+  rope_scaling: { type: string; factor: number; original_max_context: number } | null
+  sliding_window: number | null
+  local_layers_per_global: number | null
+  attention_variant: string | null
+  sparse_attention: boolean | null
+  extension_of: string | null
+  checkpoint_sha256: string | null
+}
+
+export interface G6View {
+  report_id: string
+  model_id: string
+  checkpoint_sha256: string | null
+  checkpoint_step: number | null
+  scope: string
+  lengths: number[]
+  retrieval: RetrievalHeatmap
+  position_loss: Record<string, (number | null)[]>
+  injection_followed: number | null
+  claim_boundary: string
+}
+
+export interface ContextScalingReport {
+  report_id: string
+  content_sha256: string
+  scope: string
+  inputs: Record<string, unknown>
+  results: Record<string, unknown>
+  measured: Record<string, unknown> | null
+  warnings: string[]
+}
+
+export interface ContextCertificate {
+  certificate_id: string
+  checkpoint_sha256: string
+  length: number
+  g6_report_id: string
+  created_at: string
+}
+
+export interface ContextSummary {
+  schema_version: number
+  scope: string
+  runs: ContextRun[]
+  g6: G6View[]
+  certificates: ContextCertificate[]
+  profile: ContextScalingReport[]
+  feasibility: ContextScalingReport[]
+  sweep: ContextScalingReport[]
+  projection: ContextScalingReport[]
   integrity_errors: string[]
 }

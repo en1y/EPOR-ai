@@ -50,6 +50,9 @@ TaskType = Literal[
     "contamination",
     "memorization",
     "canary-exposure",
+    # v0.0.8 G6 context suite (epor.context.g6).
+    "context-retrieval",
+    "position-perplexity",
 ]
 JsonScalar = str | int | float | bool | None
 

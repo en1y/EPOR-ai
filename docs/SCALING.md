@@ -204,6 +204,11 @@ stored once at `<data_root>/scaling-reports/<report_id>/<content_sha256>.json`
 and both addresses are re-verified on load; edited files are reported as
 integrity errors and never listed.
 
+v0.0.8 adds four kinds for the context laboratory: `context-profile` and
+`context-feasibility` (scope `host-measurement`), `context-sweep`
+(`proxy-scale`), and `context-projection` (`projection`). They use the same
+storage and verification; see [`CONTEXT.md`](CONTEXT.md).
+
 ## Evidence and limits
 
 Tests: `test_scaling_ladder.py`, `test_scaling_fit.py`,

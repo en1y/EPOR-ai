@@ -185,6 +185,15 @@ class JobService:
                     value.get("sources", [])
                 ):
                     raise InvalidJobSpecError("each benchmark source may be named only once")
+            elif job_type.value.startswith("context_") and value.get("checkpoint_path"):
+                assert self.settings.artifact_root is not None
+                resolved = contained_path(
+                    self.settings.artifact_root, value["checkpoint_path"], must_exist=True
+                )
+                if not resolved.is_dir():
+                    raise InvalidJobSpecError(
+                        "context checkpoints must be run or checkpoint directories"
+                    )
             elif job_type.value.startswith("align_"):
                 from .schemas import ALIGNMENT_CHECKPOINT_FIELDS
 

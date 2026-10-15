@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AccessPage, SignInDialog } from './AccessPage'
 import { AlignmentPage } from './AlignmentPage'
+import { ContextPage } from './ContextPage'
 import { DocsPage } from './DocsPage'
 import { EvaluationPage } from './EvaluationPage'
 import { ScalingPage } from './ScalingPage'
@@ -50,6 +51,7 @@ type Page =
   | 'training'
   | 'evaluation'
   | 'alignment'
+  | 'context'
   | 'scaling'
   | 'data'
   | 'tokenizer'
@@ -76,6 +78,10 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
   alignment: {
     title: 'Alignment',
     summary: 'Teacher provenance, the human audit queue, judge calibration, overoptimization monitors, and G10 before and after.',
+  },
+  context: {
+    title: 'Context',
+    summary: 'Configured, trained, and validated context side by side, G6 retrieval by position, KV cache, TTFT, and projections.',
   },
   scaling: {
     title: 'Scaling',
@@ -118,7 +124,7 @@ const pageCopy: Record<Page, { title: string; summary: string }> = {
 const navGroups: { label: string; pages: Page[] }[] = [
   {
     label: 'Workspace',
-    pages: ['overview', 'training', 'evaluation', 'alignment', 'scaling', 'data', 'tokenizer', 'jobs'],
+    pages: ['overview', 'training', 'evaluation', 'alignment', 'context', 'scaling', 'data', 'tokenizer', 'jobs'],
   },
   { label: 'Governance', pages: ['safety', 'access'] },
   { label: 'Reference', pages: ['models', 'research', 'docs'] },
@@ -287,6 +293,9 @@ function Icon({ name }: { name: Page }) {
   }
   if (name === 'alignment') {
     return <path d="M12 3 4 7v5c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V7l-8-4ZM8 12h8M12 8v8" />
+  }
+  if (name === 'context') {
+    return <path d="M3 12h4M17 12h4M7 8v8M17 8v8M10 12h4" />
   }
   if (name === 'scaling') {
     return <path d="M4 20h16M6 16v4M10 12v8M14 8v12M18 4v16" />
@@ -1403,6 +1412,7 @@ export default function App() {
               onNew={(type, values) => startJob({ type, values })}
             />
           )}
+          {page === 'context' && <ContextPage onNew={(type, values) => startJob({ type, values })} />}
           {page === 'scaling' && (
             <ScalingPage
               onNew={(type, values) => startJob({ type, values })}

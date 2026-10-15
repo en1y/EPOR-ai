@@ -65,6 +65,13 @@ keep their trajectory hashes.
   describe the same events.  Teachers are only ever read; nothing from them is
   written into the student's checkpoint.
 
+Memory guard (v0.0.8)
+---------------------
+Every run is checked against a host-memory budget before anything is
+allocated and trains under a soft address-space cap at its share of that
+budget, so an oversized step fails cleanly instead of reaching the host's OOM
+killer; see :mod:`epor.training.memory`.
+
 Precision is ``bf16`` (CPU autocast around the forward; FP32 parameters,
 gradients, optimizer state, and loss) or ``fp32``.  FP8 is not implemented:
 it is a cloud-only ablation in the roadmap.
@@ -94,6 +101,7 @@ from epor.models.reference import IGNORE_INDEX, DecoderOutput, EporDecoder
 from epor.reference_policy import validate_kernel_model, validate_kernel_run
 from epor.tokenizer.corpus import Split
 
+from . import memory
 from .checkpoint import atomic_write_json
 from .distributed import DistributedContext, gradient_sync, wrap_model
 from .faults import FaultPlan
@@ -161,7 +169,33 @@ class LogitDistillation(BaseModel):
 
 
 # Optional v0.0.7 trajectory fields, omitted from the trajectory at ``None``.
-_OPTIONAL_TRAJECTORY = ("train_mixture", "chat_dataset_id", "init_checkpoint", "distillation")
+_OPTIONAL_TRAJECTORY = (
+    "train_mixture",
+    "chat_dataset_id",
+    "init_checkpoint",
+    "distillation",
+    "min_document_pairs",
+)
+
+# Config fields a run may change relative to its ``init_checkpoint`` (v0.0.8):
+# progressive context extension (a longer configured context and a RoPE
+# scaling method) and the sparse-attention retrofit (a new indexer, whose
+# parameters are newly initialized).  Declared counts follow the structure,
+# and the context bookkeeping fields are metadata.  Anything else is a
+# different model and is refused.
+EXTENSION_FIELDS = frozenset(
+    {
+        "configured_max_context",
+        "rope_scaling",
+        "sparse_attention",
+        "total_parameters",
+        "active_parameters",
+        "core_parameters",
+        "trained_max_context",
+        "validated_max_context",
+        "operational_default_context",
+    }
+)
 
 
 class PackedTrainingSettings(BaseModel):
@@ -193,9 +227,15 @@ class PackedTrainingSettings(BaseModel):
     chat_dataset_id: Sha256 | None = None
     init_checkpoint: CheckpointRef | None = None
     distillation: LogitDistillation | None = None
+    # Long-document selection (v0.0.8): train only on documents with at least
+    # this many next-token pairs, so an extension run's rows hold long
+    # documents rather than many short ones.
+    min_document_pairs: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def chat_excludes_mixture(self) -> PackedTrainingSettings:
+        if self.chat_dataset_id is not None and self.min_document_pairs is not None:
+            raise ValueError("long-document selection applies to token shards, not chat datasets")
         if self.chat_dataset_id is not None and self.train_mixture is not None:
             raise ValueError("a domain mixture selects token-shard documents, not chat datasets")
         if self.chat_dataset_id is not None and self.validation_split == "test":
@@ -264,6 +304,7 @@ class _StepRecord(BaseModel):
     target_tokens: int
     mtp_sums: tuple[float, ...]
     distill_sum: float = 0.0
+    index_sum: float = 0.0
 
 
 def mtp_target_counts(batch: PackedBatch, depth: int) -> list[int]:
@@ -307,8 +348,15 @@ def micro_objective(
         objective = output.logits.float().sum() * 0.0
         for loss in output.mtp_losses:
             objective = objective + loss * 0.0
+        if output.aux_loss is not None:
+            objective = objective + output.aux_loss * 0.0
         return objective
     objective = output.main_loss * (target_tokens * world_size / global_target_tokens)
+    if output.aux_loss is not None:
+        # The sparse-attention indexer loss is a per-token mean like main_loss.
+        objective = objective + output.aux_loss * (
+            target_tokens * world_size / global_target_tokens
+        )
     depth_count = len(global_mtp_counts)
     for depth, (loss, count) in enumerate(zip(output.mtp_losses, mtp_counts, strict=True)):
         if count:
@@ -399,6 +447,70 @@ def _check_compatible(
         raise CheckpointError(
             "resume settings change the training trajectory: " + ", ".join(differing)
         )
+
+
+def trained_context(trainer: dict[str, Any]) -> int:
+    """The longest sequence length a checkpoint's lineage has trained at.
+
+    Recorded in ``trainer.json`` since v0.0.8; for earlier checkpoints it is the
+    run's own ``seq_len``.  Training at a length is not validating it: only a
+    passing G6 report raises a validated context (``epor.context``).
+    """
+
+    recorded = trainer.get("trained_context")
+    if isinstance(recorded, int) and recorded > 0:
+        return recorded
+    return int(PackedTrainingSettings.model_validate(trainer["settings"]).seq_len)
+
+
+def extension_delta(parent: ModelConfig, child: ModelConfig) -> list[str]:
+    """Config fields that differ between an initial checkpoint and the run."""
+
+    before, after = parent.model_dump(mode="json"), child.model_dump(mode="json")
+    return sorted(key for key in after if before.get(key) != after[key])
+
+
+def load_initial_weights(
+    decoder: EporDecoder, directory: Path, parent: ModelConfig, context: DistributedContext
+) -> None:
+    """Load a parent checkpoint's weights into ``decoder`` before wrapping.
+
+    With an identical config this is the plain collective load.  For an
+    extension or retrofit config, the parent is read whole into its own model
+    and copied across; only sparse-indexer parameters may be missing (they stay
+    newly initialized), and nothing may be left over.
+    """
+
+    if parent.sha256 == decoder.config.sha256:
+        load_kernel_checkpoint(
+            directory, model=decoder, optimizer=None, context=context, restore_rng=False
+        )
+        return
+    source = EporDecoder(parent, seed=0, device="cpu", dtype=torch.float32, initialize=False)
+    load_kernel_checkpoint(
+        directory, model=source, optimizer=None, context=DistributedContext(), restore_rng=False
+    )
+    missing, unexpected = decoder.load_state_dict(source.state_dict(), strict=False)
+    if unexpected or any(".indexer." not in name for name in missing):
+        raise CheckpointError(
+            "the initial checkpoint's weights do not map onto this run's model "
+            f"(missing {sorted(missing)[:3]}, unexpected {sorted(unexpected)[:3]})"
+        )
+
+
+def select_long_documents(corpus: TrainingCorpus, min_pairs: int) -> ShardCorpus:
+    """The documents of a token-shard split with at least ``min_pairs`` pairs."""
+
+    if not isinstance(corpus, ShardCorpus):
+        raise ValueError("long-document selection applies to token shards")
+    chosen = [
+        document_id
+        for document_id, pairs in zip(corpus.document_ids, corpus.pair_counts, strict=True)
+        if pairs >= min_pairs
+    ]
+    if not chosen:
+        raise ValueError(f"no document in the split has at least {min_pairs} pairs")
+    return corpus.select(chosen)
 
 
 def open_training_corpus(
@@ -603,6 +715,7 @@ def pretrain_packed(
     on_step: Callable[[int, int, float], None] | None = None,
     fault_plan: FaultPlan | None = None,
     verify_data: bool = True,
+    memory_budget_bytes: int | None = None,
 ) -> PackedTrainingResult:
     """Train on token shards to the absolute optimizer step ``max_steps``.
 
@@ -620,12 +733,31 @@ def pretrain_packed(
     every rank before and after each step (any rank's request stops all of
     them); a cancelled run first checkpoints its last completed step, then
     raises :class:`TrainingCancelled`.  Stopping is never gated.
+
+    ``memory_budget_bytes`` is the host-memory budget for every rank together
+    (default: :func:`~epor.training.memory.default_budget`).  A run whose
+    certain allocations exceed it is refused before anything is allocated
+    (:class:`~epor.training.memory.MemoryBudgetRefusedError`), and each rank
+    caps its address space at its share, so an allocation past the cap stops
+    the run with :class:`~epor.training.memory.MemoryBudgetExceededError`
+    and leaves its checkpoints intact (see :mod:`epor.training.memory`).
     """
 
     context = context or DistributedContext()
     validate_kernel_run(max_steps, settings.tokens_per_batch)
     destination = Path(output_dir).expanduser().resolve()
     config = resolve_model_config(model)
+    budget = memory_budget_bytes
+    if budget is None:
+        budget = int(context.broadcast_object(memory.default_budget()))
+    memory.check_budget(budget)
+    estimate = memory.preflight(
+        config,
+        settings,
+        world_size=context.world_size,
+        strategy=context.strategy,
+        budget=budget,
+    )
     corpus = open_training_corpus(
         Path(data_root), settings, settings.train_split, config, verify=verify_data
     )
@@ -634,13 +766,31 @@ def pretrain_packed(
         assert isinstance(corpus, ShardCorpus)
         selection = apply_mixture(Path(data_root), corpus, settings.train_mixture)
         corpus = corpus.select(selection.document_ids)
+    long_documents: dict[str, int] | None = None
+    if settings.min_document_pairs is not None:
+        corpus = select_long_documents(corpus, settings.min_document_pairs)
+        long_documents = {
+            "min_document_pairs": settings.min_document_pairs,
+            "documents": corpus.document_count,
+            "pairs": sum(corpus.pair_counts),
+        }
+    if config.sparse_attention is not None and settings.activation_checkpointing:
+        raise ValueError("the sparse-attention retrofit does not support activation checkpointing")
     init_dir: Path | None = None
+    init_config: ModelConfig | None = None
+    parent_trained_context = 0
     if settings.init_checkpoint is not None:
         init_dir, init_trainer = verified_checkpoint(settings.init_checkpoint)
-        if model_config_from_mapping(init_trainer["model_config"]).sha256 != config.sha256:
-            raise CheckpointError("the initial checkpoint's model config differs from this run's")
+        init_config = model_config_from_mapping(init_trainer["model_config"])
+        foreign = sorted(set(extension_delta(init_config, config)) - EXTENSION_FIELDS)
+        if foreign:
+            raise CheckpointError(
+                "the initial checkpoint's model config differs from this run's in "
+                + ", ".join(foreign)
+            )
         if checkpoint_tokenizer_id(Path(data_root), init_trainer) != corpus.tokenizer_id:
             raise CheckpointError("the initial checkpoint was trained with a different tokenizer")
+        parent_trained_context = trained_context(init_trainer)
     teachers: list[EporDecoder] = []
     if settings.distillation is not None:
         teachers = load_teachers(
@@ -668,6 +818,8 @@ def pretrain_packed(
         stream.load_state_dict(trainer["data_state"])
         if max_steps <= int(trainer["step"]):
             raise ValueError("max_steps must exceed the checkpoint step when resuming")
+        parent_trained_context = max(parent_trained_context, trained_context(trainer))
+    run_trained_context = max(parent_trained_context, settings.seq_len)
 
     _collective(
         context,
@@ -725,7 +877,31 @@ def pretrain_packed(
                 "tie_embeddings": config.tie_embeddings,
             },
             activation_checkpointing=settings.activation_checkpointing,
+            memory_guard={
+                "budget_bytes": budget,
+                "budget_source": "default" if memory_budget_bytes is None else "operator",
+                "estimate": estimate,
+                "runtime_cap": None,
+            },
             train_mixture=None if selection is None else selection.summary(),
+            long_documents=long_documents,
+            trained_context=run_trained_context,
+            context={
+                "configured": config.configured_max_context,
+                "trained": run_trained_context,
+                "rope_scaling": (
+                    None if config.rope_scaling is None else config.rope_scaling.model_dump()
+                ),
+                "sliding_window": config.sliding_window,
+                "local_layers_per_global": config.local_layers_per_global,
+                "attention_variant": config.attention_variant,
+                "sparse_attention": config.sparse_attention is not None,
+                "extension_of": (
+                    None
+                    if init_config is None or init_config.sha256 == config.sha256
+                    else init_config.sha256
+                ),
+            },
             chat_dataset_id=settings.chat_dataset_id,
             init_checkpoint=(
                 None
@@ -780,6 +956,7 @@ def pretrain_packed(
                 "settings": settings.model_dump(mode="json"),
                 "trajectory": settings.trajectory(),
                 "trajectory_sha256": settings.trajectory_sha256,
+                "trained_context": run_trained_context,
                 "strategy": context.strategy,
                 "created_at": utc_now(),
                 "metrics": {"loss": losses[-1] if losses else None},
@@ -801,7 +978,14 @@ def pretrain_packed(
     def cancelled() -> bool:
         return context.any(should_cancel is not None and bool(should_cancel()))
 
+    cap: dict[str, Any] | None = None
     try:
+        # Start every intra-op thread before the cap: OpenMP aborts the whole
+        # process when it cannot start a thread, which is not a clean failure.
+        torch.ones(torch.get_num_threads() << 16).add_(1)
+        cap = memory.cap_address_space(budget // world)
+        if context.is_main:
+            manifest["memory_guard"]["runtime_cap"] = cap
         decoder = EporDecoder(
             config,
             seed=settings.model_seed,
@@ -810,9 +994,8 @@ def pretrain_packed(
             activation_checkpointing=settings.activation_checkpointing,
         )
         if checkpoint_dir is None and init_dir is not None:
-            load_kernel_checkpoint(
-                init_dir, model=decoder, optimizer=None, context=context, restore_rng=False
-            )
+            assert init_config is not None
+            load_initial_weights(decoder, init_dir, init_config, context)
         wrapped = wrap_model(decoder, context)
         optimizer = build_optimizer(wrapped, settings.optimizer)
         if checkpoint_dir is not None:
@@ -896,6 +1079,11 @@ def pretrain_packed(
                             )
                         ),
                         distill_sum=distill_sum,
+                        index_sum=(
+                            float(output.aux_loss.detach()) * micro.target_tokens
+                            if output.aux_loss is not None and micro.target_tokens
+                            else 0.0
+                        ),
                     )
                 )
             grad_norm = clip_gradients(wrapped.parameters(), settings.optimizer.gradient_clip)
@@ -917,6 +1105,14 @@ def pretrain_packed(
             loss_value = main_value
             if mtp_values:
                 loss_value = main_value + config.mtp_loss_weight * sum(mtp_values) / mtp_depth
+            index_value: float | None = None
+            if config.sparse_attention is not None:
+                index_total = 0.0
+                for record in ordered:
+                    index_total += record.index_sum
+                index_share = index_total / global_targets
+                index_value = index_share
+                loss_value += index_share
             distill_value: float | None = None
             if settings.distillation is not None:
                 distill_total = 0.0
@@ -938,6 +1134,7 @@ def pretrain_packed(
                     "main_loss": main_value,
                     "mtp_losses": mtp_values,
                     **({} if distill_value is None else {"distill_kl": distill_value}),
+                    **({} if index_value is None else {"index_loss": index_value}),
                     "learning_rate": learning_rate_at(step, settings.optimizer),
                     "grad_norm": grad_norm,
                     "tokens_seen": tokens_seen,
@@ -993,6 +1190,7 @@ def pretrain_packed(
             manifest_path = _write_manifest(destination, manifest, finalize=True)
         manifest_path = Path(context.broadcast_object(str(manifest_path)))
     except BaseException as exc:
+        out_of_memory = memory.is_out_of_memory(exc)
         if context.is_main and manifest:
             cancelled_run = (
                 isinstance(exc, TrainingCancelled) or exc.__class__.__name__ == "JobCancelled"
@@ -1002,7 +1200,11 @@ def pretrain_packed(
                 finished_at=utc_now(),
                 actual_resource_use=resource_usage(started_wall, started_cpu),
                 termination_reason=(
-                    "cancelled" if cancelled_run else f"error:{type(exc).__name__}"
+                    "cancelled"
+                    if cancelled_run
+                    else "out-of-memory"
+                    if out_of_memory
+                    else f"error:{type(exc).__name__}"
                 ),
                 steps_completed=last_saved_step if last_saved_step >= 0 else start_step,
                 throughput=_throughput(trained_tokens, step_seconds, len(losses)),
@@ -1010,8 +1212,17 @@ def pretrain_packed(
             # Never let a manifest write failure mask the original error.
             with contextlib.suppress(OSError):
                 _write_manifest(destination, manifest, finalize=True)
+        if out_of_memory:
+            kept = "no checkpoint was written" if last_checkpoint is None else last_checkpoint
+            raise memory.MemoryBudgetExceededError(
+                f"training reached its memory cap ({memory.gib(budget // world)} of a "
+                f"{memory.gib(budget)} budget) and stopped: {str(exc)[:300]}; last good "
+                f"checkpoint: {kept}. Resume with a larger budget, a smaller micro-batch, or "
+                "activation checkpointing"
+            ) from exc
         raise
     finally:
+        memory.release_cap(cap)
         torch.use_deterministic_algorithms(deterministic_before)
 
     return PackedTrainingResult(
