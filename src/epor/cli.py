@@ -763,6 +763,7 @@ _KERNEL_INPUT_ERRORS = frozenset(
         "DataStoreError",
         "FileExistsError",
         "FileNotFoundError",
+        "MemoryBudgetRefusedError",
         "NotADirectoryError",
         "TokenizedBuildError",
         "TokenizerArtifactError",
@@ -771,6 +772,15 @@ _KERNEL_INPUT_ERRORS = frozenset(
     }
 )
 _KERNEL_CANCELLED_EXIT = 130
+_KERNEL_MEMORY_EXIT = 4
+_MemoryBudget = Annotated[
+    float | None,
+    typer.Option(
+        min=0.1,
+        max=1024,
+        help="Host memory budget for the run (default: 3/4 of available memory at start).",
+    ),
+]
 
 
 def _contained_directory(supplied: Path, *, label: str) -> Path:
@@ -832,6 +842,9 @@ def _kernel_failure(exc: BaseException) -> typer.Exit:
     if name in _KERNEL_INPUT_ERRORS:
         console.print(f"[red]training command refused[/red]: {message}")
         return typer.Exit(code=2)
+    if name == "MemoryBudgetExceededError":
+        console.print(f"[red]training stopped at its memory budget[/red]: {message}")
+        return typer.Exit(code=_KERNEL_MEMORY_EXIT)
     console.print(f"[red]training failed[/red] ({name}): {message}")
     return typer.Exit(code=1)
 
@@ -847,6 +860,7 @@ def _run_kernel_command(
     world_size: int,
     launch_timeout: float,
     project_root: Path,
+    memory_budget_gib: float | None = None,
 ) -> dict[str, Any]:
     import threading
 
@@ -878,6 +892,9 @@ def _run_kernel_command(
                 on_step=on_step,
                 launch_timeout_seconds=launch_timeout,
                 stop_event=None if strategy == "none" else stop,
+                memory_budget_bytes=(
+                    None if memory_budget_gib is None else int(memory_budget_gib * 1024**3)
+                ),
             )
     except Exception as exc:
         raise _kernel_failure(exc) from exc
@@ -936,8 +953,13 @@ def train_kernel(
     launch_timeout: Annotated[
         float, typer.Option(min=10.0, max=7 * 24 * 3600.0, help="Distributed wall-clock limit (s).")
     ] = 6 * 3600.0,
+    memory_budget_gib: _MemoryBudget = None,
 ) -> None:
-    """Train the kernel on packed token shards (exit 2 input, 3 covenant, 130 stopped)."""
+    """Train the kernel on packed token shards.
+
+    Exit 2 input or memory-budget refusal, 3 covenant, 4 stopped at the memory
+    budget (checkpoints kept), 130 stopped.
+    """
 
     authorize_command("train kernel")
     from epor.training import OptimizerSettings, PackedTrainingSettings
@@ -996,6 +1018,7 @@ def train_kernel(
         world_size=world_size,
         launch_timeout=launch_timeout,
         project_root=project_root,
+        memory_budget_gib=memory_budget_gib,
     )
     _echo_json({**summary, "recipe": str(recipe.relative_to(project_root))})
 
@@ -1022,8 +1045,9 @@ def train_kernel_resume(
     ] = None,
     eval_max_steps: Annotated[int | None, typer.Option(min=1, max=100_000)] = None,
     launch_timeout: Annotated[float, typer.Option(min=10.0, max=7 * 24 * 3600.0)] = 6 * 3600.0,
+    memory_budget_gib: _MemoryBudget = None,
 ) -> None:
-    """Continue a kernel run exactly; only runtime settings and topology may change."""
+    """Continue a kernel run exactly; only runtime settings, topology, and budget may change."""
 
     authorize_command("train kernel-resume")
     from epor.control.settings import project_root_from_environment
@@ -1065,6 +1089,7 @@ def train_kernel_resume(
         world_size=world_size,
         launch_timeout=launch_timeout,
         project_root=project_root,
+        memory_budget_gib=memory_budget_gib,
     )
     _echo_json(summary)
 

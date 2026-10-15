@@ -196,6 +196,11 @@ def _contained_directory(root: Path, supplied: str) -> Path:
     return resolved
 
 
+def memory_budget_bytes(spec: dict[str, Any]) -> int | None:
+    value = spec.get("memory_budget_gib")
+    return None if value is None else int(float(value) * 1024**3)
+
+
 def _kernel_settings(spec: dict[str, Any]) -> Any:
     from .kernel import PackedTrainingSettings
     from .optim import OptimizerSettings
@@ -289,6 +294,7 @@ def _run_kernel_train(spec: dict[str, Any], context: Any) -> dict[str, Any]:
             project_root=project_root,
             should_cancel=lambda: bool(context.cancelled),
             on_step=on_step,
+            memory_budget_bytes=memory_budget_bytes(spec),
         )
     except TrainingCancelled:
         context.raise_if_cancelled()

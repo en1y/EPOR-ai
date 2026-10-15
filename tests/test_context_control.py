@@ -118,6 +118,15 @@ def test_context_job_specs_are_typed_bounded_and_contained(tmp_path: Path) -> No
             JobType.CONTEXT_EXTEND,
             {"mode": "extend", "checkpoint_path": "run", "target_context": 256, "strategy": "ddp"},
         ),
+        (
+            JobType.CONTEXT_EXTEND,
+            {
+                "mode": "extend",
+                "checkpoint_path": "run",
+                "target_context": 256,
+                "memory_budget_gib": 0,
+            },
+        ),
         (JobType.CONTEXT_EVALUATE, {"checkpoint_path": "run", "lengths": [32]}),
         (JobType.CONTEXT_EVALUATE, {"checkpoint_path": "missing", "lengths": [256]}),
         (JobType.CONTEXT_PROFILE, {"mode": "profile", "lengths": [256]}),
@@ -142,9 +151,14 @@ def test_the_context_pipeline_runs_as_jobs(lab: Lab) -> None:
             "max_steps": 2,
             "precision": "fp32",
             "tokens_per_batch": 768,
+            "memory_budget_gib": 2,
         },
     )
     assert (extended["configured_context"], extended["trained_context"]) == (384, 384)
+    artifacts = lab.service.settings.artifact_root
+    assert artifacts is not None
+    manifest = json.loads((artifacts / extended["output_path"] / "manifest.json").read_text())
+    assert manifest["memory_guard"]["budget_bytes"] == 2 * 1024**3
     assert extended["validated_context_raised"] is False
     evaluated = lab.job(
         JobType.CONTEXT_EVALUATE,
