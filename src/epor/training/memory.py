@@ -30,11 +30,13 @@ two checks to every run, on every surface:
 ``RLIMIT_AS`` bounds virtual address space, not resident memory (Linux ignores
 ``RLIMIT_RSS``).  Resident growth can never exceed address-space growth, so
 the cap is a hard upper bound on what the run can take, but a conservative
-one: every new thread's stack (8 MiB by default), glibc's per-thread malloc
-arenas (each reserves up to 64 MiB of untouched address space), and shared
-libraries loaded after the cap all count against it.  A run with many
-intra-op threads therefore fails somewhat before its resident memory reaches
-the budget.  The cap covers only the training processes: memory other
+one: reservations made after the cap count against it, such as glibc's
+per-thread malloc arenas (each reserves up to 64 MiB of untouched address
+space), the stack of any thread started later (8 MiB by default), and shared
+libraries loaded later.  A run with many threads therefore fails somewhat
+before its resident memory reaches the budget.  The trainer starts its
+intra-op thread pool before setting the cap, because OpenMP aborts the whole
+process when it cannot start a thread.  The cap covers only the training processes: memory other
 processes take after the budget is set is not covered, and the kernel's OOM
 killer stays the last line.  A soft limit that is already lower (for example
 from ``ulimit -S -v``) is kept.
