@@ -65,6 +65,13 @@ keep their trajectory hashes.
   describe the same events.  Teachers are only ever read; nothing from them is
   written into the student's checkpoint.
 
+Memory guard (v0.0.8)
+---------------------
+Every run is checked against a host-memory budget before anything is
+allocated and trains under a soft address-space cap at its share of that
+budget, so an oversized step fails cleanly instead of reaching the host's OOM
+killer; see :mod:`epor.training.memory`.
+
 Precision is ``bf16`` (CPU autocast around the forward; FP32 parameters,
 gradients, optimizer state, and loss) or ``fp32``.  FP8 is not implemented:
 it is a cloud-only ablation in the roadmap.
@@ -94,6 +101,7 @@ from epor.models.reference import IGNORE_INDEX, DecoderOutput, EporDecoder
 from epor.reference_policy import validate_kernel_model, validate_kernel_run
 from epor.tokenizer.corpus import Split
 
+from . import memory
 from .checkpoint import atomic_write_json
 from .distributed import DistributedContext, gradient_sync, wrap_model
 from .faults import FaultPlan
@@ -707,6 +715,7 @@ def pretrain_packed(
     on_step: Callable[[int, int, float], None] | None = None,
     fault_plan: FaultPlan | None = None,
     verify_data: bool = True,
+    memory_budget_bytes: int | None = None,
 ) -> PackedTrainingResult:
     """Train on token shards to the absolute optimizer step ``max_steps``.
 
@@ -724,12 +733,31 @@ def pretrain_packed(
     every rank before and after each step (any rank's request stops all of
     them); a cancelled run first checkpoints its last completed step, then
     raises :class:`TrainingCancelled`.  Stopping is never gated.
+
+    ``memory_budget_bytes`` is the host-memory budget for every rank together
+    (default: :func:`~epor.training.memory.default_budget`).  A run whose
+    certain allocations exceed it is refused before anything is allocated
+    (:class:`~epor.training.memory.MemoryBudgetRefusedError`), and each rank
+    caps its address space at its share, so an allocation past the cap stops
+    the run with :class:`~epor.training.memory.MemoryBudgetExceededError`
+    and leaves its checkpoints intact (see :mod:`epor.training.memory`).
     """
 
     context = context or DistributedContext()
     validate_kernel_run(max_steps, settings.tokens_per_batch)
     destination = Path(output_dir).expanduser().resolve()
     config = resolve_model_config(model)
+    budget = memory_budget_bytes
+    if budget is None:
+        budget = int(context.broadcast_object(memory.default_budget()))
+    memory.check_budget(budget)
+    estimate = memory.preflight(
+        config,
+        settings,
+        world_size=context.world_size,
+        strategy=context.strategy,
+        budget=budget,
+    )
     corpus = open_training_corpus(
         Path(data_root), settings, settings.train_split, config, verify=verify_data
     )
@@ -849,6 +877,12 @@ def pretrain_packed(
                 "tie_embeddings": config.tie_embeddings,
             },
             activation_checkpointing=settings.activation_checkpointing,
+            memory_guard={
+                "budget_bytes": budget,
+                "budget_source": "default" if memory_budget_bytes is None else "operator",
+                "estimate": estimate,
+                "runtime_cap": None,
+            },
             train_mixture=None if selection is None else selection.summary(),
             long_documents=long_documents,
             trained_context=run_trained_context,
@@ -944,7 +978,14 @@ def pretrain_packed(
     def cancelled() -> bool:
         return context.any(should_cancel is not None and bool(should_cancel()))
 
+    cap: dict[str, Any] | None = None
     try:
+        # Start every intra-op thread before the cap: OpenMP aborts the whole
+        # process when it cannot start a thread, which is not a clean failure.
+        torch.ones(torch.get_num_threads() << 16).add_(1)
+        cap = memory.cap_address_space(budget // world)
+        if context.is_main:
+            manifest["memory_guard"]["runtime_cap"] = cap
         decoder = EporDecoder(
             config,
             seed=settings.model_seed,
@@ -1149,6 +1190,7 @@ def pretrain_packed(
             manifest_path = _write_manifest(destination, manifest, finalize=True)
         manifest_path = Path(context.broadcast_object(str(manifest_path)))
     except BaseException as exc:
+        out_of_memory = memory.is_out_of_memory(exc)
         if context.is_main and manifest:
             cancelled_run = (
                 isinstance(exc, TrainingCancelled) or exc.__class__.__name__ == "JobCancelled"
@@ -1158,7 +1200,11 @@ def pretrain_packed(
                 finished_at=utc_now(),
                 actual_resource_use=resource_usage(started_wall, started_cpu),
                 termination_reason=(
-                    "cancelled" if cancelled_run else f"error:{type(exc).__name__}"
+                    "cancelled"
+                    if cancelled_run
+                    else "out-of-memory"
+                    if out_of_memory
+                    else f"error:{type(exc).__name__}"
                 ),
                 steps_completed=last_saved_step if last_saved_step >= 0 else start_step,
                 throughput=_throughput(trained_tokens, step_seconds, len(losses)),
@@ -1166,8 +1212,17 @@ def pretrain_packed(
             # Never let a manifest write failure mask the original error.
             with contextlib.suppress(OSError):
                 _write_manifest(destination, manifest, finalize=True)
+        if out_of_memory:
+            kept = "no checkpoint was written" if last_checkpoint is None else last_checkpoint
+            raise memory.MemoryBudgetExceededError(
+                f"training reached its memory cap ({memory.gib(budget // world)} of a "
+                f"{memory.gib(budget)} budget) and stopped: {str(exc)[:300]}; last good "
+                f"checkpoint: {kept}. Resume with a larger budget, a smaller micro-batch, or "
+                "activation checkpointing"
+            ) from exc
         raise
     finally:
+        memory.release_cap(cap)
         torch.use_deterministic_algorithms(deterministic_before)
 
     return PackedTrainingResult(
